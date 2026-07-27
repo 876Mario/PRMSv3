@@ -32,7 +32,9 @@ $stmt = $pdo->prepare("
         pr.currency,
         pr.usd_rate,
         pr.requires_rfq,
+        pr.request_type,
         pr.commitment_form_path,
+        rf.rfq_id,
         rq.quote_id,
         rq.quote_amount,
         rq.gct_amount,
@@ -66,6 +68,15 @@ $existingCommitment = $checkStmt->fetch(PDO::FETCH_ASSOC);
 $currentStep = 'verify_funds'; // Step 1: Finance verifies funds
 $requestStatus = strtoupper($request['status']);
 
+// "Proceed Without RFQ" path: the funds-verification stage is bypassed entirely.
+// The request goes straight from Branch Head/HOD approval (via AWARDED) to the
+// optional commitment form and then commitment creation — no FUNDS_VERIFIED
+// status transition, approval, task, or notification is triggered.
+$isSkipRfqPath = isSkipRfqPath((string)($request['request_type'] ?? ''), $request['rfq_id'] ?? null, $requestStatus);
+if ($isSkipRfqPath && $requestStatus === 'AWARDED') {
+    $currentStep = 'upload_form';
+}
+
 if ($requestStatus === 'FUNDS_VERIFIED') {
     // Both Finance and Procurement can upload an optional commitment form
     $currentStep = 'upload_form';
@@ -81,8 +92,8 @@ if ($existingCommitment && !empty($existingCommitment['document_path']) && $exis
 // Role access control per step
 if ($currentStep === 'verify_funds' && !$isFinance) {
     if ($requestStatus === 'AWARDED') {
-        // For requests that proceeded without RFQ, Procurement Officers can upload the
-        // optional commitment form while Finance verifies funds and creates the commitment.
+        // For RFQ-path requests awarded pending funds verification, Procurement Officers
+        // can upload the optional commitment form while Finance verifies funds.
         $currentStep = 'upload_form';
     } else {
         pop("Funds have not been verified yet. Finance Officers must verify funds first.", "/procurement/view.php?id=" . $request_id, 2500, "warning");
@@ -173,6 +184,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             /* ===== STEP 1: VERIFY FUNDS (Finance) ===== */
             if (!$isFinance) {
                 throw new Exception("Only Finance Officers can verify funds.");
+            }
+            if ($isSkipRfqPath) {
+                // Business rule: "Proceed Without RFQ" bypasses the funds-verification
+                // stage completely — the request must not transition to FUNDS_VERIFIED.
+                throw new Exception("Funds verification is bypassed for requests that proceeded without an RFQ. Create the commitment directly.");
             }
             
             $pdo->beginTransaction();
@@ -273,6 +289,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     SET status = 'COMMITMENTS_PENDING'
                     WHERE request_id = ?
                 ")->execute([$request_id]);
+
+                if ($isSkipRfqPath && $requestStatus === 'AWARDED') {
+                    // Business rule: record that the RFQ/funds-verification path was
+                    // intentionally bypassed due to the "Proceed Without RFQ" selection.
+                    logAudit($pdo, 'procurement_requests', $request_id, 'FUNDS_VERIFICATION_BYPASSED',
+                            'Funds verification stage intentionally bypassed — request proceeded without RFQ.');
+                }
             }
             
             $timelineMsg = $formDocPath
@@ -522,9 +545,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                     $step1Done = in_array($currentStep, ['upload_form', 'create_commitment', 'completed']);
                     $step1Active = $currentStep === 'verify_funds';
                     ?>
-                    <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-2 <?= $step1Active ? 'bg-primary text-white' : ($step1Done ? 'bg-success text-white' : 'bg-light text-muted') ?>" style="width:48px;height:48px;font-size:1.2rem;font-weight:bold;">1</div>
-                    <div class="small fw-bold">Verify Funds</div>
-                    <div class="small text-muted">Finance</div>
+                    <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-2 <?= $step1Active ? 'bg-primary text-white' : ($step1Done ? 'bg-success text-white' : 'bg-light text-muted') ?>" style="width:48px;height:48px;font-size:1.2rem;font-weight:bold;"><?= $isSkipRfqPath ? '<i class="bi bi-skip-forward" role="img" aria-label="Step bypassed" title="Step bypassed — proceeded without RFQ"></i>' : '1' ?></div>
+                    <div class="small fw-bold">Verify Funds<?= $isSkipRfqPath ? ' (Bypassed)' : '' ?></div>
+                    <div class="small text-muted"><?= $isSkipRfqPath ? 'No RFQ — not required' : 'Finance' ?></div>
                 </div>
                 <div class="d-flex align-items-center mb-4"><i class="bi bi-arrow-right fs-4 text-muted"></i></div>
                 <div class="text-center">
@@ -671,7 +694,10 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
             <div class="card-body">
                 <div class="alert alert-success mb-4">
                     <i class="bi bi-check-circle me-2"></i>
-                    <?php if ($requestStatus === 'AWARDED'): ?>
+                    <?php if ($requestStatus === 'AWARDED' && $isSkipRfqPath): ?>
+                        <strong>Request proceeded without RFQ.</strong> Funds verification is not required for this request. You may upload the optional commitment form now, or proceed without one.
+                        <?= $isFinance ? 'You can then create the commitment in GFMS directly.' : 'Finance will create the commitment in GFMS and upload the commitment document.' ?>
+                    <?php elseif ($requestStatus === 'AWARDED'): ?>
                         <strong>Request is in Awarded stage.</strong> You may upload the optional commitment form now, or proceed without one.
                         <?= $isFinance ? 'You can then proceed to verify funds and create the commitment in GFMS.' : 'Finance will verify funds, create the commitment in GFMS, and upload the commitment document.' ?>
                     <?php else: ?>
@@ -815,6 +841,24 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                         </a>
                     </div>
                 </form>
+
+                <?php if ($isSkipRfqPath): ?>
+                <hr>
+                <!-- Decline Option (skip-RFQ path never passes through Step 1, so offer it here) -->
+                <div class="mt-3">
+                    <h6 class="text-danger"><i class="bi bi-x-circle me-1"></i> Or Decline (Funds Not Available)</h6>
+                    <form method="post">
+                        <input type="hidden" name="action" value="decline">
+                        <div class="mb-3">
+                            <textarea name="decline_reason" class="form-control" rows="3"
+                                      placeholder="Explain why funds cannot be committed..." minlength="10" maxlength="1000" required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-x-circle me-1"></i> Decline & Return Request
+                        </button>
+                    </form>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     <?php endif; ?>
@@ -824,7 +868,11 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
         <i class="bi bi-lightbulb"></i>
         <strong>Commitment Workflow:</strong>
         <ul class="mb-0 ms-3 mt-2">
+            <?php if ($isSkipRfqPath): ?>
+            <li><strong>Step 1 (Bypassed):</strong> Funds verification is not required — this request proceeded without an RFQ</li>
+            <?php else: ?>
             <li><strong>Step 1 (Finance):</strong> Verify that sufficient funds are available</li>
+            <?php endif; ?>
             <li><strong>Step 2 (Procurement/Finance):</strong> Optionally upload a scanned copy of the commitment form. This step can be skipped — you can proceed without it.</li>
             <li><strong>Step 3 (Finance):</strong> Create the commitment in GFMS system, then upload the commitment document here to complete the process</li>
             <li><strong>After creation:</strong> Procurement will be notified automatically to create the PO</li>

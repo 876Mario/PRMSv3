@@ -94,14 +94,14 @@ try {
         'procurement_requests',
         $id,
         'STATUS_CHANGE',
-        $request['status'] . ' → Awarded (proceeded without RFQ — under JMD threshold) by ' . ($_SESSION['full_name'] ?? 'Unknown')
+        $request['status'] . ' → Awarded (RFQ path intentionally bypassed — "Proceed Without RFQ" selected, under JMD threshold) by ' . ($_SESSION['full_name'] ?? 'Unknown')
     );
 
     logRequestTimeline(
         $pdo,
         $id,
         'RFQ_SKIPPED',
-        'Procurement proceeded without RFQ (optional for requests at or below JMD $' . number_format($threshold, 2) . ')'
+        'RFQ path intentionally bypassed via "Proceed Without RFQ" (optional for requests at or below JMD $' . number_format($threshold, 2) . '). RFQ, quote review, quote selection and funds verification stages are skipped; proceeding directly to commitment.'
     );
 
     $pdo->commit();
