@@ -545,7 +545,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                     $step1Done = in_array($currentStep, ['upload_form', 'create_commitment', 'completed']);
                     $step1Active = $currentStep === 'verify_funds';
                     ?>
-                    <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-2 <?= $step1Active ? 'bg-primary text-white' : ($step1Done ? 'bg-success text-white' : 'bg-light text-muted') ?>" style="width:48px;height:48px;font-size:1.2rem;font-weight:bold;"><?= $isSkipRfqPath ? '<i class="bi bi-skip-forward"></i>' : '1' ?></div>
+                    <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-2 <?= $step1Active ? 'bg-primary text-white' : ($step1Done ? 'bg-success text-white' : 'bg-light text-muted') ?>" style="width:48px;height:48px;font-size:1.2rem;font-weight:bold;"><?= $isSkipRfqPath ? '<i class="bi bi-skip-forward" role="img" aria-label="Step bypassed" title="Step bypassed — proceeded without RFQ"></i>' : '1' ?></div>
                     <div class="small fw-bold">Verify Funds<?= $isSkipRfqPath ? ' (Bypassed)' : '' ?></div>
                     <div class="small text-muted"><?= $isSkipRfqPath ? 'No RFQ — not required' : 'Finance' ?></div>
                 </div>
