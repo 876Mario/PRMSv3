@@ -17,7 +17,7 @@ INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
-WHERE r.role_name IN ('Finance Officer', 'Procurement Officer', 'HOD', 'Branch Head',
+WHERE r.name IN ('Finance Officer', 'Procurement Officer', 'HOD', 'Branch Head',
                       'Director HRM&A', 'Deputy Government Chemist', 'Admin', 'SuperAdmin')
   AND p.name = 'create_service_request';
 
@@ -27,7 +27,7 @@ INSERT IGNORE INTO `page_permissions` (`page_path`, `permission_name`, `created_
 
 -- ============================================================================
 -- VERIFICATION
--- SELECT r.role_name, p.name FROM role_permissions rp
+-- SELECT r.name, p.name FROM role_permissions rp
 -- JOIN roles r ON r.id = rp.role_id
 -- JOIN permissions p ON p.id = rp.permission_id
 -- WHERE p.name = 'create_service_request';
