@@ -5,6 +5,15 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
 
+// Global error handler to prevent blank pages from fatal errors
+set_error_handler(function(int $errno, string $errstr, string $errfile, int $errline): bool {
+    if (!(error_reporting() & $errno)) {
+        return false;
+    }
+    error_log("contracts/request.php error [$errno]: $errstr in $errfile:$errline");
+    return true;
+});
+
 $contract_id = isset($_GET['contract_id']) ? (int)$_GET['contract_id'] : 0;
 if ($contract_id <= 0) {
     pop('Invalid contract reference.', '/contracts/list.php', POP_DEFAULT_DELAY_MS, 'error');
@@ -14,14 +23,20 @@ if ($contract_id <= 0) {
 /* ===============================
    Fetch Contract
 ================================ */
-$stmt = $pdo->prepare("
-    SELECT sc.*, v.vendor_name
-    FROM service_contracts sc
-    JOIN vendors v ON sc.vendor_id = v.vendor_id
-    WHERE sc.contract_id = ? AND sc.status = 'ACTIVE'
-");
-$stmt->execute([$contract_id]);
-$contract = $stmt->fetch(PDO::FETCH_ASSOC);
+try {
+    $stmt = $pdo->prepare("
+        SELECT sc.*, v.vendor_name
+        FROM service_contracts sc
+        JOIN vendors v ON sc.vendor_id = v.vendor_id
+        WHERE sc.contract_id = ? AND sc.status = 'ACTIVE'
+    ");
+    $stmt->execute([$contract_id]);
+    $contract = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('contracts/request.php: contract fetch failed: ' . $e->getMessage());
+    pop('Unable to load contract details. Please try again.', '/contracts/list.php', POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
 
 if (!$contract) {
     pop('Contract not found or not active.', '/contracts/list.php', POP_DEFAULT_DELAY_MS, 'error');
@@ -31,13 +46,23 @@ if (!$contract) {
 $remaining = (float)$contract['total_value'] - (float)$contract['consumed_value'];
 
 /* Get user's branch */
-$branchStmt = $pdo->prepare("SELECT branch_id FROM users WHERE user_id = ?");
-$branchStmt->execute([$_SESSION['user_id']]);
-$userBranch = (int)$branchStmt->fetchColumn();
+try {
+    $branchStmt = $pdo->prepare("SELECT branch_id FROM users WHERE user_id = ?");
+    $branchStmt->execute([$_SESSION['user_id']]);
+    $userBranch = (int)$branchStmt->fetchColumn();
+} catch (Throwable $e) {
+    error_log('contracts/request.php: branch fetch failed: ' . $e->getMessage());
+    $userBranch = (int)($contract['branch_id'] ?? 0);
+}
 
 /* Generate next request number */
-$numStmt = $pdo->query("SELECT MAX(CAST(SUBSTRING(request_number, 3) AS UNSIGNED)) FROM procurement_requests");
-$lastNum = (int)$numStmt->fetchColumn();
+try {
+    $numStmt = $pdo->query("SELECT MAX(CAST(SUBSTRING(request_number, 3) AS UNSIGNED)) FROM procurement_requests WHERE request_number REGEXP '^PR[0-9]+$'");
+    $lastNum = (int)$numStmt->fetchColumn();
+} catch (Throwable $e) {
+    error_log('contracts/request.php: request number generation failed: ' . $e->getMessage());
+    $lastNum = 0;
+}
 $nextRequestNumber = 'PR' . str_pad($lastNum + 1, 3, '0', STR_PAD_LEFT);
 
 /* ===============================

@@ -23,25 +23,86 @@ function allowedTransitions(): array {
     return [
         'DRAFT'                  => ['SUBMITTED'],
         'SUBMITTED'              => ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE', 'DECLINED'],
-        'HOD_APPROVED'           => ['DIRECTOR_APPROVED', 'FUNDS_VERIFIED', 'GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE', 'COMMITMENT_APPROVED', 'COMMITMENTS_PENDING'],
-        'FUNDS_VERIFIED'         => ['DIRECTOR_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED', 'RFQ_LETTER_AVAILABLE', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED'],
-        'DIRECTOR_APPROVED'      => ['GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE'],
-        'GC_APPROVED'            => ['AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE'],
+        'HOD_APPROVED'           => ['DIRECTOR_APPROVED', 'FUNDS_VERIFIED', 'GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE', 'COMMITMENT_APPROVED', 'COMMITMENTS_PENDING',
+                                     // ← backward
+                                     'SUBMITTED'],
+        'FUNDS_VERIFIED'         => ['DIRECTOR_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED', 'RFQ_LETTER_AVAILABLE', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED',
+                                     // ← backward
+                                     'HOD_APPROVED', 'SUBMITTED'],
+        'DIRECTOR_APPROVED'      => ['GC_APPROVED', 'AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE',
+                                     // ← backward
+                                     'HOD_APPROVED', 'SUBMITTED'],
+        'GC_APPROVED'            => ['AWARDED', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE',
+                                     // ← backward
+                                     'DIRECTOR_APPROVED', 'HOD_APPROVED'],
         // RFQ Workflow Stages
-        'RFQ_LETTER_AVAILABLE'   => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED'],
-        'QUOTE_REVIEW_PENDING'   => ['QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED'],
-        'QUOTE_APPROVED'         => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PROCUREMENT_STAGE'],
-        'COMMITMENTS_PENDING'    => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'PROCUREMENT_STAGE'],
-        'COMMITMENT_APPROVED'    => ['PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED'],
-        'COMMITMENT_DECLINED'    => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'SUBMITTED'], // Can revise or resubmit
-        'PO_PENDING'             => ['INVOICE_RECEIVED', 'AWARDED'],
+        'RFQ_LETTER_AVAILABLE'   => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+                                     // ← backward
+                                     'GC_APPROVED', 'DIRECTOR_APPROVED', 'HOD_APPROVED', 'SUBMITTED'],
+        'QUOTE_REVIEW_PENDING'   => ['QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED',
+                                     // ← backward
+                                     'RFQ_LETTER_AVAILABLE'],
+        'QUOTE_APPROVED'         => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PROCUREMENT_STAGE',
+                                     // ← backward
+                                     'QUOTE_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
+        'COMMITMENTS_PENDING'    => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'PROCUREMENT_STAGE',
+                                     // ← backward
+                                     'QUOTE_APPROVED', 'FUNDS_VERIFIED'],
+        'COMMITMENT_APPROVED'    => ['PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED',
+                                     // ← backward (Finance can revert to re-check funds)
+                                     'COMMITMENTS_PENDING', 'FUNDS_VERIFIED'],
+        'COMMITMENT_DECLINED'    => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'SUBMITTED'],
+        'PO_PENDING'             => ['INVOICE_RECEIVED', 'AWARDED',
+                                     // ← backward
+                                     'COMMITMENT_APPROVED'],
         'INVOICE_RECEIVED'       => ['COMPLETED'],
         // Original stages (still supported for backward compatibility)
-        'PROCUREMENT_STAGE'      => ['EVALUATION_STAGE', 'QUOTE_REVIEW_PENDING', 'AWARDED'],
-        'EVALUATION_STAGE'       => ['COMMITTEE_RECOMMENDED', 'QUOTE_REVIEW_PENDING', 'AWARDED'],
-        'COMMITTEE_RECOMMENDED'  => ['GC_APPROVED', 'QUOTE_REVIEW_PENDING', 'AWARDED'],
+        'PROCUREMENT_STAGE'      => ['EVALUATION_STAGE', 'QUOTE_REVIEW_PENDING', 'AWARDED',
+                                     // ← backward
+                                     'GC_APPROVED', 'HOD_APPROVED', 'SUBMITTED'],
+        'EVALUATION_STAGE'       => ['COMMITTEE_RECOMMENDED', 'QUOTE_REVIEW_PENDING', 'AWARDED',
+                                     // ← backward
+                                     'PROCUREMENT_STAGE'],
+        'COMMITTEE_RECOMMENDED'  => ['GC_APPROVED', 'QUOTE_REVIEW_PENDING', 'AWARDED',
+                                     // ← backward
+                                     'EVALUATION_STAGE'],
         'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING'],
     ];
+}
+
+/**
+ * Roles permitted to trigger backward (revert) workflow transitions.
+ * These are roles with oversight authority — they may move a request
+ * back to a prior stage for correction without fully rejecting it.
+ */
+function allowedRevertRoles(): array {
+    return ['HOD', 'Branch Head', 'Director HRM&A', 'Deputy Government Chemist',
+            'Government Chemist', 'Finance Officer', 'Procurement Officer',
+            'Admin', 'SuperAdmin'];
+}
+
+/**
+ * Determine whether a transition is a backward (revert) move.
+ * Uses the natural ordering of statuses defined in the standard pipeline.
+ */
+function isBackwardTransition(string $from, string $to): bool {
+    // Terminal statuses are never "backward" — they are always forward-only
+    if (in_array(strtoupper($to), ['DECLINED', 'CANCELLED', 'COMPLETED'], true)) {
+        return false;
+    }
+    $order = [
+        'DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED',
+        'FUNDS_VERIFIED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE',
+        'QUOTE_REVIEW_PENDING', 'QUOTE_APPROVED', 'EVALUATION_STAGE',
+        'COMMITTEE_RECOMMENDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED',
+        'PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED', 'COMPLETED',
+    ];
+    $fromIdx = array_search(strtoupper($from), $order);
+    $toIdx   = array_search(strtoupper($to), $order);
+    if ($fromIdx === false || $toIdx === false) {
+        return false;
+    }
+    return $toIdx < $fromIdx;
 }
 
 function canTransition(string $current, string $next): bool {

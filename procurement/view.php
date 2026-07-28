@@ -1194,6 +1194,27 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     <?php endif; ?>
 
                     <?php
+                    // Revert Stage — available to authorized roles when backward transitions exist
+                    $canRevertStage = in_array($role, allowedRevertRoles(), true)
+                        && !in_array($current, ['DRAFT', 'COMPLETED', 'DECLINED', 'CANCELLED'], true);
+                    $revertTargets = [];
+                    if ($canRevertStage) {
+                        foreach (allowedTransitions()[$current] ?? [] as $t) {
+                            if (isBackwardTransition($current, $t)) {
+                                $revertTargets[] = $t;
+                            }
+                        }
+                        $canRevertStage = !empty($revertTargets);
+                    }
+                    ?>
+                    <?php if ($canRevertStage): ?>
+                        <button type="button" class="btn btn-outline-secondary"
+                                data-bs-toggle="modal" data-bs-target="#revertStageModal">
+                            <i class="bi bi-skip-backward me-1"></i>Revert Stage
+                        </button>
+                    <?php endif; ?>
+
+                    <?php
                     // Request cancellation — allowed at any non-terminal stage
                     $canCancelRequest = canTransition($current, 'CANCELLED')
                         && (
@@ -1952,5 +1973,49 @@ function timelineMeta(string $action): array {
         </form>
     </div>
 </div>
+
+<?php if ($canRevertStage ?? false): ?>
+<div class="modal fade" id="revertStageModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="POST" action="/procurement/revert_status.php" class="modal-content">
+            <div class="modal-header bg-secondary text-white">
+                <h5 class="modal-title"><i class="bi bi-skip-backward me-2"></i>Revert Workflow Stage</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" name="id" value="<?= $request['request_id'] ?>">
+                <div class="alert alert-warning small mb-3">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Reverting a workflow stage moves the request backwards. Any approvals granted
+                    for stages after the target will need to be re-completed.
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Revert to Stage</label>
+                    <select name="target_status" class="form-select" required>
+                        <option value="">— Select target stage —</option>
+                        <?php foreach ($revertTargets ?? [] as $t): ?>
+                        <option value="<?= htmlspecialchars($t) ?>">
+                            <?= htmlspecialchars(str_replace('_', ' ', $t)) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label fw-bold">Reason <span class="text-danger">*</span></label>
+                    <textarea name="reason" class="form-control" rows="4" required
+                              placeholder="Explain why this request is being moved back to a prior stage..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-secondary"
+                        onclick="return confirm('Revert this request to the selected stage?')">
+                    <i class="bi bi-skip-backward me-1"></i>Revert Stage
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
