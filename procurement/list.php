@@ -367,8 +367,6 @@ $branches = $pdo->query("SELECT branch_id, branch_name FROM branches ORDER BY br
 
 /* Distinct budget years for filter dropdown */
 $budgetYears = $pdo->query("SELECT DISTINCT YEAR(request_date) AS yr FROM procurement_requests WHERE request_date IS NOT NULL ORDER BY yr DESC")->fetchAll(PDO::FETCH_COLUMN);
-
-require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
 ?>
 
 <style>
