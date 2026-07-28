@@ -489,9 +489,74 @@ function formatJamaicanDate($datetime, $format = 'd M Y'): string {
     }
 }
 
+
 /**
- * Normalize currency codes - fixes typos and ensures valid currency codes
- * 
+ * Return a color-coded HTML status badge for a procurement request status.
+ *
+ * @param string $status  Value of procurement_requests.status
+ * @return string         Safe inline HTML <span> badge
+ */
+function statusBadge(string $status): string {
+    $map = [
+        'DRAFT'                 => ['#f5f5f5', '#666',    '📝'],
+        'SUBMITTED'             => ['#fff3cd', '#856404', '📤'],
+        'HOD_APPROVED'          => ['#cfe2ff', '#084298', '✅'],
+        'FUNDS_VERIFIED'        => ['#d1e7dd', '#0a3622', '💰'],
+        'DIRECTOR_APPROVED'     => ['#cfe2ff', '#084298', '✅'],
+        'GC_APPROVED'           => ['#d1e7dd', '#0a3622', '✅'],
+        'RFQ_LETTER_AVAILABLE'  => ['#d0f0fd', '#0c566b', '📬'],
+        'QUOTE_REVIEW_PENDING'  => ['#fff3cd', '#856404', '🔍'],
+        'QUOTE_APPROVED'        => ['#cfe2ff', '#084298', '✔️'],
+        'COMMITMENTS_PENDING'   => ['#fff3cd', '#856404', '⏳'],
+        'COMMITMENT_APPROVED'   => ['#d1e7dd', '#0a3622', '📋'],
+        'COMMITMENT_DECLINED'   => ['#f8d7da', '#842029', '❌'],
+        'PO_PENDING'            => ['#d1e7dd', '#0a3622', '📄'],
+        'INVOICE_RECEIVED'      => ['#cfe2ff', '#084298', '🧾'],
+        'PROCUREMENT_STAGE'     => ['#e2e3e5', '#333',    '⚙️'],
+        'EVALUATION_STAGE'      => ['#e2e3e5', '#333',    '📊'],
+        'COMMITTEE_RECOMMENDED' => ['#cfe2ff', '#084298', '👥'],
+        'AWARDED'               => ['#d1e7dd', '#0a3622', '🏆'],
+        'COMPLETED'             => ['#212529', '#fff',    '✓'],
+        'DECLINED'              => ['#f8d7da', '#842029', '❌'],
+        'CANCELLED'             => ['#f8d7da', '#842029', '🚫'],
+    ];
+
+    $status = strtoupper($status);
+    [$bg, $color, $icon] = $map[$status] ?? ['#e2e3e5', '#333', '📌'];
+
+    $label = match($status) {
+        'DRAFT'                 => 'Draft',
+        'SUBMITTED'             => 'Submitted',
+        'HOD_APPROVED'          => 'HOD Approved',
+        'FUNDS_VERIFIED'        => 'Funds Verified',
+        'DIRECTOR_APPROVED'     => 'Director Approved',
+        'GC_APPROVED'           => 'GC Approved',
+        'RFQ_LETTER_AVAILABLE'  => 'RFQ Letters',
+        'QUOTE_REVIEW_PENDING'  => 'Quote Review',
+        'QUOTE_APPROVED'        => 'Quote Selected',
+        'COMMITMENTS_PENDING'   => 'Commitment Form',
+        'COMMITMENT_APPROVED'   => 'Committed',
+        'COMMITMENT_DECLINED'   => 'Commitment Declined',
+        'PO_PENDING'            => 'PO Created',
+        'INVOICE_RECEIVED'      => 'Invoice Received',
+        'PROCUREMENT_STAGE'     => 'Procurement',
+        'EVALUATION_STAGE'      => 'Evaluation',
+        'COMMITTEE_RECOMMENDED' => 'Committee Rec.',
+        'AWARDED'               => 'Awarded',
+        'COMPLETED'             => 'Completed',
+        'DECLINED'              => 'Declined',
+        'CANCELLED'             => 'Cancelled',
+        default                 => str_replace('_', ' ', $status),
+    };
+
+    $safeLabel = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+    return "<span style=\"display:inline-flex;align-items:center;gap:0.25rem;background:{$bg};"
+         . "color:{$color};padding:0.3rem 0.65rem;border-radius:20px;font-size:0.78rem;font-weight:600;\">"
+         . "{$icon} {$safeLabel}</span>";
+}
+
+
+/**
  * Common typos fixed:
  * - USB → USD
  * - Defaults to JMD if invalid

@@ -153,7 +153,26 @@ function getAwardAndBeyondStatuses(): array {
  * @param string   $currentStatus Current status of the request (uppercase)
  * @return bool
  */
-function isSkipRfqPath(string $requestType, $rfqId, string $currentStatus): bool {
+/**
+ * Determine whether a procurement request used the "Proceed Without RFQ" path.
+ *
+ * Accepts an optional fourth argument: the full procurement_requests row array.
+ * When supplied and the row contains workflow_path = 'NON_PO_SKIP_RFQ', that flag
+ * takes precedence and the function returns true regardless of the other arguments.
+ * This covers cases where Finance explicitly chose "No PO Required" at commitment
+ * creation time but the request may already have an RFQ row from a prior attempt.
+ *
+ * @param string      $requestType  Value of procurement_requests.request_type
+ * @param int|bool    $rfqId        ID of the linked rfqs row, or falsy if none
+ * @param string      $currentStatus Current status of the request (uppercase)
+ * @param array|null  $requestRow   Optional full request row for workflow_path check
+ * @return bool
+ */
+function isSkipRfqPath(string $requestType, $rfqId, string $currentStatus, ?array $requestRow = null): bool {
+    // Explicit Non-PO path flag takes priority over the heuristic
+    if ($requestRow !== null && ($requestRow['workflow_path'] ?? '') === 'NON_PO_SKIP_RFQ') {
+        return true;
+    }
     return $requestType === 'REGULAR'
         && !$rfqId
         && in_array(strtoupper($currentStatus), getAwardAndBeyondStatuses(), true);
@@ -1141,6 +1160,77 @@ function getServiceContractPipeline(): array {
         ['status' => 'INVOICE_RECEIVED', 'label' => 'Invoiced', 'icon' => '🧾'],
         ['status' => 'COMPLETED', 'label' => 'Paid', 'icon' => '✓'],
     ];
+}
+
+
+/**
+ * Resolve the workflow path for a request row.
+ *
+ * @param array $request Row from procurement_requests (must include workflow_path)
+ * @return string 'STANDARD' or 'NON_PO_SKIP_RFQ'
+ */
+function getWorkflowPath(array $request): string {
+    return ($request['workflow_path'] ?? 'STANDARD') === 'NON_PO_SKIP_RFQ'
+        ? 'NON_PO_SKIP_RFQ'
+        : 'STANDARD';
+}
+
+/**
+ * Return a color-coded HTML badge describing the workflow path for a request.
+ *
+ * @param array $request Row from procurement_requests (must include workflow_path)
+ * @return string Safe HTML badge string
+ */
+function getWorkflowBadgeHtml(array $request): string {
+    if (getWorkflowPath($request) === 'NON_PO_SKIP_RFQ') {
+        return '<span style="display:inline-flex;align-items:center;gap:0.3rem;background:#fff3cd;color:#856404;'
+             . 'border:1px solid #ffc107;padding:0.3rem 0.75rem;border-radius:20px;font-size:0.78rem;font-weight:600;">'
+             . '⚡ Non-PO / Skip RFQ Path</span>';
+    }
+    return '<span style="display:inline-flex;align-items:center;gap:0.3rem;background:#cfe2ff;color:#084298;'
+         . 'border:1px solid #b6d4fe;padding:0.3rem 0.75rem;border-radius:20px;font-size:0.78rem;font-weight:600;">'
+         . '📋 Standard Procurement Path</span>';
+}
+
+/**
+ * Apply the Non-PO / Skip-RFQ workflow after a commitment is created with po_required = 'NO'.
+ *
+ * Business rules:
+ *   1. Sets workflow_path = 'NON_PO_SKIP_RFQ' on the request.
+ *   2. Sets status = 'AWARDED' (the Skip-RFQ workflow entry point).
+ *   3. Ensures requires_rfq = 0 so no RFQ stages are triggered.
+ *   4. Writes full audit entries for compliance tracing.
+ *
+ * Must be called inside an active transaction; the caller is responsible for
+ * commit/rollback.
+ *
+ * @param PDO $pdo       Active database connection (transaction already open)
+ * @param int $requestId The procurement_requests.request_id to update
+ * @return void
+ */
+function applyNonPoWorkflow(PDO $pdo, int $requestId): void {
+    $pdo->prepare("
+        UPDATE procurement_requests
+        SET status        = 'AWARDED',
+            workflow_path = 'NON_PO_SKIP_RFQ',
+            requires_rfq  = 0,
+            updated_at    = NOW()
+        WHERE request_id = ?
+    ")->execute([$requestId]);
+
+    logAudit(
+        $pdo,
+        'procurement_requests',
+        $requestId,
+        'NON_PO_WORKFLOW_APPLIED',
+        'PO not required — request auto-routed to Skip-RFQ workflow (status → AWARDED, RFQ bypassed)'
+    );
+    logRequestTimeline(
+        $pdo,
+        $requestId,
+        'NON_PO_WORKFLOW_APPLIED',
+        'Finance Officer selected "No PO Required". RFQ and PO creation stages bypassed. Request routed directly to post-award disbursement workflow.'
+    );
 }
 
 ?>

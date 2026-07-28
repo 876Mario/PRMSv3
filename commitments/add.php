@@ -336,6 +336,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $commitmentDate  = trim($_POST['commitment_date'] ?? '');
             $commitmentTotal = $_POST['commitment_total'] ?? null;
             $gfmsNumber      = trim($_POST['gfms_commitment_number'] ?? '');
+            $poRequired      = strtoupper(trim($_POST['po_required'] ?? ''));
             
             if (empty($commitmentDate)) {
                 throw new Exception("Commitment date is required.");
@@ -343,6 +344,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if (empty($commitmentTotal) || (float)$commitmentTotal <= 0) {
                 throw new Exception("Commitment amount must be greater than zero.");
+            }
+
+            if (!in_array($poRequired, ['YES', 'NO'], true)) {
+                throw new Exception("Please indicate whether a Purchase Order is required (Yes or No).");
             }
             
             // Validate GFMS number if provided
@@ -446,8 +451,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $stmt = $pdo->prepare("
                 INSERT INTO commitments
-                (request_id, commitment_number, commitment_date, commitment_total, gfms_commitment_number, document_path, status, approved_at, commitment_type, contract_id)
-                VALUES (?, ?, ?, ?, ?, ?, 'closed', NOW(), 'ORIGINAL', ?)
+                (request_id, commitment_number, commitment_date, commitment_total, gfms_commitment_number, document_path, status, approved_at, commitment_type, contract_id, po_required)
+                VALUES (?, ?, ?, ?, ?, ?, 'closed', NOW(), 'ORIGINAL', ?, ?)
             ");
             $stmt->execute([
                 $request_id,
@@ -456,16 +461,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 (float)$commitmentTotal,
                 !empty($gfmsNumber) ? $gfmsNumber : null,
                 $documentPath,
-                $contractIdForCommitment
+                $contractIdForCommitment,
+                $poRequired
             ]);
             $commitment_id = $pdo->lastInsertId();
             
-            // Update request status to COMMITMENT_APPROVED
-            $pdo->prepare("
-                UPDATE procurement_requests
-                SET status = 'COMMITMENT_APPROVED'
-                WHERE request_id = ?
-            ")->execute([$request_id]);
+            // Update request status: Non-PO path routes to AWARDED; standard path to COMMITMENT_APPROVED
+            if ($poRequired === 'NO') {
+                applyNonPoWorkflow($pdo, $request_id);
+            } else {
+                // Standard path: set workflow_path = STANDARD and advance to COMMITMENT_APPROVED
+                $pdo->prepare("
+                    UPDATE procurement_requests
+                    SET status        = 'COMMITMENT_APPROVED',
+                        workflow_path = 'STANDARD'
+                    WHERE request_id = ?
+                ")->execute([$request_id]);
+            }
             
             // Store scanned commitment form if uploaded
             if ($formDocPath) {
@@ -477,9 +489,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             $isServiceContract = ($reqTypeData && $reqTypeData['request_type'] === 'SERVICE_CONTRACT');
-            $nextStepMsg = $isServiceContract
-                ? "Finance Officer created commitment $commitmentNumber. Ready for invoice submission."
-                : "Finance Officer created commitment $commitmentNumber in GFMS and uploaded commitment document. Ready for PO creation.";
+            if ($poRequired === 'NO') {
+                $nextStepMsg = "Finance Officer created commitment $commitmentNumber. PO not required — request routed to Skip-RFQ workflow for payment/disbursement.";
+            } elseif ($isServiceContract) {
+                $nextStepMsg = "Finance Officer created commitment $commitmentNumber. Ready for invoice submission.";
+            } else {
+                $nextStepMsg = "Finance Officer created commitment $commitmentNumber in GFMS and uploaded commitment document. Ready for PO creation.";
+            }
             
             logAudit($pdo, 'commitments', $commitment_id, 'CREATE',
                     "Commitment created by Finance Officer from GFMS and document uploaded");
@@ -490,11 +506,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Notify about commitment creation — email Procurement Officers
             require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
-            notifyCommitmentAction($request_id, $commitmentNumber, 'APPROVED', 'Funds verified and commitment created from GFMS. Ready for PO creation.');
-            notifyProcurementOfCommitment($request_id, $commitmentNumber);
+            if ($poRequired === 'NO') {
+                notifyCommitmentAction($request_id, $commitmentNumber, 'APPROVED', 'Commitment created. No PO required — request routed to Skip-RFQ disbursement workflow.');
+            } else {
+                notifyCommitmentAction($request_id, $commitmentNumber, 'APPROVED', 'Funds verified and commitment created from GFMS. Ready for PO creation.');
+                notifyProcurementOfCommitment($request_id, $commitmentNumber);
+            }
+
+            $successMsg = $poRequired === 'NO'
+                ? "Commitment created successfully. No PO required — request has been routed to the Skip-RFQ disbursement workflow."
+                : "Commitment created in GFMS and document uploaded successfully. Procurement has been notified. Request moves to PO creation stage.";
             
             pop(
-                "Commitment created in GFMS and document uploaded successfully. Procurement has been notified. Request moves to PO creation stage.",
+                $successMsg,
                 "/commitments/view.php?commitment_id=" . $commitment_id,
                 2500,
                 "success"
@@ -775,6 +799,24 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 <form method="post" enctype="multipart/form-data">
                     <input type="hidden" name="action" value="upload_commitment">
                     
+                    <!-- Is PO Required? -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-question-circle text-primary"></i>
+                            <span class="text-danger">*</span> Is Purchase Order (PO) Required?
+                        </label>
+                        <select name="po_required" id="po_required_select" class="form-select form-select-lg" required onchange="updatePoWorkflowInfo(this.value)">
+                            <option value="">— Select —</option>
+                            <option value="YES">Yes – Standard Procurement Workflow (RFQ → PO → Invoice)</option>
+                            <option value="NO">No – Skip RFQ / Non-PO Workflow (Direct to disbursement)</option>
+                        </select>
+                        <small class="text-muted d-block mt-2">
+                            Selecting <strong>No</strong> will automatically bypass RFQ and PO creation steps and route the request directly to payment/disbursement.
+                        </small>
+                        <!-- Dynamic info panel -->
+                        <div id="po_workflow_info" class="mt-3" style="display:none;"></div>
+                    </div>
+
                     <!-- Commitment Date -->
                     <div class="mb-4">
                         <label for="commitment_date" class="form-label">
@@ -875,10 +917,37 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
             <?php endif; ?>
             <li><strong>Step 2 (Procurement/Finance):</strong> Optionally upload a scanned copy of the commitment form. This step can be skipped — you can proceed without it.</li>
             <li><strong>Step 3 (Finance):</strong> Create the commitment in GFMS system, then upload the commitment document here to complete the process</li>
-            <li><strong>After creation:</strong> Procurement will be notified automatically to create the PO</li>
+            <li><strong>After creation:</strong> If PO Required = Yes, Procurement will be notified to create the PO. If No, the request is routed directly to the disbursement workflow.</li>
         </ul>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 </div>
+
+<script>
+function updatePoWorkflowInfo(val) {
+    var panel = document.getElementById('po_workflow_info');
+    if (!panel) return;
+    if (val === 'YES') {
+        panel.style.display = 'block';
+        panel.innerHTML = '<div class="alert alert-primary mb-0">'
+            + '<strong>📋 Standard Procurement Path selected.</strong><br>'
+            + 'After commitment creation the request will advance to <strong>Commitment Approved</strong>. '
+            + 'Procurement will be notified to create a Purchase Order, then upload the vendor invoice, and record payment.'
+            + '</div>';
+    } else if (val === 'NO') {
+        panel.style.display = 'block';
+        panel.innerHTML = '<div class="alert alert-warning mb-0">'
+            + '<strong>⚡ Non-PO / Skip RFQ Path selected.</strong><br>'
+            + 'After commitment creation the following steps are <strong>automatically bypassed</strong>: '
+            + 'RFQ Process, Supplier Selection, Purchase Order Creation, PO Approval.<br>'
+            + 'The request will be routed directly to <strong>Awarded</strong> status for payment/disbursement processing. '
+            + 'A full audit entry will be recorded for compliance.'
+            + '</div>';
+    } else {
+        panel.style.display = 'none';
+        panel.innerHTML = '';
+    }
+}
+</script>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
