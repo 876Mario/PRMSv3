@@ -14,7 +14,7 @@ INSERT IGNORE INTO `permissions` (`name`, `description`) VALUES
 -- 2. Grant create_service_request to Finance Officer and Procurement Officer
 --    (they already have manage_contracts and should be able to create requests)
 INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
-SELECT r.role_id, p.id
+SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
 WHERE r.role_name IN ('Finance Officer', 'Procurement Officer', 'HOD', 'Branch Head',
@@ -28,7 +28,7 @@ INSERT IGNORE INTO `page_permissions` (`page_path`, `permission_name`, `created_
 -- ============================================================================
 -- VERIFICATION
 -- SELECT r.role_name, p.name FROM role_permissions rp
--- JOIN roles r ON r.role_id = rp.role_id
+-- JOIN roles r ON r.id = rp.role_id
 -- JOIN permissions p ON p.id = rp.permission_id
 -- WHERE p.name = 'create_service_request';
 -- ============================================================================

@@ -82,7 +82,7 @@ INSERT IGNORE INTO `permissions` (`name`, `description`) VALUES
 -- 7. Assign permissions to roles
 -- Finance Officer, Procurement Officer, Admin, SuperAdmin get manage_contracts
 INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
-SELECT r.role_id, p.id
+SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
 WHERE r.role_name IN ('Finance Officer', 'Procurement Officer', 'Admin', 'SuperAdmin')
@@ -90,7 +90,7 @@ AND p.name IN ('view_contracts', 'manage_contracts', 'create_service_request');
 
 -- All staff can view contracts
 INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
-SELECT r.role_id, p.id
+SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
 WHERE p.name = 'view_contracts'
@@ -98,7 +98,7 @@ AND r.role_name NOT IN ('Finance Officer', 'Procurement Officer', 'Admin', 'Supe
 
 -- Requestors can create service requests
 INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
-SELECT r.role_id, p.id
+SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
 WHERE p.name = 'create_service_request'

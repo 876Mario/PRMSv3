@@ -126,14 +126,14 @@ INSERT IGNORE INTO `permissions` (`name`, `description`) VALUES
 
 -- 7. Assign permissions to roles
 INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
-SELECT r.role_id, p.id
+SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
 WHERE r.role_name IN ('Finance Officer', 'Admin', 'SuperAdmin', 'Property Management Officer')
   AND p.name IN ('view_asset_depreciation', 'manage_asset_depreciation');
 
 INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
-SELECT r.role_id, p.id
+SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
 WHERE p.name = 'view_asset_depreciation'
