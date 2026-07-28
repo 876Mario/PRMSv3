@@ -63,6 +63,35 @@ if ($isAssetDomain) {
     } catch (Throwable $e) { /* table may not be migrated yet */ }
 }
 
+// Active depreciation schedule (asset domain only)
+$depSchedule = null;
+$depPeriods  = [];
+$depRecorded = 0;
+if ($isAssetDomain && has_permission('view_asset_depreciation')) {
+    try {
+        $dsStmt = $pdo->prepare("
+            SELECT s.*,
+                   (SELECT COUNT(*) FROM asset_depreciation_periods p WHERE p.schedule_id = s.schedule_id AND p.is_recorded = 1) AS recorded_periods,
+                   (SELECT COUNT(*) FROM asset_depreciation_periods p WHERE p.schedule_id = s.schedule_id) AS total_periods
+            FROM asset_depreciation_schedules s
+            WHERE s.item_id = ? AND s.is_active = 1
+            ORDER BY s.schedule_id DESC LIMIT 1
+        ");
+        $dsStmt->execute([$itemId]);
+        $depSchedule = $dsStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($depSchedule) {
+            $dpStmt = $pdo->prepare("
+                SELECT * FROM asset_depreciation_periods
+                WHERE schedule_id = ?
+                ORDER BY period_number ASC LIMIT 5
+            ");
+            $dpStmt->execute([$depSchedule['schedule_id']]);
+            $depPeriods  = $dpStmt->fetchAll(PDO::FETCH_ASSOC);
+            $depRecorded = (int)$depSchedule['recorded_periods'];
+        }
+    } catch (Throwable $e) { /* depreciation tables may not exist yet */ }
+}
+
 require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 ?>
 
@@ -694,5 +723,129 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     </div>
     <?php endif; ?>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════
+     DEPRECIATION MODULE (Asset domain only)
+═══════════════════════════════════════════════════════ -->
+<?php if ($isAssetDomain && has_permission('view_asset_depreciation')): ?>
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-graph-down-arrow me-2"></i>Asset Depreciation</h5>
+        <div class="d-flex gap-2">
+            <?php if (has_permission('manage_asset_depreciation')): ?>
+            <a href="/inventory/depreciation/add.php?item_id=<?= $itemId ?>"
+               class="btn btn-sm btn-outline-light">
+                <i class="bi bi-<?= $depSchedule ? 'arrow-repeat' : 'plus-circle' ?> me-1"></i>
+                <?= $depSchedule ? 'Regenerate' : 'Create' ?> Schedule
+            </a>
+            <?php endif; ?>
+            <?php if ($depSchedule): ?>
+            <a href="/inventory/depreciation/schedule.php?item_id=<?= $itemId ?>"
+               class="btn btn-sm btn-outline-light">
+                <i class="bi bi-table me-1"></i>Full Schedule
+            </a>
+            <?php endif; ?>
+        </div>
+    </div>
+    <div class="card-body">
+        <?php if (!$depSchedule): ?>
+        <div class="text-center py-4 text-muted">
+            <i class="bi bi-graph-down-arrow fs-2 d-block mb-2"></i>
+            No depreciation schedule yet.
+            <?php if (has_permission('manage_asset_depreciation')): ?>
+            <a href="/inventory/depreciation/add.php?item_id=<?= $itemId ?>">Create one →</a>
+            <?php endif; ?>
+        </div>
+        <?php else: ?>
+        <!-- Schedule summary -->
+        <div class="row g-3 mb-4">
+            <?php
+            $depCost        = (float)$depSchedule['cost_basis'];
+            $depSalvage     = (float)$depSchedule['salvage_value'];
+            $depAccumulated = (float)($assetDetail['accumulated_depreciation'] ?? 0);
+            $depBookValue   = (float)($assetDetail['carrying_value'] ?? ($depCost - $depAccumulated));
+            $depPct         = $depCost > 0 ? min(100, round($depAccumulated / $depCost * 100)) : 0;
+            $depTotalPeriods= (int)$depSchedule['total_periods'];
+            ?>
+            <div class="col-md-3 col-6">
+                <div class="card border-0 bg-light text-center p-3">
+                    <small class="text-muted d-block">Method</small>
+                    <strong><?= str_replace('_', ' ', $depSchedule['method']) ?></strong>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card border-0 bg-light text-center p-3">
+                    <small class="text-muted d-block">Useful Life</small>
+                    <strong><?= $depSchedule['useful_life_years'] ? $depSchedule['useful_life_years'] . ' years' : '—' ?></strong>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card border-0 bg-light text-center p-3">
+                    <small class="text-muted d-block">Accumulated Depreciation</small>
+                    <strong class="text-danger">JMD <?= number_format($depAccumulated, 2) ?></strong>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card border-0 bg-light text-center p-3">
+                    <small class="text-muted d-block">Remaining Book Value</small>
+                    <strong class="text-success">JMD <?= number_format($depBookValue, 2) ?></strong>
+                </div>
+            </div>
+        </div>
+        <!-- Progress bar -->
+        <div class="mb-3">
+            <div class="d-flex justify-content-between small text-muted mb-1">
+                <span><?= $depRecorded ?>/<?= $depTotalPeriods ?> periods recorded</span>
+                <span><?= $depPct ?>% depreciated</span>
+            </div>
+            <div class="progress" style="height:10px; border-radius:5px;">
+                <div class="progress-bar <?= $depPct >= 100 ? 'bg-success' : 'bg-primary' ?>"
+                     style="width:<?= $depPct ?>%;"></div>
+            </div>
+        </div>
+        <!-- First 5 periods preview -->
+        <?php if (!empty($depPeriods)): ?>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-secondary">
+                    <tr>
+                        <th>Year</th>
+                        <th>Period End</th>
+                        <th class="text-end">Charge</th>
+                        <th class="text-end">Accumulated</th>
+                        <th class="text-end">Book Value</th>
+                        <th class="text-center">Posted</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($depPeriods as $dp): ?>
+                    <tr class="<?= $dp['is_recorded'] ? 'table-success-subtle' : '' ?>">
+                        <td class="fw-bold"><?= $dp['period_number'] ?></td>
+                        <td><?= date('d M Y', strtotime($dp['period_end_date'])) ?></td>
+                        <td class="text-end text-danger">JMD <?= number_format((float)$dp['depreciation_charge'], 2) ?></td>
+                        <td class="text-end">JMD <?= number_format((float)$dp['accumulated_depreciation'], 2) ?></td>
+                        <td class="text-end fw-bold">JMD <?= number_format((float)$dp['book_value_end'], 2) ?></td>
+                        <td class="text-center">
+                            <?= $dp['is_recorded']
+                                ? '<span class="badge bg-success">✓</span>'
+                                : '<span class="badge bg-secondary">—</span>' ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php if ($depTotalPeriods > 5): ?>
+        <div class="text-center mt-2">
+            <a href="/inventory/depreciation/schedule.php?item_id=<?= $itemId ?>" class="btn btn-sm btn-outline-secondary">
+                View All <?= $depTotalPeriods ?> Periods →
+            </a>
+        </div>
+        <?php endif; ?>
+        <?php endif; ?>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/footer.php'; ?>

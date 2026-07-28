@@ -220,14 +220,14 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
     <!-- ACTIONS & HISTORY -->
     <div class="col-lg-5">
         <!-- Actions -->
-        <?php if (has_permission('manage_contracts')): ?>
+        <?php if (has_permission('manage_contracts') || has_permission('create_service_request')): ?>
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-white border-bottom">
                 <h6 class="mb-0" style="font-weight: 600;">⚡ Actions</h6>
             </div>
             <div class="card-body">
                 <div class="d-grid gap-2">
-                    <?php if ($contract['status'] === 'ACTIVE'): ?>
+                    <?php if ($contract['status'] === 'ACTIVE' && has_permission('create_service_request')): ?>
                     <a href="/contracts/request.php?contract_id=<?= $contract_id ?>" class="btn btn-success">
                         <i class="bi bi-plus-circle me-1"></i>New Payment Request
                     </a>
