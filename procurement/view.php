@@ -611,7 +611,8 @@ $badge = $badgeMap[$status] ?? ['secondary', 'bi-question-circle'];
                         <a href="/contracts/view.php?id=<?= (int)$serviceContract['contract_id'] ?>" class="text-decoration-none">
                             <h5 class="mb-0 fw-bold" style="color:#1a237e;"><?= htmlspecialchars($serviceContract['contract_number']) ?></h5>
                         </a>
-                        <small class="text-muted"><?= htmlspecialchars(substr($serviceContract['contract_title'] ?? '', 0, 25)) ?></small>
+                        <?php $scTitle = $serviceContract['contract_title'] ?? ''; ?>
+                        <small class="text-muted"><?= htmlspecialchars(mb_strlen($scTitle) > 30 ? mb_substr($scTitle, 0, 30) . '…' : $scTitle) ?></small>
                     <?php else: ?>
                         <h5 class="mb-0 text-muted">&mdash;</h5>
                     <?php endif; ?>
