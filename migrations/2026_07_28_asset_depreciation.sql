@@ -129,7 +129,7 @@ INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
-WHERE r.role_name IN ('Finance Officer', 'Admin', 'SuperAdmin', 'Property Management Officer')
+WHERE r.name IN ('Finance Officer', 'Admin', 'SuperAdmin', 'Property Management Officer')
   AND p.name IN ('view_asset_depreciation', 'manage_asset_depreciation');
 
 INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
@@ -137,7 +137,7 @@ SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
 WHERE p.name = 'view_asset_depreciation'
-  AND r.role_name NOT IN ('Finance Officer', 'Admin', 'SuperAdmin', 'Property Management Officer');
+  AND r.name NOT IN ('Finance Officer', 'Admin', 'SuperAdmin', 'Property Management Officer');
 
 -- 8. Page permissions for depreciation module
 INSERT IGNORE INTO `page_permissions` (`page_path`, `permission_name`, `created_at`) VALUES

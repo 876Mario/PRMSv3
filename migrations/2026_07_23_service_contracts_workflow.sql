@@ -46,31 +46,31 @@ CREATE TABLE IF NOT EXISTS `service_contracts` (
 
 -- 3. Add contract_id to commitments table (optional link to service contract)
 ALTER TABLE `commitments`
-ADD COLUMN `contract_id` INT(11) DEFAULT NULL COMMENT 'Link to service contract (for SERVICE_CONTRACT requests)'
+ADD COLUMN IF NOT EXISTS `contract_id` INT(11) DEFAULT NULL COMMENT 'Link to service contract (for SERVICE_CONTRACT requests)'
 AFTER `document_path`;
 
 ALTER TABLE `commitments`
-ADD KEY `idx_contract` (`contract_id`);
+ADD KEY IF NOT EXISTS `idx_contract` (`contract_id`);
 
 -- 4. Modify invoices table: make po_id nullable, add commitment_id and contract_id
 ALTER TABLE `invoices`
 MODIFY COLUMN `po_id` INT(11) DEFAULT NULL COMMENT 'PO reference (NULL for service contract invoices)';
 
 ALTER TABLE `invoices`
-ADD COLUMN `commitment_id` INT(11) DEFAULT NULL COMMENT 'Direct commitment link (for SERVICE_CONTRACT invoices without PO)'
+ADD COLUMN IF NOT EXISTS `commitment_id` INT(11) DEFAULT NULL COMMENT 'Direct commitment link (for SERVICE_CONTRACT invoices without PO)'
 AFTER `po_id`;
 
 ALTER TABLE `invoices`
-ADD COLUMN `contract_id` INT(11) DEFAULT NULL COMMENT 'Link to service contract'
+ADD COLUMN IF NOT EXISTS `contract_id` INT(11) DEFAULT NULL COMMENT 'Link to service contract'
 AFTER `commitment_id`;
 
 ALTER TABLE `invoices`
-ADD KEY `idx_commitment` (`commitment_id`),
-ADD KEY `idx_contract` (`contract_id`);
+ADD KEY IF NOT EXISTS `idx_commitment` (`commitment_id`),
+ADD KEY IF NOT EXISTS `idx_contract` (`contract_id`);
 
 -- 5. Add contract_id to procurement_requests for linking
 ALTER TABLE `procurement_requests`
-ADD COLUMN `contract_id` INT(11) DEFAULT NULL COMMENT 'Link to service contract (for SERVICE_CONTRACT type)'
+ADD COLUMN IF NOT EXISTS `contract_id` INT(11) DEFAULT NULL COMMENT 'Link to service contract (for SERVICE_CONTRACT type)'
 AFTER `usd_rate`;
 
 -- 6. Add permissions for service contracts
@@ -85,7 +85,7 @@ INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
-WHERE r.role_name IN ('Finance Officer', 'Procurement Officer', 'Admin', 'SuperAdmin')
+WHERE r.name IN ('Finance Officer', 'Procurement Officer', 'Admin', 'SuperAdmin')
 AND p.name IN ('view_contracts', 'manage_contracts', 'create_service_request');
 
 -- All staff can view contracts
@@ -94,7 +94,7 @@ SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
 WHERE p.name = 'view_contracts'
-AND r.role_name NOT IN ('Finance Officer', 'Procurement Officer', 'Admin', 'SuperAdmin');
+AND r.name NOT IN ('Finance Officer', 'Procurement Officer', 'Admin', 'SuperAdmin');
 
 -- Requestors can create service requests
 INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
@@ -102,7 +102,7 @@ SELECT r.id, p.id
 FROM roles r
 CROSS JOIN permissions p
 WHERE p.name = 'create_service_request'
-AND r.role_name IN ('Requestor', 'HOD', 'Branch Head', 'Director HRM&A', 'Deputy Government Chemist');
+AND r.name IN ('Requestor', 'HOD', 'Branch Head', 'Director HRM&A', 'Deputy Government Chemist');
 
 -- 8. Add page permissions for contracts module
 INSERT IGNORE INTO `page_permissions` (`page_path`, `permission_name`, `created_at`) VALUES
