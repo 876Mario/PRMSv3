@@ -3,6 +3,7 @@ $REQUIRE_PERMISSION = 'view_requests';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
 
 
 if (!isset($_GET['id'])) {
@@ -455,6 +456,82 @@ $badge = $badgeMap[$status] ?? ['secondary', 'bi-question-circle'];
         <?php endif; ?>
     </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════
+     WORKFLOW PATH BANNER
+═══════════════════════════════════════════════════════ -->
+<div class="d-flex flex-wrap align-items-center gap-3 mb-4 p-3" style="background:#f8f9fa; border-radius:10px; border:1px solid #e0e0e0;">
+    <div>
+        <span class="text-muted small fw-bold text-uppercase" style="letter-spacing:.05em;">Workflow Path</span><br>
+        <?= getWorkflowBadgeHtml($request) ?>
+    </div>
+    <?php
+    // Show PO Required badge from the original commitment
+    if ($originalCommitment): ?>
+    <div>
+        <span class="text-muted small fw-bold text-uppercase" style="letter-spacing:.05em;">PO Required</span><br>
+        <?php $poReqVal = $originalCommitment['po_required'] ?? 'YES'; ?>
+        <?php if ($poReqVal === 'NO'): ?>
+            <span style="display:inline-flex;align-items:center;gap:0.25rem;background:#fff3cd;color:#856404;border:1px solid #ffc107;padding:0.3rem 0.75rem;border-radius:20px;font-size:0.78rem;font-weight:600;">⚡ No — Skip PO</span>
+        <?php else: ?>
+            <span style="display:inline-flex;align-items:center;gap:0.25rem;background:#d1e7dd;color:#0a3622;border:1px solid #a3cfbb;padding:0.3rem 0.75rem;border-radius:20px;font-size:0.78rem;font-weight:600;">✅ Yes — Standard PO</span>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    <div>
+        <span class="text-muted small fw-bold text-uppercase" style="letter-spacing:.05em;">Current Status</span><br>
+        <?= statusBadge($status) ?>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     QUICK ACTION BUTTONS (permission-controlled)
+═══════════════════════════════════════════════════════ -->
+<?php
+$isProcOfficer = in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin']);
+$isFinOfficer  = in_array($role, ['Finance Officer', 'Admin', 'SuperAdmin']);
+$isHodRole     = in_array($role, ['HOD', 'Branch Head', 'Admin', 'SuperAdmin']);
+$quickActions = [];
+
+if ($requestType === 'REGULAR') {
+    // RFQ actions for Procurement Officers
+    if ($isProcOfficer) {
+        if (in_array($status, ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE']) && !$rfqId) {
+            $quickActions[] = ['label' => '📬 Create RFQ', 'href' => '/rfq/create.php?request_id=' . $request_id, 'style' => 'background:#cfe2ff;color:#084298;'];
+        }
+        if ($rfqId && in_array($status, ['RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING'])) {
+            $quickActions[] = ['label' => '👁️ View RFQ', 'href' => '/rfq/view.php?id=' . $rfqId, 'style' => 'background:#e2e3e5;color:#333;'];
+        }
+        if (in_array($status, ['FUNDS_VERIFIED', 'COMMITMENTS_PENDING', 'AWARDED'])) {
+            $quickActions[] = ['label' => '📋 Create Commitment', 'href' => '/commitments/add.php?request_id=' . $request_id, 'style' => 'background:#d1e7dd;color:#0a3622;'];
+        }
+    }
+    // Finance actions
+    if ($isFinOfficer) {
+        if (in_array($status, ['QUOTE_APPROVED', 'AWARDED', 'FUNDS_VERIFIED'])) {
+            $quickActions[] = ['label' => '💰 Verify Funds / Commitment', 'href' => '/commitments/add.php?request_id=' . $request_id, 'style' => 'background:#d1e7dd;color:#0a3622;'];
+        }
+        if ($originalCommitment && empty($po) && $status === 'COMMITMENT_APPROVED') {
+            $quickActions[] = ['label' => '📄 Create PO', 'href' => '/po/add.php?commitment_id=' . $originalCommitment['commitment_id'], 'style' => 'background:#fff3cd;color:#856404;'];
+        }
+    }
+    // HOD approve action
+    if ($isHodRole && $status === 'SUBMITTED') {
+        $quickActions[] = ['label' => '✅ Approve', 'href' => '/procurement/approve_hod.php?id=' . $request_id, 'style' => 'background:#d1e7dd;color:#0a3622;'];
+        $quickActions[] = ['label' => '❌ Decline', 'href' => '/procurement/decline.php?id=' . $request_id, 'style' => 'background:#f8d7da;color:#842029;'];
+    }
+}
+
+if (!empty($quickActions)): ?>
+<div class="d-flex flex-wrap gap-2 mb-4">
+    <span class="text-muted small fw-bold align-self-center" style="text-transform:uppercase;letter-spacing:.05em;">Quick Actions:</span>
+    <?php foreach ($quickActions as $qa): ?>
+        <a href="<?= htmlspecialchars($qa['href']) ?>" style="<?= $qa['style'] ?> padding:0.4rem 1rem; border-radius:8px; text-decoration:none; font-size:0.82rem; font-weight:600; border:1px solid rgba(0,0,0,0.08);">
+            <?= $qa['label'] ?>
+        </a>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <!-- ═══════════════════════════════════════════════════════
      KPI METRIC CARDS

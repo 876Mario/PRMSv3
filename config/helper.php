@@ -556,7 +556,7 @@ function statusBadge(string $status): string {
 }
 
 
- * 
+/**
  * Common typos fixed:
  * - USB → USD
  * - Defaults to JMD if invalid

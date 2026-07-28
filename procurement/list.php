@@ -4,6 +4,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/pagination.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/config/workflow.php";
 // Handle delete request
 if (
     isset($_POST['delete_request_id']) &&
@@ -55,6 +56,35 @@ if (!empty($_GET['q'])) {
     $params[':q'] = '%'.$_GET['q'].'%';
 }
 
+/* Request number partial search */
+if (!empty($_GET['request_number'])) {
+    $where[] = "pr.request_number LIKE :request_number";
+    $params[':request_number'] = '%' . $_GET['request_number'] . '%';
+}
+
+/* Department / branch filter */
+if (!empty($_GET['branch_id'])) {
+    $where[] = "pr.branch_id = :branch_id";
+    $params[':branch_id'] = (int)$_GET['branch_id'];
+}
+
+/* Requestor name filter */
+if (!empty($_GET['requestor'])) {
+    $where[] = "u.full_name LIKE :requestor";
+    $params[':requestor'] = '%' . $_GET['requestor'] . '%';
+}
+
+/* Budget year filter */
+if (!empty($_GET['budget_year'])) {
+    $where[] = "YEAR(pr.request_date) = :budget_year";
+    $params[':budget_year'] = (int)$_GET['budget_year'];
+}
+
+/* Workflow path filter */
+if (!empty($_GET['workflow_path'])) {
+    $where[] = "pr.workflow_path = :workflow_path";
+    $params[':workflow_path'] = $_GET['workflow_path'];
+}
 
 // Restrict Requestor to only their own requests
 if (isset($_SESSION['role_name']) && $_SESSION['role_name'] === 'Requestor') {
@@ -98,6 +128,21 @@ if (!empty($_GET['to'])) {
 $whereSQL = $where ? 'WHERE '.implode(' AND ', $where) : '';
 
 /* ================================
+   Sorting
+================================ */
+$allowedSortCols = [
+    'request_number' => 'pr.request_number',
+    'request_date'   => 'pr.request_date',
+    'estimated_value'=> 'pr.estimated_value',
+    'status'         => 'pr.status',
+    'branch_name'    => 'b.branch_name',
+    'requestor'      => 'u.full_name',
+];
+$sortCol  = $allowedSortCols[$_GET['sort'] ?? ''] ?? 'pr.request_date';
+$sortDir  = strtoupper($_GET['dir'] ?? '') === 'ASC' ? 'ASC' : 'DESC';
+$sortNext = $sortDir === 'ASC' ? 'DESC' : 'ASC'; // toggle for links
+
+/* ================================
    Pagination params
 ================================ */
 extract(getPaginationParams(10));
@@ -113,9 +158,16 @@ $sql = "
         pr.request_type,
         pr.status AS request_status,
         pr.description AS request_description,
+        pr.estimated_value,
+        pr.currency,
+        pr.workflow_path,
+
+        b.branch_name,
+        u.full_name AS requestor_name,
 
         c.commitment_id,
         c.commitment_number,
+        c.po_required,
 
         po.po_id,
         po.po_number,
@@ -125,15 +177,19 @@ $sql = "
 
     FROM procurement_requests pr
 
+    LEFT JOIN branches b ON pr.branch_id = b.branch_id
+    LEFT JOIN users u ON pr.created_by = u.user_id
+
     LEFT JOIN commitments c 
         ON pr.request_id = c.request_id
+        AND c.commitment_type = 'ORIGINAL'
 
     LEFT JOIN purchase_orders po
         ON c.commitment_id = po.commitment_id
 
     $whereSQL
 
-    ORDER BY pr.request_date DESC
+    ORDER BY $sortCol $sortDir
     LIMIT :limit OFFSET :offset
 ";
 
@@ -156,7 +212,9 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $countSql = "
     SELECT COUNT(DISTINCT pr.request_id)
     FROM procurement_requests pr
-    LEFT JOIN commitments c ON pr.request_id = c.request_id
+    LEFT JOIN branches b ON pr.branch_id = b.branch_id
+    LEFT JOIN users u ON pr.created_by = u.user_id
+    LEFT JOIN commitments c ON pr.request_id = c.request_id AND c.commitment_type = 'ORIGINAL'
     LEFT JOIN purchase_orders po ON c.commitment_id = po.commitment_id
     $whereSQL
 ";
@@ -197,7 +255,6 @@ $totalPoValue = (float)$poValueStmt->fetchColumn();
    Render page
 ================================ */
 require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
-require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
 
 /* Status badge helper */
 function reqBadgeClass(string $status): string {
@@ -303,7 +360,13 @@ $statusOptions = [
     'CANCELLED'             => 'Cancelled',
 ];
 
-$hasFilters = !empty($_GET['q']) || !empty($_GET['request_status']) || !empty($_GET['po_status']) || !empty($_GET['from']) || !empty($_GET['to']);
+$hasFilters = !empty($_GET['q']) || !empty($_GET['request_status']) || !empty($_GET['po_status']) || !empty($_GET['from']) || !empty($_GET['to']) || !empty($_GET['branch_id']) || !empty($_GET['requestor']) || !empty($_GET['budget_year']) || !empty($_GET['workflow_path']) || !empty($_GET['request_number']);
+
+/* Branches for filter dropdown */
+$branches = $pdo->query("SELECT branch_id, branch_name FROM branches ORDER BY branch_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+/* Distinct budget years for filter dropdown */
+$budgetYears = $pdo->query("SELECT DISTINCT YEAR(request_date) AS yr FROM procurement_requests WHERE request_date IS NOT NULL ORDER BY yr DESC")->fetchAll(PDO::FETCH_COLUMN);
 
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
 ?>
@@ -441,13 +504,31 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
     </div>
     <div class="card-body">
         <form method="get" class="row g-3">
-            <div class="col-md-4 col-sm-6">
-                <label class="form-label small text-muted" style="font-weight: 600;">Search</label>
-                <input type="text"
-                       name="q"
-                       value="<?= htmlspecialchars($_GET['q'] ?? '') ?>"
-                       placeholder="PO #, Commitment #, Request #"
-                       class="form-control">
+            <div class="col-md-3 col-sm-6">
+                <label class="form-label small text-muted" style="font-weight: 600;">Search (PO / Commitment / Request)</label>
+                <input type="text" name="q" value="<?= htmlspecialchars($_GET['q'] ?? '') ?>" placeholder="PO #, Commitment #, Request #, Description" class="form-control">
+            </div>
+
+            <div class="col-md-2 col-sm-6">
+                <label class="form-label small text-muted" style="font-weight: 600;">Request Number</label>
+                <input type="text" name="request_number" value="<?= htmlspecialchars($_GET['request_number'] ?? '') ?>" placeholder="e.g. PR001" class="form-control">
+            </div>
+
+            <div class="col-md-2 col-sm-6">
+                <label class="form-label small text-muted" style="font-weight: 600;">Department</label>
+                <select name="branch_id" class="form-select">
+                    <option value="">All Departments</option>
+                    <?php foreach ($branches as $br): ?>
+                        <option value="<?= $br['branch_id'] ?>" <?= ($_GET['branch_id'] ?? '') == $br['branch_id'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($br['branch_name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class="col-md-2 col-sm-6">
+                <label class="form-label small text-muted" style="font-weight: 600;">Requestor</label>
+                <input type="text" name="requestor" value="<?= htmlspecialchars($_GET['requestor'] ?? '') ?>" placeholder="Requestor name" class="form-control">
             </div>
 
             <div class="col-md-2 col-sm-6">
@@ -455,42 +536,55 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
                 <select name="request_status" class="form-select">
                     <option value="">All Status</option>
                     <?php foreach ($statusOptions as $val => $label): ?>
-                        <option value="<?= $val ?>"
-                            <?= ($_GET['request_status'] ?? '') === $val ? 'selected' : '' ?>>
-                            <?= $label ?>
-                        </option>
+                        <option value="<?= $val ?>" <?= ($_GET['request_status'] ?? '') === $val ? 'selected' : '' ?>><?= $label ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
 
-            <div class="col-md-2 col-sm-6">
+            <div class="col-md-1 col-sm-6">
                 <label class="form-label small text-muted" style="font-weight: 600;">PO Status</label>
                 <select name="po_status" class="form-select">
-                    <option value="">All Status</option>
+                    <option value="">All</option>
                     <?php foreach (['Open','Closed','Cancelled'] as $s): ?>
-                        <option value="<?= $s ?>"
-                            <?= ($_GET['po_status'] ?? '') === $s ? 'selected' : '' ?>>
-                            <?= $s ?>
-                        </option>
+                        <option value="<?= $s ?>" <?= ($_GET['po_status'] ?? '') === $s ? 'selected' : '' ?>><?= $s ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
 
             <div class="col-md-1 col-sm-6">
                 <label class="form-label small text-muted" style="font-weight: 600;">From Date</label>
-                <input type="date" name="from" value="<?= $_GET['from'] ?? '' ?>" class="form-control">
+                <input type="date" name="from" value="<?= htmlspecialchars($_GET['from'] ?? '') ?>" class="form-control">
             </div>
 
             <div class="col-md-1 col-sm-6">
                 <label class="form-label small text-muted" style="font-weight: 600;">To Date</label>
-                <input type="date" name="to" value="<?= $_GET['to'] ?? '' ?>" class="form-control">
+                <input type="date" name="to" value="<?= htmlspecialchars($_GET['to'] ?? '') ?>" class="form-control">
+            </div>
+
+            <div class="col-md-1 col-sm-6">
+                <label class="form-label small text-muted" style="font-weight: 600;">Budget Year</label>
+                <select name="budget_year" class="form-select">
+                    <option value="">All Years</option>
+                    <?php foreach ($budgetYears as $yr): ?>
+                        <option value="<?= $yr ?>" <?= ($_GET['budget_year'] ?? '') == $yr ? 'selected' : '' ?>><?= $yr ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class="col-md-2 col-sm-6">
+                <label class="form-label small text-muted" style="font-weight: 600;">Workflow Path</label>
+                <select name="workflow_path" class="form-select">
+                    <option value="">All Paths</option>
+                    <option value="STANDARD" <?= ($_GET['workflow_path'] ?? '') === 'STANDARD' ? 'selected' : '' ?>>Standard Procurement</option>
+                    <option value="NON_PO_SKIP_RFQ" <?= ($_GET['workflow_path'] ?? '') === 'NON_PO_SKIP_RFQ' ? 'selected' : '' ?>>Non-PO / Skip RFQ</option>
+                </select>
             </div>
 
             <div class="col-md-2 d-flex gap-2 align-items-end">
                 <button type="submit" class="btn btn-primary flex-grow-1">
                     <i class="bi bi-search me-2"></i>Filter
                 </button>
-                <a href="/procurement/list.php" class="btn btn-outline-secondary" style="border-radius: 6px;">
+                <a href="/procurement/list.php" class="btn btn-outline-secondary" style="border-radius: 6px;" title="Clear filters">
                     <i class="bi bi-arrow-clockwise"></i>
                 </a>
             </div>
@@ -523,16 +617,36 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
     <div style="overflow: auto;">
         <table class="table table-hover mb-0" style="border-collapse: collapse;">
             <thead class="table-dark">
+                <?php
+                // Helper: build sort link preserving current filters
+                function sortLink(string $col, string $currentSort, string $currentDir, string $label): string {
+                    $params = $_GET;
+                    $params['sort'] = $col;
+                    $params['dir']  = ($currentSort === $col && $currentDir === 'DESC') ? 'ASC' : 'DESC';
+                    unset($params['page']);
+                    $arrow = '';
+                    if ($currentSort === $col) {
+                        $arrow = $currentDir === 'ASC' ? ' ▲' : ' ▼';
+                    }
+                    $qs = http_build_query($params);
+                    return '<a href="/procurement/list.php?' . htmlspecialchars($qs) . '" style="color:inherit;text-decoration:none;">'
+                         . htmlspecialchars($label) . '<span style="font-size:0.7rem;">' . $arrow . '</span></a>';
+                }
+                $curSort = $_GET['sort'] ?? 'request_date';
+                $curDir  = strtoupper($_GET['dir'] ?? 'DESC');
+                ?>
                 <tr>
-                    <th style="padding: 1rem; font-weight: 600;  border: none;">Request #</th>
-                    <th style="padding: 1rem; font-weight: 600;  border: none;">Type</th>
-                    <th style="padding: 1rem; font-weight: 600;  border: none;">Status</th>
-                    <th style="padding: 1rem; font-weight: 600;  border: none;">Commitment</th>
-                    <th style="padding: 1rem; font-weight: 600;  border: none;">PO #</th>
-                    <th style="padding: 1rem; font-weight: 600; border: none;">PO Date</th>
-                    <th style="padding: 1rem; font-weight: 600;  border: none; text-align: right;">PO Total</th>
-                    <th style="padding: 1rem; font-weight: 600;  border: none;">PO Status</th>
-                    <th style="padding: 1rem; font-weight: 600;  border: none; text-align: center; width: 100px;">Actions</th>
+                    <th style="padding: 1rem; font-weight: 600; border: none;"><?= sortLink('request_number', $curSort, $curDir, 'Request #') ?></th>
+                    <th style="padding: 1rem; font-weight: 600; border: none;">Type</th>
+                    <th style="padding: 1rem; font-weight: 600; border: none;"><?= sortLink('branch_name', $curSort, $curDir, 'Department') ?></th>
+                    <th style="padding: 1rem; font-weight: 600; border: none;"><?= sortLink('requestor', $curSort, $curDir, 'Requestor') ?></th>
+                    <th style="padding: 1rem; font-weight: 600; border: none;"><?= sortLink('status', $curSort, $curDir, 'Status') ?></th>
+                    <th style="padding: 1rem; font-weight: 600; border: none;">Workflow</th>
+                    <th style="padding: 1rem; font-weight: 600; border: none;">Commitment</th>
+                    <th style="padding: 1rem; font-weight: 600; border: none;">PO #</th>
+                    <th style="padding: 1rem; font-weight: 600; border: none;"><?= sortLink('request_date', $curSort, $curDir, 'Date') ?></th>
+                    <th style="padding: 1rem; font-weight: 600; border: none; text-align: right;"><?= sortLink('estimated_value', $curSort, $curDir, 'Value') ?></th>
+                    <th style="padding: 1rem; font-weight: 600; border: none; text-align: center; width: 100px;">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -548,9 +662,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
             <tr style="background-color: <?= $rowBgColor ?>; border-bottom: 1px solid #e0e0e0; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f5f5f5'" onmouseout="this.style.backgroundColor='<?= $rowBgColor ?>'">
                 <td style="padding: 1rem; border: none; vertical-align: middle;">
                     <div <?php if (!empty($row['request_description'])): ?>data-bs-toggle="tooltip" data-bs-placement="top" title="<?= htmlspecialchars($row['request_description'], ENT_QUOTES, 'UTF-8') ?>"<?php endif; ?>>
-                        <code style="background-color: #f0f0f0; padding: 0.4rem 0.8rem; border-radius: 4px; color: #1a1a1a; font-weight: 600; font-size: 0.9rem;"><?= htmlspecialchars($row['request_number']) ?></code>
-                        <br>
-                        <small style="color: #999;"><?= date('d M Y', strtotime($row['request_date'])) ?></small>
+                        <a href="/procurement/view.php?id=<?= (int)$row['request_id'] ?>" style="text-decoration:none;">
+                            <code style="background-color: #e8eaf6; padding: 0.4rem 0.8rem; border-radius: 4px; color: #3f51b5; font-weight: 600; font-size: 0.9rem;"><?= htmlspecialchars($row['request_number']) ?></code>
+                        </a>
                     </div>
                 </td>
                 <td style="padding: 1rem; border: none; vertical-align: middle;">
@@ -561,16 +675,29 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
                         <?= $typeBadge['icon'] ?> <?= $typeBadge['label'] ?>
                     </span>
                 </td>
+                <td style="padding: 1rem; border: none; vertical-align: middle; font-size:0.85rem; color:#555;">
+                    <?= htmlspecialchars($row['branch_name'] ?? '—') ?>
+                </td>
+                <td style="padding: 1rem; border: none; vertical-align: middle; font-size:0.85rem; color:#555;">
+                    <?= htmlspecialchars($row['requestor_name'] ?? '—') ?>
+                </td>
                 <td style="padding: 1rem; border: none; vertical-align: middle;">
-                    <span style="display: inline-block; background-color: #f0f0f0; padding: 0.4rem 0.8rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem; color: #1a1a1a;">
-                        <?= reqLabel($row['request_status']) ?>
-                    </span>
+                    <?= statusBadge($row['request_status']) ?>
+                </td>
+                <td style="padding: 1rem; border: none; vertical-align: middle;">
+                    <?php
+                    $wfRow = ['workflow_path' => $row['workflow_path'] ?? 'STANDARD'];
+                    echo getWorkflowBadgeHtml($wfRow);
+                    ?>
                 </td>
                 <td style="padding: 1rem; border: none; vertical-align: middle;">
                     <?php if (!empty($row['commitment_number'])): ?>
                         <a href="/commitments/view.php?commitment_id=<?= (int)$row['commitment_id'] ?>" style="color: #667eea; text-decoration: none; font-weight: 600;">
                             <?= htmlspecialchars($row['commitment_number']) ?>
                         </a>
+                        <?php if (!empty($row['po_required']) && $row['po_required'] === 'NO'): ?>
+                            <br><small style="color:#856404;font-size:0.72rem;">⚡ No PO</small>
+                        <?php endif; ?>
                     <?php else: ?>
                         <span style="color: #999;">—</span>
                     <?php endif; ?>
@@ -585,44 +712,13 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
                     <?php endif; ?>
                 </td>
                 <td style="padding: 1rem; border: none; vertical-align: middle;">
-                    <?php if (!empty($row['po_date'])): ?>
-                        <small style="color: #666; font-weight: 500;"><?= date('d M Y', strtotime($row['po_date'])) ?></small>
-                    <?php else: ?>
-                        <span style="color: #999;">—</span>
-                    <?php endif; ?>
+                    <small style="color: #666; font-weight: 500;"><?= date('d M Y', strtotime($row['request_date'])) ?></small>
                 </td>
-                <td style="padding: 1rem; border: none; vertical-align: middle; text-align: right; font-weight: 600; color: #1a1a1a;">
-                    <?php if ($row['po_total']): ?>
-                        <?= money((float)$row['po_total']) ?>
-                    <?php else: ?>
-                        <span style="color: #999;">—</span>
-                    <?php endif; ?>
-                </td>
-                <td style="padding: 1rem; border: none; vertical-align: middle;">
-                    <?php if (!empty($row['po_status'])): ?>
-                        <?php
-                            $icon = match ($row['po_status']) {
-                                'Closed'    => '✅',
-                                'Cancelled' => '❌',
-                                default     => '⏳'
-                            };
-                            $badgeBgColor = match ($row['po_status']) {
-                                'Closed'    => '#e8f5e9',
-                                'Cancelled' => '#ffebee',
-                                default     => '#fff3cd'
-                            };
-                            $badgeTextColor = match ($row['po_status']) {
-                                'Closed'    => '#2e7d32',
-                                'Cancelled' => '#c62828',
-                                default     => '#b09500'
-                            };
-                        ?>
-                        <span style="display: inline-block; background-color: <?= $badgeBgColor ?>; color: <?= $badgeTextColor ?>; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600;">
-                            <?= $icon ?> <?= htmlspecialchars($row['po_status']) ?>
-                        </span>
-                    <?php else: ?>
-                        <span style="color: #999;">—</span>
-                    <?php endif; ?>
+                <td style="padding: 1rem; border: none; vertical-align: middle; text-align: right; font-weight: 600; color: #1a1a1a; font-size:0.88rem;">
+                    <?php
+                    $cur = normalizeCurrency($row['currency'] ?? 'JMD');
+                    echo $cur . ' ' . number_format((float)$row['estimated_value'], 2);
+                    ?>
                 </td>
                 <td style="padding: 1rem; border: none; vertical-align: middle; text-align: center;">
                     <div style="display: flex; gap: 0.25rem; justify-content: center;">
