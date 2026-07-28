@@ -28,6 +28,9 @@ if ($assetDetailsTableExists) {
     } catch (Throwable $e) { /* branches table may not exist on all installs */ }
 }
 
+/* Roles list for custodian role dropdown */
+$allRoles = $pdo->query("SELECT id, name FROM roles ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+
 /* Load admin-configured field requirement settings for Asset Register Details */
 $arFieldRequired = [];
 $arFieldKeys = [
@@ -206,6 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $arStatus           = trim($_POST['ar_asset_status'] ?? '');
             $arAcquiredDate     = trim($_POST['ar_acquired_date'] ?? '');
             $arCustodian        = trim($_POST['ar_custodian'] ?? '');
+            $arCustodianRole    = trim($_POST['ar_custodian_role'] ?? '');
             $arSecondaryCustodian = trim($_POST['ar_secondary_custodian'] ?? '');
             $arLocation         = trim($_POST['ar_location'] ?? '');
             $arSite             = trim($_POST['ar_site'] ?? '');
@@ -215,6 +219,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $arDisposalDate     = trim($_POST['ar_disposal_date'] ?? '');
             $arDisposalAmount   = trim($_POST['ar_disposal_amount'] ?? '');
             $arIsDisposed       = isset($_POST['ar_is_disposed']) ? 1 : 0;
+            // Warranty fields
+            $arWarrantyProvider   = trim($_POST['ar_warranty_provider'] ?? '');
+            $arWarrantyStartDate  = trim($_POST['ar_warranty_start_date'] ?? '');
+            $arWarrantyEndDate    = trim($_POST['ar_warranty_end_date'] ?? '');
+            $arWarrantyPeriod     = trim($_POST['ar_warranty_period'] ?? '');
+            $arWarrantyReference  = trim($_POST['ar_warranty_reference'] ?? '');
+            $arWarrantyNotes      = trim($_POST['ar_warranty_notes'] ?? '');
+            $arWarrantyStatus     = trim($_POST['ar_warranty_status'] ?? '');
 
             // Mandatory field validation (respects admin settings)
             $arErrors = [];
@@ -256,10 +268,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $arStmt = $pdo->prepare("
                 INSERT INTO inv_asset_details
                     (item_id, asset_code, acquired_date, asset_condition, asset_status,
-                     custodian_name, accountable_officer, secondary_custodian,
+                     custodian_name, custodian_role, accountable_officer, secondary_custodian,
                      site, building, floor_room, address,
-                     purchase_cost, disposal_date, disposal_amount, is_disposed)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     purchase_cost, disposal_date, disposal_amount, is_disposed,
+                     warranty_provider, warranty_start_date, warranty_end_date,
+                     warranty_period, warranty_reference, warranty_notes, warranty_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $arStmt->execute([
                 $newItemId,
@@ -268,6 +282,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $arCondition ?: null,
                 $arStatus ?: null,
                 $arCustodian ?: null,
+                $arCustodianRole ?: null,
                 $arCustodian ?: null,      // accountable_officer mirrors custodian_name
                 $arSecondaryCustodian ?: null,
                 $arSite ?: null,
@@ -278,6 +293,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ($arDisposalDate !== '') ? $arDisposalDate : null,
                 ($arDisposalAmount !== '') ? (float) $arDisposalAmount : null,
                 $arIsDisposed,
+                $arWarrantyProvider ?: null,
+                ($arWarrantyStartDate !== '') ? $arWarrantyStartDate : null,
+                ($arWarrantyEndDate !== '') ? $arWarrantyEndDate : null,
+                $arWarrantyPeriod ?: null,
+                $arWarrantyReference ?: null,
+                $arWarrantyNotes ?: null,
+                $arWarrantyStatus ?: null,
             ]);
 
             logInventoryAudit($pdo, 'inv_asset_details', $newItemId, 'CREATE',
@@ -749,6 +771,24 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                            placeholder="Person or department responsible"
                            value="<?= htmlspecialchars($_POST['ar_custodian'] ?? '') ?>">
                 </div>
+                <!-- Custodian Role -->
+                <div class="col-md-4">
+                    <label class="form-label">Custodian Role</label>
+                    <?php
+                    $defaultCustodianRole = 'Property Management Officer';
+                    $savedCustodianRole   = $_POST['ar_custodian_role'] ?? $defaultCustodianRole;
+                    ?>
+                    <select name="ar_custodian_role" id="ar_custodian_role" class="form-select">
+                        <option value="">— Select Role —</option>
+                        <?php foreach ($allRoles as $role): ?>
+                        <option value="<?= htmlspecialchars($role['name']) ?>"
+                            <?= $savedCustodianRole === $role['name'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($role['name']) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small class="text-muted">Role assigned to the custodian for this asset.</small>
+                </div>
                 <!-- Secondary Custodian -->
                 <div class="col-md-4">
                     <label class="form-label">Secondary Custodian</label>
@@ -761,21 +801,30 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                 <!-- Location -->
                 <div class="col-md-3">
                     <label class="form-label">Site / Campus <?= $arFieldRequired['ar_require_location'] ? '<span class="text-danger">*</span>' : '' ?></label>
-                    <input type="text" name="ar_site" id="ar_site" class="form-control ar-location"
-                           placeholder="Site or campus name"
-                           value="<?= htmlspecialchars($_POST['ar_site'] ?? '') ?>">
+                    <select name="ar_site" id="ar_site" class="form-select ar-location">
+                        <option value="">— Select Site —</option>
+                        <?php if (!empty($_POST['ar_site'])): ?>
+                        <option value="<?= htmlspecialchars($_POST['ar_site']) ?>" selected><?= htmlspecialchars($_POST['ar_site']) ?></option>
+                        <?php endif; ?>
+                    </select>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Building</label>
-                    <input type="text" name="ar_building" id="ar_building" class="form-control ar-location"
-                           placeholder="Building"
-                           value="<?= htmlspecialchars($_POST['ar_building'] ?? '') ?>">
+                    <select name="ar_building" id="ar_building" class="form-select ar-location" disabled>
+                        <option value="">— Select Building —</option>
+                        <?php if (!empty($_POST['ar_building'])): ?>
+                        <option value="<?= htmlspecialchars($_POST['ar_building']) ?>" selected><?= htmlspecialchars($_POST['ar_building']) ?></option>
+                        <?php endif; ?>
+                    </select>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Floor / Room</label>
-                    <input type="text" name="ar_floor_room" id="ar_floor_room" class="form-control ar-location"
-                           placeholder="Floor or room"
-                           value="<?= htmlspecialchars($_POST['ar_floor_room'] ?? '') ?>">
+                    <select name="ar_floor_room" id="ar_floor_room" class="form-select ar-location" disabled>
+                        <option value="">— Select Floor / Room —</option>
+                        <?php if (!empty($_POST['ar_floor_room'])): ?>
+                        <option value="<?= htmlspecialchars($_POST['ar_floor_room']) ?>" selected><?= htmlspecialchars($_POST['ar_floor_room']) ?></option>
+                        <?php endif; ?>
+                    </select>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Address / Other Location</label>
@@ -788,6 +837,56 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <small class="text-muted"><span class="text-danger">*</span> At least one location field (Site, Building, Floor/Room, or Address) must be completed.</small>
                 </div>
                 <?php endif; ?>
+            </div>
+
+            <!-- Warranty Information -->
+            <hr class="my-3">
+            <h6 class="text-secondary"><i class="bi bi-shield-check"></i> Warranty Information
+                <small class="text-muted fw-normal">(optional)</small>
+            </h6>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Warranty Provider / Vendor</label>
+                    <input type="text" name="ar_warranty_provider" class="form-control"
+                           placeholder="Provider or vendor name"
+                           value="<?= htmlspecialchars($_POST['ar_warranty_provider'] ?? '') ?>">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Warranty Start Date</label>
+                    <input type="date" name="ar_warranty_start_date" class="form-control"
+                           value="<?= htmlspecialchars($_POST['ar_warranty_start_date'] ?? '') ?>">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Warranty End Date</label>
+                    <input type="date" name="ar_warranty_end_date" class="form-control"
+                           value="<?= htmlspecialchars($_POST['ar_warranty_end_date'] ?? '') ?>">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Warranty Period</label>
+                    <input type="text" name="ar_warranty_period" class="form-control"
+                           placeholder="e.g. 1 Year, 24 Months"
+                           value="<?= htmlspecialchars($_POST['ar_warranty_period'] ?? '') ?>">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Warranty Reference / Contract No.</label>
+                    <input type="text" name="ar_warranty_reference" class="form-control"
+                           placeholder="Contract or reference number"
+                           value="<?= htmlspecialchars($_POST['ar_warranty_reference'] ?? '') ?>">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Warranty Status</label>
+                    <select name="ar_warranty_status" class="form-select">
+                        <option value="">— Select —</option>
+                        <?php foreach (['Active','Expired','Void','Pending','Unknown'] as $ws): ?>
+                        <option value="<?= $ws ?>" <?= ($_POST['ar_warranty_status'] ?? '') === $ws ? 'selected' : '' ?>><?= $ws ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Warranty Notes</label>
+                    <textarea name="ar_warranty_notes" class="form-control" rows="2"
+                              placeholder="Any additional warranty details..."><?= htmlspecialchars($_POST['ar_warranty_notes'] ?? '') ?></textarea>
+                </div>
             </div>
 
             <!-- Disposal Details -->
@@ -959,6 +1058,72 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         loadSubcategories(catSel.value, initSelectId, function () {
             if (preselectedNew && newSubcatName) newSubcatName.value = preselectedNew;
         });
+    }
+}());
+
+// ── Cascading location dropdowns ─────────────────────────────────────────────
+(function () {
+    var siteSel    = document.getElementById('ar_site');
+    var buildSel   = document.getElementById('ar_building');
+    var floorSel   = document.getElementById('ar_floor_room');
+
+    if (!siteSel || !buildSel || !floorSel) return;
+
+    var ENDPOINT = '/inventory/items/get_locations.php';
+
+    function buildOptions(sel, values, currentVal, placeholder) {
+        sel.innerHTML = '<option value="">' + placeholder + '</option>';
+        values.forEach(function (v) {
+            var opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            if (v === currentVal) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.disabled = (values.length === 0);
+    }
+
+    function loadSites(currentSite) {
+        fetch(ENDPOINT + '?type=sites')
+            .then(function (r) { return r.json(); })
+            .then(function (data) { buildOptions(siteSel, data, currentSite || '', '— Select Site —'); })
+            .catch(function () { siteSel.disabled = false; });
+    }
+
+    function loadBuildings(site, currentBuilding) {
+        fetch(ENDPOINT + '?type=buildings&site=' + encodeURIComponent(site))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { buildOptions(buildSel, data, currentBuilding || '', '— Select Building —'); })
+            .catch(function () { buildSel.disabled = false; });
+    }
+
+    function loadFloors(site, building, currentFloor) {
+        fetch(ENDPOINT + '?type=floors&site=' + encodeURIComponent(site) + '&building=' + encodeURIComponent(building))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { buildOptions(floorSel, data, currentFloor || '', '— Select Floor / Room —'); })
+            .catch(function () { floorSel.disabled = false; });
+    }
+
+    siteSel.addEventListener('change', function () {
+        buildOptions(buildSel, [], '', '— Select Building —');
+        buildOptions(floorSel, [], '', '— Select Floor / Room —');
+        if (siteSel.value) loadBuildings(siteSel.value, '');
+    });
+
+    buildSel.addEventListener('change', function () {
+        buildOptions(floorSel, [], '', '— Select Floor / Room —');
+        if (buildSel.value) loadFloors(siteSel.value, buildSel.value, '');
+    });
+
+    // Initial population — restore any pre-selected values (e.g. after failed POST)
+    var initSite  = <?= json_encode($_POST['ar_site'] ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    var initBuild = <?= json_encode($_POST['ar_building'] ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    var initFloor = <?= json_encode($_POST['ar_floor_room'] ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+
+    loadSites(initSite);
+    if (initSite) {
+        loadBuildings(initSite, initBuild);
+        if (initBuild) loadFloors(initSite, initBuild, initFloor);
     }
 }());
 </script>
