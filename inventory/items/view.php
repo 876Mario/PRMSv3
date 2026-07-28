@@ -143,6 +143,23 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <i class="bi bi-clipboard2-check"></i> Asset Register
         <?php if (empty($assetDetail)): ?><span class="badge bg-danger ms-1">Incomplete</span><?php endif; ?>
     </a></li>
+    <?php
+    $hasWarranty = !empty($assetDetail) && (
+        !empty($assetDetail['warranty_provider'])  ||
+        !empty($assetDetail['warranty_start_date'])||
+        !empty($assetDetail['warranty_end_date'])  ||
+        !empty($assetDetail['warranty_expiration'])
+    );
+    $warrantyExpired = false;
+    $warrantyEndDate = $assetDetail['warranty_end_date'] ?? $assetDetail['warranty_expiration'] ?? null;
+    if ($warrantyEndDate) {
+        $warrantyExpired = (strtotime($warrantyEndDate) < time());
+    }
+    ?>
+    <li class="nav-item"><a class="nav-link<?= $warrantyExpired ? ' text-danger' : '' ?>" data-bs-toggle="tab" href="#warranty">
+        <i class="bi bi-shield-check"></i> Warranty
+        <?php if ($warrantyExpired): ?><span class="badge bg-danger ms-1">Expired</span><?php endif; ?>
+    </a></li>
     <?php endif; ?>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#stock">Stock Levels</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#transactions">Transactions</a></li>
@@ -496,7 +513,12 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         </tr>
                         <tr class="table-light">
                             <th>Custodian</th>
-                            <td><?= htmlspecialchars($ad['custodian_name'] ?? '-') ?></td>
+                            <td>
+                                <?= htmlspecialchars($ad['custodian_name'] ?? '-') ?>
+                                <?php if (!empty($ad['custodian_role'])): ?>
+                                <span class="badge bg-secondary ms-1"><?= htmlspecialchars($ad['custodian_role']) ?></span>
+                                <?php endif; ?>
+                            </td>
                         </tr>
                         <tr>
                             <th>Secondary Custodian</th>
@@ -551,6 +573,121 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
             </div>
         </div>
         <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($isAssetDomain): ?>
+    <!-- Warranty Tab -->
+    <div class="tab-pane fade" id="warranty">
+        <?php
+        $ad = $assetDetail;
+        $wEndDate  = $ad['warranty_end_date']   ?? $ad['warranty_expiration'] ?? null;
+        $wStatus   = $ad['warranty_status']     ?? null;
+        $wProvider = $ad['warranty_provider']   ?? null;
+        $wStart    = $ad['warranty_start_date'] ?? null;
+        $wPeriod   = $ad['warranty_period']     ?? null;
+        $wRef      = $ad['warranty_reference']  ?? null;
+        $wNotes    = $ad['warranty_notes']      ?? null;
+
+        // Compute remaining days
+        $remainingDays = null;
+        $isExpired = false;
+        if ($wEndDate) {
+            $today = new DateTime('today');
+            $end   = new DateTime($wEndDate);
+            $diff  = $today->diff($end);
+            if ($end < $today) {
+                $isExpired = true;
+                $remainingDays = -$diff->days; // negative = days past expiry
+            } else {
+                $remainingDays = $diff->days;
+            }
+        }
+
+        $hasAnyWarrantyData = $wProvider || $wStart || $wEndDate || $wPeriod || $wRef || $wNotes || $wStatus;
+        ?>
+        <div class="card border-0 shadow-sm <?= $isExpired ? 'border-danger' : '' ?>">
+            <div class="card-header <?= $isExpired ? 'bg-danger text-white' : 'bg-light' ?> d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-shield-check"></i> Warranty Details
+                    <?php if ($isExpired): ?><span class="badge bg-warning text-dark ms-2">Expired</span><?php endif; ?>
+                </span>
+                <?php if (has_permission('manage_inventory_items')): ?>
+                <a href="/inventory/items/edit.php?id=<?= $itemId ?>" class="btn btn-sm <?= $isExpired ? 'btn-light' : 'btn-dark' ?>">
+                    <i class="bi bi-pencil"></i> Edit
+                </a>
+                <?php endif; ?>
+            </div>
+            <div class="card-body">
+                <?php if (!$hasAnyWarrantyData): ?>
+                <div class="alert alert-secondary mb-0">
+                    <i class="bi bi-info-circle"></i> No warranty information has been recorded for this asset.
+                    <?php if (has_permission('manage_inventory_items')): ?>
+                    <a href="/inventory/items/edit.php?id=<?= $itemId ?>" class="btn btn-sm btn-outline-secondary ms-2">Add Warranty Info</a>
+                    <?php endif; ?>
+                </div>
+                <?php else: ?>
+                <table class="table table-sm table-bordered mb-0">
+                    <tbody>
+                        <tr class="table-light">
+                            <th style="width:35%">Warranty Provider</th>
+                            <td><?= htmlspecialchars($wProvider ?? '-') ?></td>
+                        </tr>
+                        <tr>
+                            <th>Start Date</th>
+                            <td><?= $wStart ? date('d M Y', strtotime($wStart)) : '-' ?></td>
+                        </tr>
+                        <tr class="<?= $isExpired ? 'table-danger' : 'table-light' ?>">
+                            <th>End Date</th>
+                            <td>
+                                <?= $wEndDate ? date('d M Y', strtotime($wEndDate)) : '-' ?>
+                                <?php if ($wEndDate && $isExpired): ?>
+                                <span class="badge bg-danger ms-1">Expired <?= abs($remainingDays) ?> day<?= abs($remainingDays) !== 1 ? 's' : '' ?> ago</span>
+                                <?php elseif ($wEndDate && $remainingDays !== null): ?>
+                                <span class="badge bg-success ms-1"><?= $remainingDays ?> day<?= $remainingDays !== 1 ? 's' : '' ?> remaining</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Warranty Status</th>
+                            <td>
+                                <?php
+                                $wsColors = ['Active'=>'success','Expired'=>'danger','Void'=>'secondary','Pending'=>'warning','Unknown'=>'dark'];
+                                $wsVal = $wStatus ?? ($isExpired ? 'Expired' : '-');
+                                $wsColor = $wsColors[$wsVal] ?? 'secondary';
+                                if ($wsVal !== '-'): ?>
+                                <span class="badge bg-<?= $wsColor ?>"><?= htmlspecialchars($wsVal) ?></span>
+                                <?php else: echo '-'; endif; ?>
+                            </td>
+                        </tr>
+                        <tr class="table-light">
+                            <th>Warranty Period</th>
+                            <td><?= htmlspecialchars($wPeriod ?? '-') ?></td>
+                        </tr>
+                        <tr>
+                            <th>Reference / Contract No.</th>
+                            <td><?= htmlspecialchars($wRef ?? '-') ?></td>
+                        </tr>
+                        <tr class="table-light">
+                            <th>Notes</th>
+                            <td><?= $wNotes ? nl2br(htmlspecialchars($wNotes)) : '-' ?></td>
+                        </tr>
+                        <?php if ($wEndDate && !$isExpired && $remainingDays !== null): ?>
+                        <tr>
+                            <th>Remaining Days</th>
+                            <td><strong class="text-success"><?= $remainingDays ?> day<?= $remainingDays !== 1 ? 's' : '' ?></strong></td>
+                        </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+                <?php if ($isExpired): ?>
+                <div class="alert alert-danger mt-3 mb-0">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <strong>Warranty Expired:</strong> This asset's warranty expired on <?= date('d M Y', strtotime($wEndDate)) ?>.
+                </div>
+                <?php endif; ?>
+                <?php endif; ?>
+            </div>
+        </div>
     </div>
     <?php endif; ?>
 </div>

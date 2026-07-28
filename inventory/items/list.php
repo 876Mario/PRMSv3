@@ -10,7 +10,7 @@ $where = [];
 $params = [];
 
 if (!empty($_GET['q'])) {
-    $where[] = "(i.item_code LIKE :q OR i.item_name LIKE :q OR i.barcode LIKE :q OR i.part_number LIKE :q)";
+    $where[] = "(i.item_code LIKE :q OR i.item_name LIKE :q OR i.barcode LIKE :q OR i.part_number LIKE :q OR i.manufacturer LIKE :q OR i.model LIKE :q)";
     $params[':q'] = '%' . $_GET['q'] . '%';
 }
 if (!empty($_GET['category'])) {
@@ -213,6 +213,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         <th>Item Name</th>
                         <th>Domain</th>
                         <th>Category</th>
+                        <th>Manufacturer / Model</th>
                         <th>UOM</th>
                         <th class="text-end">On Hand</th>
                         <th class="text-end">Available</th>
@@ -224,7 +225,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                 </thead>
                 <tbody>
                     <?php if (empty($rows)): ?>
-                    <tr><td colspan="11" class="text-center text-muted py-4">No inventory items found.</td></tr>
+                    <tr><td colspan="12" class="text-center text-muted py-4">No inventory items found.</td></tr>
                     <?php endif; ?>
                     <?php foreach ($rows as $row): ?>
                     <tr>
@@ -246,6 +247,21 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                             <span class="badge bg-<?= $domainBadge[$d] ?? 'secondary' ?>"><?= $domainLabel[$d] ?? htmlspecialchars($d) ?></span>
                         </td>
                         <td><?= htmlspecialchars($row['category_name'] ?? '-') ?></td>
+                        <td>
+                            <?php
+                            $mfr   = htmlspecialchars($row['manufacturer'] ?? '');
+                            $model = htmlspecialchars($row['model'] ?? '');
+                            if ($mfr !== '' && $model !== '') {
+                                echo $mfr . '<br><small class="text-muted">' . $model . '</small>';
+                            } elseif ($mfr !== '') {
+                                echo $mfr;
+                            } elseif ($model !== '') {
+                                echo '<span class="text-muted">' . $model . '</span>';
+                            } else {
+                                echo '<span class="text-muted">—</span>';
+                            }
+                            ?>
+                        </td>
                         <td><?= htmlspecialchars($row['uom_code'] ?? '-') ?></td>
                         <td class="text-end"><?= number_format($row['total_stock'], 0) ?></td>
                         <td class="text-end <?= $row['available_stock'] <= ($row['reorder_level'] ?? 0) ? 'text-danger fw-bold' : '' ?>">
