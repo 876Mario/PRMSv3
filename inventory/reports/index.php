@@ -10,6 +10,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 $reportGroups = [
     'Stock Position & Valuation' => [
         ['icon' => 'bi-currency-dollar',    'color' => 'primary',   'title' => 'Stock Valuation',             'desc' => 'Current inventory value by item, location, and category (IPSAS 12).', 'url' => '/inventory/reports/stock_valuation.php'],
+        ['icon' => 'bi-geo-alt-fill',       'color' => 'success',   'title' => 'Inventory by Location',       'desc' => 'Location-specific inventory report with assets, quantities, values, custodians, and acquisition details. Supports PDF, Excel, and print.', 'url' => '/inventory/reports/location_inventory.php'],
        ['icon' => 'bi-building',           'color' => 'info',      'title' => 'Asset Register',              'desc' => 'Consolidated register of asset-designated items with quantity, value, and serialization status.', 'url' => '/inventory/reports/asset_register.php'],
        ['icon' => 'bi-arrow-left-right',   'color' => 'secondary', 'title' => 'Asset Movement Register',     'desc' => 'Serialized asset movement history by date range, lifecycle status, and location.', 'url' => '/inventory/reports/asset_movement_register.php'],
         ['icon' => 'bi-exclamation-triangle','color' => 'warning',  'title' => 'Reorder Report',              'desc' => 'Items at or below reorder point, sorted by criticality.', 'url' => '/inventory/reports/reorder_report.php'],
