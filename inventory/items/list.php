@@ -285,6 +285,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                             <a href="/inventory/items/edit.php?id=<?= $row['item_id'] ?>" class="btn btn-sm btn-outline-secondary" title="Edit">
                                 <i class="bi bi-pencil"></i>
                             </a>
+                            <a href="/inventory/items/duplicate.php?id=<?= $row['item_id'] ?>" class="btn btn-sm btn-outline-info" title="Duplicate">
+                                <i class="bi bi-copy"></i>
+                            </a>
                             <?php endif; ?>
                             <?php if (has_permission('delete_inventory_items')): ?>
                             <form method="post" action="/inventory/items/delete.php" class="d-inline" onsubmit='return confirm(<?= json_encode("Delete {$row['item_name']}? This cannot be undone.") ?>);'>

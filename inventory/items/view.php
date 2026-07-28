@@ -77,6 +77,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <a href="/inventory/items/edit.php?id=<?= $itemId ?>" class="btn btn-outline-primary">
             <i class="bi bi-pencil"></i> Edit
         </a>
+        <a href="/inventory/items/duplicate.php?id=<?= $itemId ?>" class="btn btn-outline-secondary" title="Duplicate this item">
+            <i class="bi bi-copy"></i> Duplicate
+        </a>
         <?php endif; ?>
         <a href="/inventory/items/list.php" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Back

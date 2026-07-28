@@ -33,11 +33,9 @@ ALTER TABLE `inv_asset_details`
   ADD INDEX IF NOT EXISTS `idx_warranty_status`   (`warranty_status`);
 
 -- ─── Verification ─────────────────────────────────────────────────────────────
-SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
-FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = DATABASE()
-  AND TABLE_NAME   = 'inv_asset_details'
-  AND COLUMN_NAME IN ('custodian_role','warranty_provider','warranty_start_date',
-                      'warranty_end_date','warranty_period','warranty_reference',
-                      'warranty_notes','warranty_status')
-ORDER BY ORDINAL_POSITION;
+-- Use SHOW COLUMNS instead of INFORMATION_SCHEMA to avoid access-denied errors
+-- on shared hosting environments.
+SHOW COLUMNS FROM `inv_asset_details`
+WHERE Field IN ('custodian_role','warranty_provider','warranty_start_date',
+                'warranty_end_date','warranty_period','warranty_reference',
+                'warranty_notes','warranty_status');
