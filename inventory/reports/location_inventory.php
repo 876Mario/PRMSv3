@@ -101,8 +101,7 @@ $countSql = "
     LEFT JOIN inv_locations l ON sl.location_id = l.location_id
     WHERE $whereClause
 ";
-$totalRows = (int) $pdo->prepare($countSql)->execute($params) ? $pdo->prepare($countSql)->fetchColumn() : 0;
-$cntStmt   = $pdo->prepare($countSql);
+$cntStmt = $pdo->prepare($countSql);
 $cntStmt->execute($params);
 $totalRows = (int) $cntStmt->fetchColumn();
 
@@ -334,7 +333,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         <th>Officer / User</th>
                         <th>Location</th>
                         <th>Status</th>
-                        <th>Acq. Date</th>
+                        <th>Acquisition Date</th>
                     </tr>
                 </thead>
                 <tbody>
