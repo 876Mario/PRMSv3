@@ -268,6 +268,12 @@ function getRequestTypeBadge(string $type): array {
             'color' => '#2e7d32',
             'icon' => '🏧'
         ],
+        'SERVICE_CONTRACT' => [
+            'label' => 'Service Contract',
+            'bg' => '#fff3e0',
+            'color' => '#e65100',
+            'icon' => '📄'
+        ],
         default => [
             'label' => $type,
             'bg' => '#f5f5f5',

@@ -181,6 +181,20 @@ $requestUsdRate = (float)($request['usd_rate'] ?? 0);
 $estimatedValue = ($requestCurrency === 'USD') ? $estimatedValueRaw * ($requestUsdRate ?: 155.00) : $estimatedValueRaw;
 
 /* ================================
+   Fetch service contract details (SERVICE_CONTRACT requests only)
+================================ */
+$serviceContract = null;
+if ($requestType === 'SERVICE_CONTRACT' && !empty($request['contract_id'])) {
+    $scStmt = $pdo->prepare("
+        SELECT sc.contract_id, sc.contract_number, sc.contract_title
+        FROM service_contracts sc
+        WHERE sc.contract_id = ?
+    ");
+    $scStmt->execute([(int)$request['contract_id']]);
+    $serviceContract = $scStmt->fetch(PDO::FETCH_ASSOC);
+}
+
+/* ================================
    Fetch approval chain from database
 ================================ */
 $approvalStmt = $pdo->prepare("
@@ -260,6 +274,35 @@ if ($requestType === 'PETTY_CASH') {
         'REIMBURSED'      => ['icon' => 'bi-cash-coin',       'label' => 'Reimbursed'],
         'COMPLETED'       => ['icon' => 'bi-check-circle',    'label' => 'Complete'],
     ];
+} elseif ($requestType === 'SERVICE_CONTRACT') {
+    $pipelineStages = [
+        'DRAFT'     => ['icon' => 'bi-pencil-square', 'label' => 'Draft'],
+        'SUBMITTED' => ['icon' => 'bi-send',           'label' => 'Submitted'],
+    ];
+    // Add approval stage(s) from the actual chain (or theoretical)
+    $scPipelineRoles = !empty($allApprovalRoles)
+        ? $allApprovalRoles
+        : getServiceContractApprovalChain($estimatedValue, $branchId, $pdo);
+    foreach ($scPipelineRoles as $scRole) {
+        switch ($scRole) {
+            case 'HOD':
+            case 'Branch Head':
+                $pipelineStages['HOD_APPROVED'] = ['icon' => 'bi-person-check', 'label' => 'Branch Approved'];
+                break;
+            case 'Director HRM&A':
+                $pipelineStages['DIRECTOR_APPROVED'] = ['icon' => 'bi-briefcase-fill', 'label' => 'Director Approved'];
+                break;
+            case 'Deputy Government Chemist':
+            case 'Government Chemist':
+                $pipelineStages['GC_APPROVED'] = ['icon' => 'bi-building-check', 'label' => 'GC Approved'];
+                break;
+        }
+    }
+    // Post-approval stages specific to service contracts (no PO/RFQ)
+    $pipelineStages['FUNDS_VERIFIED']      = ['icon' => 'bi-cash-coin',          'label' => 'Funds Verified'];
+    $pipelineStages['COMMITMENT_APPROVED'] = ['icon' => 'bi-file-earmark-check', 'label' => 'Committed'];
+    $pipelineStages['INVOICE_RECEIVED']    = ['icon' => 'bi-receipt',            'label' => 'Invoiced'];
+    $pipelineStages['COMPLETED']           = ['icon' => 'bi-check-circle',       'label' => 'Paid'];
 } else {
     // Regular procurement - build pipeline based on actual approval chain AND threshold
     // UPDATED: All regular procurement now uses RFQ (under & over-threshold)
@@ -540,6 +583,51 @@ $badge = $badgeMap[$status] ?? ['secondary', 'bi-question-circle'];
                 </div>
             </div>
         </div>
+    <?php elseif ($requestType === 'SERVICE_CONTRACT'): ?>
+        <!-- SERVICE CONTRACT KPIs -->
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-0 shadow-sm h-100" style="background: linear-gradient(135deg, #e8f5e9, #c8e6c9); border-left: 6px solid #4caf50;">
+                <div class="card-body text-center py-3">
+                    <small class="text-uppercase fw-bold d-block mb-1" style="letter-spacing:.05em; color:#2e7d32;">Payment Amount</small>
+                    <h3 class="mb-0 fw-bold" style="color:#1b5e20;"><?= $requestCurrency ?> <?= number_format($estimatedValueRaw, 2) ?></h3>
+                    <small class="text-muted">Requested</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-0 shadow-sm h-100" style="background: linear-gradient(135deg, #fff3e0, #ffe0b2); border-left: 6px solid #ff9800;">
+                <div class="card-body text-center py-3">
+                    <small class="text-uppercase fw-bold d-block mb-1" style="letter-spacing:.05em; color:#e65100;">Status</small>
+                    <h4 class="mb-0 fw-bold" style="color:#bf360c;"><?= str_replace('_', ' ', $status) ?></h4>
+                    <small class="text-muted">Current</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-0 shadow-sm h-100" style="background: linear-gradient(135deg, #e8eaf6, #c5cae9); border-left: 6px solid #3f51b5;">
+                <div class="card-body text-center py-3">
+                    <small class="text-uppercase fw-bold d-block mb-1" style="letter-spacing:.05em; color:#283593;">Contract</small>
+                    <?php if ($serviceContract): ?>
+                        <a href="/contracts/view.php?id=<?= (int)$serviceContract['contract_id'] ?>" class="text-decoration-none">
+                            <h5 class="mb-0 fw-bold" style="color:#1a237e;"><?= htmlspecialchars($serviceContract['contract_number']) ?></h5>
+                        </a>
+                        <?php $scTitle = $serviceContract['contract_title'] ?? ''; ?>
+                        <small class="text-muted"><?= htmlspecialchars(mb_strlen($scTitle) > 30 ? mb_substr($scTitle, 0, 30) . '…' : $scTitle) ?></small>
+                    <?php else: ?>
+                        <h5 class="mb-0 text-muted">&mdash;</h5>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card border-0 shadow-sm h-100" style="background: linear-gradient(135deg, #f3e5f5, #e1bee7); border-left: 6px solid #9c27b0;">
+                <div class="card-body text-center py-3">
+                    <small class="text-uppercase fw-bold d-block mb-1" style="letter-spacing:.05em; color:#6a1b9a;">Branch</small>
+                    <h5 class="mb-0 fw-bold" style="color:#4a148c;"><?= htmlspecialchars($request['branch_name'] ?? '—') ?></h5>
+                    <small class="text-muted"><?= date('M d, Y', strtotime($request['created_at'])) ?></small>
+                </div>
+            </div>
+        </div>
     <?php endif; ?>
 </div>
 
@@ -747,6 +835,53 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
             </div>
         </div>
     </div>
+    <?php elseif ($requestType === 'SERVICE_CONTRACT'): ?>
+    <!-- SERVICE CONTRACT PAYMENT REQUEST DETAILS -->
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>Payment Request Details</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small fw-bold">Request Number</label>
+                        <p class="mb-0"><strong><?= htmlspecialchars($request['request_number']) ?></strong></p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small fw-bold">Payment Amount</label>
+                        <p class="mb-0"><strong class="text-success"><?= $requestCurrency ?> <?= number_format($estimatedValueRaw, 2) ?></strong></p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small fw-bold">Date Requested</label>
+                        <p class="mb-0"><strong><?= date('M d, Y', strtotime($request['created_at'])) ?></strong></p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small fw-bold">Branch</label>
+                        <p class="mb-0"><strong><?= htmlspecialchars($request['branch_name'] ?? '—') ?></strong></p>
+                    </div>
+                    <?php if ($serviceContract): ?>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small fw-bold">Service Contract</label>
+                        <p class="mb-0">
+                            <a href="/contracts/view.php?id=<?= (int)$serviceContract['contract_id'] ?>" class="text-decoration-none fw-semibold">
+                                <?= htmlspecialchars($serviceContract['contract_number']) ?>
+                            </a>
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small fw-bold">Contract Title</label>
+                        <p class="mb-0 text-muted"><?= htmlspecialchars($serviceContract['contract_title'] ?? '—') ?></p>
+                    </div>
+                    <?php endif; ?>
+                    <div class="col-12">
+                        <label class="form-label text-muted small fw-bold">Description / Purpose</label>
+                        <p class="mb-0 text-muted"><?= nl2br(htmlspecialchars($request['description'])) ?></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <?php endif; ?>
 
     <!-- ACTIONS -->
@@ -759,9 +894,10 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                 <?php
                 // Determine button and label text based on request type
                 $typeLabel = [
-                    'PETTY_CASH' => '💰 Petty Cash Request',
-                    'REIMBURSEMENT' => '💵 Reimbursement Request',
-                    'REGULAR' => '📋 Regular Procurement'
+                    'PETTY_CASH'       => '💰 Petty Cash Request',
+                    'REIMBURSEMENT'    => '💵 Reimbursement Request',
+                    'REGULAR'          => '📋 Regular Procurement',
+                    'SERVICE_CONTRACT' => '📄 Service Contract Payment',
                 ][$requestType] ?? '📋 Request';
                 
                 // Check if under threshold (direct procurement)
@@ -826,9 +962,15 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     $nextStepIcon = 'bi-cloud-upload';
                     $nextStepColor = 'text-info';
                 } elseif ($current === 'COMMITMENT_APPROVED') {
-                    $nextStepDisplay = "Commitment created. Create a Purchase Order.";
-                    $nextStepIcon = 'bi-file-earmark-plus';
-                    $nextStepColor = 'text-success';
+                    if ($requestType === 'SERVICE_CONTRACT') {
+                        $nextStepDisplay = "Commitment created. Submit the invoice to proceed to payment.";
+                        $nextStepIcon = 'bi-receipt';
+                        $nextStepColor = 'text-success';
+                    } else {
+                        $nextStepDisplay = "Commitment created. Create a Purchase Order.";
+                        $nextStepIcon = 'bi-file-earmark-plus';
+                        $nextStepColor = 'text-success';
+                    }
                 } elseif ($current === 'PO_PENDING') {
                     $nextStepDisplay = "Purchase Order created. Upload invoice to proceed.";
                     $nextStepIcon = 'bi-receipt';
@@ -850,29 +992,41 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     $nextStepIcon = 'bi-arrow-repeat';
                     $nextStepColor = 'text-warning';
                 } elseif (in_array($current, ['HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'])) {
-                    // Resolve the correct workflow to show accurate next step
-                    $wf = resolveWorkflow($pdo, $requestType, $estimatedValue, $branchId, $requestCurrency, $requestUsdRate);
-                    if ($current === 'GC_APPROVED' && $rfqId) {
-                        // Post-committee GC approval — ready for vendor award
-                        $nextStepDisplay = "GC approved. Proceed to award the recommended vendor.";
-                        $nextStepIcon = 'bi-trophy';
-                        $nextStepColor = 'text-success';
-                    } elseif ($wf['post_approval_status'] === 'AWARDED') {
-                        $nextStepDisplay = "All approvals complete. Proceeding to vendor award ({$wf['workflow_label']}).";
-                        $nextStepIcon = 'bi-trophy';
-                        $nextStepColor = 'text-success';
-                    } elseif ($wf['post_approval_status'] === 'RFQ_LETTER_AVAILABLE') {
-                        $nextStepDisplay = "Approved. Create RFQ and send letters to vendors for quotes ({$wf['workflow_label']}).";
-                        $nextStepIcon = 'bi-envelope-open';
-                        $nextStepColor = 'text-info';
-                    } elseif ($wf['post_approval_status'] === 'PROCUREMENT_STAGE') {
-                        $nextStepDisplay = "Approved. Proceed to procurement stage for evaluation ({$wf['workflow_label']}).";
-                        $nextStepIcon = 'bi-clipboard-check';
-                        $nextStepColor = 'text-warning';
+                    if ($requestType === 'SERVICE_CONTRACT') {
+                        if ($current === 'HOD_APPROVED' || $current === 'DIRECTOR_APPROVED' || $current === 'GC_APPROVED') {
+                            $nextStepDisplay = "Approved. Finance Officer needs to verify funds and create a commitment.";
+                            $nextStepIcon = 'bi-cash-coin';
+                            $nextStepColor = 'text-success';
+                        } elseif ($current === 'FUNDS_VERIFIED') {
+                            $nextStepDisplay = "Funds verified. Finance to create commitment in GFMS and upload the document.";
+                            $nextStepIcon = 'bi-file-earmark-check';
+                            $nextStepColor = 'text-warning';
+                        }
                     } else {
-                        $nextStepDisplay = "Approved. Next: " . str_replace('_', ' ', $wf['post_approval_status']);
-                        $nextStepIcon = 'bi-arrow-right';
-                        $nextStepColor = 'text-info';
+                        // Resolve the correct workflow to show accurate next step
+                        $wf = resolveWorkflow($pdo, $requestType, $estimatedValue, $branchId, $requestCurrency, $requestUsdRate);
+                        if ($current === 'GC_APPROVED' && $rfqId) {
+                            // Post-committee GC approval — ready for vendor award
+                            $nextStepDisplay = "GC approved. Proceed to award the recommended vendor.";
+                            $nextStepIcon = 'bi-trophy';
+                            $nextStepColor = 'text-success';
+                        } elseif ($wf['post_approval_status'] === 'AWARDED') {
+                            $nextStepDisplay = "All approvals complete. Proceeding to vendor award ({$wf['workflow_label']}).";
+                            $nextStepIcon = 'bi-trophy';
+                            $nextStepColor = 'text-success';
+                        } elseif ($wf['post_approval_status'] === 'RFQ_LETTER_AVAILABLE') {
+                            $nextStepDisplay = "Approved. Create RFQ and send letters to vendors for quotes ({$wf['workflow_label']}).";
+                            $nextStepIcon = 'bi-envelope-open';
+                            $nextStepColor = 'text-info';
+                        } elseif ($wf['post_approval_status'] === 'PROCUREMENT_STAGE') {
+                            $nextStepDisplay = "Approved. Proceed to procurement stage for evaluation ({$wf['workflow_label']}).";
+                            $nextStepIcon = 'bi-clipboard-check';
+                            $nextStepColor = 'text-warning';
+                        } else {
+                            $nextStepDisplay = "Approved. Next: " . str_replace('_', ' ', $wf['post_approval_status']);
+                            $nextStepIcon = 'bi-arrow-right';
+                            $nextStepColor = 'text-info';
+                        }
                     }
                 } else {
                     $nextStepDisplay = "In progress";
@@ -900,6 +1054,9 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                             $editUrl = '/reimbursement/edit.php';
                         } elseif ($requestType === 'PETTY_CASH') {
                             $editUrl = '/petty_cash/edit.php';
+                        } elseif ($requestType === 'SERVICE_CONTRACT') {
+                            // Service contract payment requests are created/edited via the contracts module
+                            $editUrl = null;
                         }
                         
                         // Determine which submit.php file to use
@@ -910,9 +1067,15 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                             $submitUrl = '/petty_cash/submit.php';
                         }
                         ?>
+                        <?php if ($editUrl): ?>
                         <a href="<?= $editUrl ?>?id=<?= $request['request_id'] ?>" class="btn btn-warning">
                             <i class="bi bi-pencil-square me-1"></i>Edit Request
                         </a>
+                        <?php elseif ($serviceContract): ?>
+                        <a href="/contracts/view.php?id=<?= (int)$serviceContract['contract_id'] ?>" class="btn btn-outline-secondary">
+                            <i class="bi bi-file-earmark-text me-1"></i>View Contract
+                        </a>
+                        <?php endif; ?>
                         <a href="<?= $submitUrl ?>?id=<?= $request['request_id'] ?>"
                            class="btn btn-primary" onclick="return confirm('Submit this request?')">
                             <i class="bi bi-send me-1"></i>Submit Request
@@ -1078,10 +1241,14 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                         </a>
                     <?php endif; ?>
 
-                    <?php if ($current === 'COMMITMENT_APPROVED' && $originalCommitment && !$po): ?>
+                    <?php if ($current === 'COMMITMENT_APPROVED' && $originalCommitment && !$po && $requestType !== 'SERVICE_CONTRACT'): ?>
                         <a href="/po/add.php?commitment_id=<?= (int)$originalCommitment['commitment_id'] ?>" class="btn btn-primary">
                             <i class="bi bi-file-earmark-text me-1"></i>Create Purchase Order
                         </a>
+                    <?php elseif ($current === 'COMMITMENT_APPROVED' && $requestType === 'SERVICE_CONTRACT'): ?>
+                        <div class="alert alert-success py-2 mb-0 small">
+                            <i class="bi bi-check-circle me-1"></i>Commitment created. Submit the invoice to proceed to payment.
+                        </div>
                     <?php endif; ?>
 
                     <?php if (
