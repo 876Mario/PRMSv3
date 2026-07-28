@@ -81,6 +81,7 @@ try {
             echo json_encode(['error' => 'Invalid type parameter.']);
     }
 } catch (Throwable $e) {
+    error_log('get_locations.php error: ' . $e->getMessage());
     http_response_code(500);
     echo json_encode(['error' => 'Server error.']);
 }

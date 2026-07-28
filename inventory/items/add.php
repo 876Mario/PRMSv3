@@ -1086,19 +1086,22 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     function loadSites(currentSite) {
         fetch(ENDPOINT + '?type=sites')
             .then(function (r) { return r.json(); })
-            .then(function (data) { buildOptions(siteSel, data, currentSite || '', '— Select Site —'); });
+            .then(function (data) { buildOptions(siteSel, data, currentSite || '', '— Select Site —'); })
+            .catch(function () { siteSel.disabled = false; });
     }
 
     function loadBuildings(site, currentBuilding) {
         fetch(ENDPOINT + '?type=buildings&site=' + encodeURIComponent(site))
             .then(function (r) { return r.json(); })
-            .then(function (data) { buildOptions(buildSel, data, currentBuilding || '', '— Select Building —'); });
+            .then(function (data) { buildOptions(buildSel, data, currentBuilding || '', '— Select Building —'); })
+            .catch(function () { buildSel.disabled = false; });
     }
 
     function loadFloors(site, building, currentFloor) {
         fetch(ENDPOINT + '?type=floors&site=' + encodeURIComponent(site) + '&building=' + encodeURIComponent(building))
             .then(function (r) { return r.json(); })
-            .then(function (data) { buildOptions(floorSel, data, currentFloor || '', '— Select Floor / Room —'); });
+            .then(function (data) { buildOptions(floorSel, data, currentFloor || '', '— Select Floor / Room —'); })
+            .catch(function () { floorSel.disabled = false; });
     }
 
     siteSel.addEventListener('change', function () {
@@ -1113,9 +1116,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     });
 
     // Initial population — restore any pre-selected values (e.g. after failed POST)
-    var initSite  = <?= json_encode($_POST['ar_site'] ?? '') ?>;
-    var initBuild = <?= json_encode($_POST['ar_building'] ?? '') ?>;
-    var initFloor = <?= json_encode($_POST['ar_floor_room'] ?? '') ?>;
+    var initSite  = <?= json_encode($_POST['ar_site'] ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    var initBuild = <?= json_encode($_POST['ar_building'] ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    var initFloor = <?= json_encode($_POST['ar_floor_room'] ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
     loadSites(initSite);
     if (initSite) {
