@@ -952,6 +952,219 @@ try {
             $filename = 'transaction_history_' . date('Ymd') . '.pdf';
             break;
 
+        // ── Inventory Report by Location ────────────────────────────────────
+        case 'location_inventory':
+            $locF     = (int) ($_GET['location_id']   ?? 0);
+            $catF     = (int) ($_GET['category_id']   ?? 0);
+            $statusF  = $_GET['status']               ?? '';
+            $acqFrom  = $_GET['acquired_from']        ?? '';
+            $acqTo    = $_GET['acquired_to']          ?? '';
+
+            // Check tables
+            $adExistsStmt = $pdo->query(
+                "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='inv_asset_details'"
+            );
+            $adReady = (int) $adExistsStmt->fetchColumn() > 0;
+
+            $brExistsStmt = $pdo->query(
+                "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='branches'"
+            );
+            $brReady = (int) $brExistsStmt->fetchColumn() > 0;
+
+            $adJoin = $adReady
+                ? "LEFT JOIN inv_asset_details ad ON ad.item_id = i.item_id"
+                  . ($brReady ? " LEFT JOIN branches b ON ad.department_branch_id = b.branch_id" : "")
+                  . " LEFT JOIN users u ON ad.custodian_user_id = u.user_id"
+                : "";
+
+            $adSelect = $adReady
+                ? "ad.asset_code AS asset_tag, ad.serial_number AS asset_serial,
+                   ad.acquired_date, ad.asset_status,
+                   COALESCE(ad.custodian_name, u.full_name) AS officer_name,"
+                  . ($brReady ? " b.branch_name AS department_name," : " NULL AS department_name,")
+                : "NULL AS asset_tag, NULL AS asset_serial,
+                   NULL AS acquired_date, NULL AS asset_status,
+                   NULL AS officer_name, NULL AS department_name,";
+
+            $where  = ["sl.quantity_on_hand > 0"];
+            $params = [];
+            if ($locF > 0) { $where[] = "sl.location_id = ?"; $params[] = $locF; }
+            if ($catF > 0) { $where[] = "i.category_id = ?";  $params[] = $catF; }
+            if ($statusF !== '') {
+                $sc = ["sl.stock_status = ?"];
+                $params[] = $statusF;
+                if ($adReady) { $sc[] = "ad.asset_status = ?"; $params[] = $statusF; }
+                $where[] = '(' . implode(' OR ', $sc) . ')';
+            }
+            if ($acqFrom !== '' && $adReady) { $where[] = "ad.acquired_date >= ?"; $params[] = $acqFrom; }
+            if ($acqTo   !== '' && $adReady) { $where[] = "ad.acquired_date <= ?"; $params[] = $acqTo; }
+
+            $whereClause = implode(' AND ', $where);
+
+            // Resolve location label
+            $locationLabel = 'All Locations';
+            if ($locF > 0) {
+                $ls = $pdo->prepare("SELECT location_code, site_name FROM inv_locations WHERE location_id = ?");
+                $ls->execute([$locF]);
+                $ld = $ls->fetch(PDO::FETCH_ASSOC);
+                if ($ld) {
+                    $locationLabel = $ld['location_code'] . ($ld['site_name'] ? ' — ' . $ld['site_name'] : '');
+                }
+            }
+
+            $rowsStmt = $pdo->prepare("
+                SELECT
+                    i.item_code,
+                    i.item_name,
+                    i.description,
+                    c.category_name,
+                    l.location_code,
+                    CONCAT_WS(' > ',
+                        NULLIF(l.site_name, ''),
+                        NULLIF(l.building, ''),
+                        NULLIF(l.floor, ''),
+                        NULLIF(l.room_storage_area, '')
+                    ) AS location_path,
+                    sl.quantity_on_hand,
+                    sl.unit_cost,
+                    (sl.quantity_on_hand * sl.unit_cost) AS total_value,
+                    sl.stock_status,
+                    $adSelect
+                    i.item_status
+                FROM inv_stock sl
+                JOIN inv_items i ON sl.item_id = i.item_id
+                LEFT JOIN inv_categories c ON i.category_id = c.category_id
+                LEFT JOIN inv_locations l ON sl.location_id = l.location_id
+                $adJoin
+                WHERE $whereClause
+                ORDER BY l.location_code, i.item_name
+                LIMIT 3000
+            ");
+            $rowsStmt->execute($params);
+            $rows = $rowsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Totals
+            $grandTotal = 0.0;
+            $grandQty   = 0.0;
+            foreach ($rows as $r) {
+                $grandTotal += (float) $r['total_value'];
+                $grandQty   += (float) $r['quantity_on_hand'];
+            }
+
+            $userName = $_SESSION['full_name'] ?? 'System';
+
+            $trs = '';
+            $currentLoc  = null;
+            $locSubTotal = 0.0;
+            $locSubQty   = 0.0;
+            $n = 1;
+            foreach ($rows as $r) {
+                if ($locF === 0 && $r['location_code'] !== $currentLoc) {
+                    if ($currentLoc !== null) {
+                        $trs .= '<tr style="background:#d4edda;font-weight:bold;">'
+                            . '<td colspan="5" style="text-align:right;">Subtotal — ' . htmlspecialchars($currentLoc) . ':</td>'
+                            . '<td style="text-align:right;">' . number_format($locSubQty, 2) . '</td>'
+                            . '<td></td>'
+                            . '<td style="text-align:right;">$' . number_format($locSubTotal, 2) . '</td>'
+                            . '<td colspan="5"></td></tr>';
+                    }
+                    $currentLoc  = $r['location_code'];
+                    $locSubTotal = 0.0;
+                    $locSubQty   = 0.0;
+                }
+                $locSubTotal += (float) $r['total_value'];
+                $locSubQty   += (float) $r['quantity_on_hand'];
+                $displayStatus = $r['asset_status'] ?: $r['stock_status'];
+                $trs .= '<tr>'
+                    . '<td>' . $n++ . '</td>'
+                    . '<td><b>' . htmlspecialchars($r['item_name']) . '</b><br><small style="color:#6c757d;">' . htmlspecialchars($r['item_code']) . '</small></td>'
+                    . '<td style="font-size:9px;">' . htmlspecialchars(mb_strimwidth($r['description'] ?? '', 0, 60, '…')) . '</td>'
+                    . '<td>' . htmlspecialchars($r['asset_serial'] ?? '-') . '</td>'
+                    . '<td>' . htmlspecialchars($r['asset_tag'] ?? '-') . '</td>'
+                    . '<td>' . htmlspecialchars($r['category_name'] ?? '-') . '</td>'
+                    . '<td class="text-right">' . number_format((float)$r['quantity_on_hand'], 2) . '</td>'
+                    . '<td class="text-right">$' . number_format((float)$r['unit_cost'], 2) . '</td>'
+                    . '<td class="text-right">$' . number_format((float)$r['total_value'], 2) . '</td>'
+                    . '<td>' . htmlspecialchars($r['department_name'] ?? '-') . '</td>'
+                    . '<td>' . htmlspecialchars($r['officer_name'] ?? '-') . '</td>'
+                    . '<td>' . htmlspecialchars($r['location_code'] ?? '-') . '</td>'
+                    . '<td>' . htmlspecialchars($displayStatus ?? '-') . '</td>'
+                    . '<td>' . htmlspecialchars($r['acquired_date'] ?? '-') . '</td>'
+                    . '</tr>';
+            }
+            if ($locF === 0 && $currentLoc !== null) {
+                $trs .= '<tr style="background:#d4edda;font-weight:bold;">'
+                    . '<td colspan="5" style="text-align:right;">Subtotal — ' . htmlspecialchars($currentLoc) . ':</td>'
+                    . '<td style="text-align:right;">' . number_format($locSubQty, 2) . '</td>'
+                    . '<td></td>'
+                    . '<td style="text-align:right;">$' . number_format($locSubTotal, 2) . '</td>'
+                    . '<td colspan="5"></td></tr>';
+            }
+            if (!empty($rows)) {
+                $trs .= '<tr style="background:#0b5e2b;color:#fff;font-weight:bold;">'
+                    . '<td colspan="5" style="text-align:right;">Grand Total:</td>'
+                    . '<td style="text-align:right;">' . number_format($grandQty, 2) . '</td>'
+                    . '<td></td>'
+                    . '<td style="text-align:right;">$' . number_format($grandTotal, 2) . '</td>'
+                    . '<td colspan="5"></td></tr>';
+            }
+
+            $emptyRow = '<tr><td colspan="14" style="text-align:center;color:#6c757d;padding:16px;">No inventory records found</td></tr>';
+
+            $html = '<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+body{font-family:\'Helvetica\',\'Arial\',sans-serif;color:#212529;font-size:9px;margin:0;padding:0;}
+table{border-collapse:collapse;width:100%;}
+th{background:#0b5e2b;color:#fff;padding:5px 6px;text-align:left;font-size:8.5px;}
+td{padding:4px 6px;border-bottom:1px solid #e9ecef;font-size:8.5px;vertical-align:top;}
+tr:nth-child(even) td{background:#f8f9fa;}
+.text-right{text-align:right;}
+</style></head><body>
+<div style="background:linear-gradient(90deg,#0b5e2b,#c9a227);padding:12px 16px;color:#fff;">
+<table><tr>
+<td><span style="font-size:15px;font-weight:700;">Government Chemist — PRMS</span><br>
+<span style="font-size:9px;opacity:0.85;">Procurement &amp; Resource Management System</span></td>
+<td style="text-align:right;font-size:9px;">
+Generated: ' . date('d M Y \a\t g:i A') . '<br>
+Generated By: ' . htmlspecialchars($userName) . '
+</td>
+</tr></table></div>
+<div style="padding:10px 16px 6px;">
+<h2 style="margin:0 0 3px;font-size:14px;color:#1a1a2e;">Inventory Report by Location</h2>
+<p style="margin:0;color:#6c757d;font-size:9px;">Location: <b>' . htmlspecialchars($locationLabel) . '</b> &mdash; Report Date: ' . date('d M Y') . '</p>
+</div>
+<div style="padding:4px 16px 8px;font-size:9px;">
+<table style="width:auto;border:0;"><tr>
+<td style="padding:0 16px 0 0;border:0;background:none;">Total Items: <b>' . number_format(count($rows)) . '</b></td>
+<td style="padding:0 16px 0 0;border:0;background:none;">Total Qty: <b>' . number_format($grandQty, 2) . '</b></td>
+<td style="padding:0;border:0;background:none;">Total Value: <b>$' . number_format($grandTotal, 2) . '</b></td>
+</tr></table>
+</div>
+<div style="padding:0 16px;">
+<table>
+<thead><tr>
+<th>#</th><th>Item / Asset Name</th><th>Description</th>
+<th>Serial No.</th><th>Asset Tag</th><th>Category</th>
+<th class="text-right">Qty</th><th class="text-right">Unit Cost</th><th class="text-right">Total Value</th>
+<th>Department</th><th>Officer / User</th><th>Location</th><th>Status</th><th>Acq. Date</th>
+</tr></thead>
+<tbody>' . ($trs ?: $emptyRow) . '</tbody>
+</table>
+</div>
+<div style="padding:10px 16px;text-align:center;color:#adb5bd;font-size:8px;border-top:1px solid #e9ecef;margin-top:12px;">
+&copy; ' . date('Y') . ' Government Chemist &middot; Confidential &middot; PRMS
+</div></body></html>';
+
+            $dompdfOptions = new Options();
+            $dompdfOptions->set('isRemoteEnabled', false);
+            $dompdfOptions->set('isHtml5ParserEnabled', true);
+            $dompdf2 = new \Dompdf\Dompdf($dompdfOptions);
+            $dompdf2->loadHtml($html);
+            $dompdf2->setPaper('A4', 'landscape');
+            $dompdf2->render();
+            $dompdf2->stream('location_inventory_' . date('Ymd') . '.pdf', ['Attachment' => false]);
+            exit;
+
         default:
             http_response_code(400);
             exit('Unknown report type: ' . htmlspecialchars($report));
