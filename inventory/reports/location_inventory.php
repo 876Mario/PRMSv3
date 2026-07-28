@@ -442,8 +442,20 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 </div>
 
 <div class="mt-3 no-print">
-    <?php renderShowingInfo($page, $perPage, $totalRows); ?>
-    <?php renderPagination($totalRows, $perPage, $page, $_GET); ?>
+    <?php 
+    renderShowingInfo($page, $perPage, $totalRows);
+    
+    /* Build pagination params with filtered query params to match export behavior */
+    $paginationParams = array_filter([
+        'location_id'   => $locationId  ?: null,
+        'category_id'   => $categoryId  ?: null,
+        'status'        => $statusF      !== '' ? $statusF : null,
+        'acquired_from' => $acquiredFrom !== '' ? $acquiredFrom : null,
+        'acquired_to'   => $acquiredTo   !== '' ? $acquiredTo   : null,
+    ]);
+    
+    renderPagination($totalRows, $perPage, $page, $paginationParams); 
+    ?>
 </div>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/footer.php'; ?>
