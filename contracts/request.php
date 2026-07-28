@@ -5,15 +5,6 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
 
-// Global error handler to prevent blank pages from fatal errors
-set_error_handler(function(int $errno, string $errstr, string $errfile, int $errline): bool {
-    if (!(error_reporting() & $errno)) {
-        return false;
-    }
-    error_log("contracts/request.php error [$errno]: $errstr in $errfile:$errline");
-    return true;
-});
-
 $contract_id = isset($_GET['contract_id']) ? (int)$_GET['contract_id'] : 0;
 if ($contract_id <= 0) {
     pop('Invalid contract reference.', '/contracts/list.php', POP_DEFAULT_DELAY_MS, 'error');

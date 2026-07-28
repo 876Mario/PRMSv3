@@ -93,9 +93,9 @@ try {
         WHERE request_id = ?
     ")->execute([$targetStatus, $id]);
 
-    // Reset pending approvals that would be invalid at the reverted stage.
-    // Remove approvals that were marked 'approved' for stages AFTER the target.
-    // This ensures the approval chain re-activates from the correct point.
+    // Remove only the pending approvals for this request.
+    // Previously-approved stages are retained in audit_log / workflow_transition_history.
+    // The approval chain will be re-seeded by the next approver action if required.
     $pdo->prepare("
         DELETE FROM request_approvals
         WHERE request_id = ?

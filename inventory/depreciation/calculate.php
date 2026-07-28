@@ -69,7 +69,7 @@ function calculateDepreciationSchedule(
 
         case 'DECLINING_BALANCE':
             if ($rate === null || $rate <= 0 || $rate >= 1) {
-                return depErrorSchedule('Declining balance rate must be between 0 and 1 (exclusive).');
+                return depErrorSchedule('Declining balance rate must be between 1% and 99%.');
             }
             if ($usefulLifeYears === null || $usefulLifeYears <= 0) {
                 return depErrorSchedule('Useful life must be greater than zero for Declining Balance.');
