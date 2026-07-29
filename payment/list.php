@@ -309,9 +309,9 @@ $totalAmount = (float)($totals['total_amount'] ?? 0);
                             <small class="text-muted"><?= htmlspecialchars($p['entered_by'] ?? '—') ?></small>
                         </td>
                         <td style="padding: 1rem; border: none; text-align: center;">
-                            <a href="/invoice/view.php?id=<?= (int)$p['invoice_id'] ?>" 
+                            <a href="/payment/view.php?id=<?= (int)$p['payment_id'] ?>" 
                                class="btn btn-sm" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; padding: 0.35rem 0.75rem;"
-                               title="View Invoice">
+                               title="View Payment">
                                 <i class="bi bi-eye"></i>
                             </a>
                         </td>
