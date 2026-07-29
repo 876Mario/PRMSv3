@@ -34,6 +34,17 @@ $pay = $pdo->prepare("SELECT * FROM payments WHERE invoice_id = ? ORDER BY payme
 $pay->execute([$id]);
 $payments = $pay->fetchAll(PDO::FETCH_ASSOC);
 
+// Attachments
+$attStmt = $pdo->prepare("
+    SELECT a.*, u.full_name AS uploader_name
+    FROM invoice_attachments a
+    LEFT JOIN users u ON a.uploaded_by = u.user_id
+    WHERE a.invoice_id = ? AND a.is_deleted = 0
+    ORDER BY a.uploaded_date DESC
+");
+$attStmt->execute([$id]);
+$attachments = $attStmt->fetchAll(PDO::FETCH_ASSOC);
+
 $totalPaid = array_sum(array_column($payments, 'payment_amount'));
 $balance   = (float)$i['invoice_amount'] - $totalPaid;
 $paidPct   = ($i['invoice_amount'] > 0) ? min(100, round(($totalPaid / (float)$i['invoice_amount']) * 100)) : 0;
@@ -243,6 +254,14 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
                     <a href="<?= auditUrl('invoices', $i['invoice_id']) ?>" class="btn btn-outline-secondary">
                         <i class="bi bi-journal-text me-1"></i>Audit Trail
                     </a>
+                    <?php if (has_permission('upload_invoice_attachment')): ?>
+                    <a href="#attachments-section" class="btn btn-outline-dark">
+                        <i class="bi bi-paperclip me-1"></i>Manage Attachments
+                        <?php if (count($attachments) > 0): ?>
+                        <span class="badge bg-secondary ms-1"><?= count($attachments) ?></span>
+                        <?php endif; ?>
+                    </a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -264,13 +283,14 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
                     <tr style="background-color: #f8f9fa; color: #000;">
                         <th class="ps-3"><i class="bi bi-calendar-event me-1"></i>Date</th>
                         <th><i class="bi bi-hash me-1"></i>Reference</th>
-                        <th class="text-end pe-3"><i class="bi bi-currency-dollar me-1"></i>Amount</th>
+                        <th class="text-end"><i class="bi bi-currency-dollar me-1"></i>Amount</th>
+                        <th class="text-center pe-3" style="width:90px;">Details</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($payments)): ?>
                     <tr>
-                        <td colspan="3" class="text-center py-4">
+                        <td colspan="4" class="text-center py-4">
                             <i class="bi bi-inbox text-muted fs-1"></i>
                             <p class="text-muted mt-2 mb-0">No payments recorded for this invoice.</p>
                         </td>
@@ -282,7 +302,13 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
                             <td>
                                 <span class="badge bg-info text-dark"><?= htmlspecialchars($p['payment_reference']) ?></span>
                             </td>
-                            <td class="text-end pe-3 fw-semibold text-success"><?= money((float)$p['payment_amount']) ?></td>
+                            <td class="text-end fw-semibold text-success"><?= money((float)$p['payment_amount']) ?></td>
+                            <td class="text-center pe-3">
+                                <a href="/payment/view.php?id=<?= (int)$p['payment_id'] ?>"
+                                   class="btn btn-sm btn-outline-secondary" title="View payment & vouchers">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </td>
                         </tr>
                         <?php endforeach; ?>
 
@@ -291,12 +317,101 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
                             <td class="ps-3 fw-bold" colspan="2">
                                 <i class="bi bi-calculator me-1"></i>Total Paid
                             </td>
-                            <td class="text-end pe-3 fw-bold text-white"><?= money($totalPaid) ?></td>
+                            <td class="text-end fw-bold text-white"><?= money($totalPaid) ?></td>
+                            <td></td>
                         </tr>
                     <?php endif; ?>
                 </tbody>
             </table>
         </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     INVOICE ATTACHMENTS
+═══════════════════════════════════════════════════════ -->
+<div class="card shadow-sm border-0 mb-4" id="attachments-section">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-paperclip me-2"></i>Attachments</h5>
+        <span class="badge bg-light text-dark"><?= count($attachments) ?> file<?= count($attachments) !== 1 ? 's' : '' ?></span>
+    </div>
+    <div class="card-body">
+
+        <?php if (has_permission('upload_invoice_attachment')): ?>
+        <form method="post" action="/invoice/upload_attachment.php" enctype="multipart/form-data" class="mb-4">
+            <input type="hidden" name="invoice_id" value="<?= $id ?>">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-8">
+                    <label class="form-label small fw-bold text-muted mb-1">Upload Invoice Document</label>
+                    <input type="file" name="attachment_file" class="form-control form-control-sm"
+                           accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" required>
+                    <small class="text-muted">Allowed: PDF, JPG, JPEG, PNG, DOC, DOCX &mdash; Max 10 MB</small>
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-dark btn-sm w-100">
+                        <i class="bi bi-upload me-1"></i>Upload Invoice
+                    </button>
+                </div>
+            </div>
+        </form>
+        <?php endif; ?>
+
+        <?php if (empty($attachments)): ?>
+        <div class="text-center py-4">
+            <i class="bi bi-folder2-open text-muted fs-1"></i>
+            <p class="text-muted mt-2 mb-0">No attachments uploaded for this invoice.</p>
+        </div>
+        <?php else: ?>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr style="background-color: #f8f9fa; color: #000;">
+                        <th class="ps-3"><i class="bi bi-file-earmark me-1"></i>File Name</th>
+                        <th><i class="bi bi-person me-1"></i>Uploaded By</th>
+                        <th><i class="bi bi-calendar me-1"></i>Upload Date</th>
+                        <th><i class="bi bi-hdd me-1"></i>Size</th>
+                        <th class="text-center pe-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($attachments as $att): ?>
+                    <tr>
+                        <td class="ps-3">
+                            <i class="bi bi-file-earmark-<?= strpos($att['file_type'], 'pdf') !== false ? 'pdf text-danger' : (strpos($att['file_type'], 'image') !== false ? 'image text-primary' : 'word text-info') ?> me-1"></i>
+                            <?= htmlspecialchars($att['original_file_name']) ?>
+                        </td>
+                        <td><?= htmlspecialchars($att['uploader_name'] ?? '—') ?></td>
+                        <td><?= date('d M Y, g:i A', strtotime($att['uploaded_date'])) ?></td>
+                        <td><?= number_format($att['file_size'] / 1024, 1) ?> KB</td>
+                        <td class="text-center pe-3">
+                            <div class="btn-group btn-group-sm">
+                                <?php if (in_array($att['file_type'], ['application/pdf', 'image/jpeg', 'image/png'], true)): ?>
+                                <a href="/invoice/download_attachment.php?id=<?= (int)$att['id'] ?>&action=view"
+                                   class="btn btn-outline-primary" target="_blank" title="View">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <?php endif; ?>
+                                <a href="/invoice/download_attachment.php?id=<?= (int)$att['id'] ?>&action=download"
+                                   class="btn btn-outline-secondary" title="Download">
+                                    <i class="bi bi-download"></i>
+                                </a>
+                                <?php if (has_permission('delete_invoice_attachment')): ?>
+                                <form method="post" action="/invoice/delete_attachment.php" class="d-inline"
+                                      onsubmit="return confirm('Delete this attachment? This cannot be undone.')">
+                                    <input type="hidden" name="attachment_id" value="<?= (int)$att['id'] ?>">
+                                    <button type="submit" class="btn btn-outline-danger" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
     </div>
 </div>
 
