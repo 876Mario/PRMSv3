@@ -39,8 +39,18 @@ if ($assetDetailsTableExists) {
     } catch (Throwable $e) { /* branches table may not exist on all installs */ }
 }
 
-/* Roles list for custodian role dropdown */
-$allRoles = $pdo->query("SELECT id, name FROM roles ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+/* Job titles for custodian role dropdown */
+$jobTitlesForCustodian = [];
+try {
+    $jobTitlesForCustodian = $pdo->query(
+        "SELECT id, title_name FROM job_titles WHERE is_active = 1 ORDER BY sort_order, title_name"
+    )->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) { /* graceful degradation */ }
+
+/* Roles list for custodian role dropdown (fallback if job_titles not available) */
+$allRoles = !empty($jobTitlesForCustodian)
+    ? []
+    : $pdo->query("SELECT id, name FROM roles ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
 
 /* Load admin-configured field requirement settings for Asset Register Details */
 $arFieldRequired = [];
@@ -211,6 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $arSite            = trim($_POST['ar_site'] ?? '');
             $arBuilding        = trim($_POST['ar_building'] ?? '');
             $arFloorRoom       = trim($_POST['ar_floor_room'] ?? '');
+            $arLocationId      = ($_POST['ar_location_id'] ?? '') !== '' ? (int)$_POST['ar_location_id'] : null;
             $arPurchaseCost    = trim($_POST['ar_purchase_cost'] ?? '');
             $arDisposalDate    = trim($_POST['ar_disposal_date'] ?? '');
             $arDisposalAmount  = trim($_POST['ar_disposal_amount'] ?? '');
@@ -270,7 +281,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     UPDATE inv_asset_details SET
                         asset_code = ?, acquired_date = ?, asset_condition = ?, asset_status = ?,
                         custodian_name = ?, custodian_role = ?, accountable_officer = ?, secondary_custodian = ?,
-                        site = ?, building = ?, floor_room = ?, address = ?,
+                        site = ?, building = ?, floor_room = ?, address = ?, location_id = ?,
                         purchase_cost = ?, disposal_date = ?, disposal_amount = ?, is_disposed = ?,
                         warranty_provider = ?, warranty_start_date = ?, warranty_end_date = ?,
                         warranty_period = ?, warranty_reference = ?, warranty_notes = ?, warranty_status = ?
@@ -288,6 +299,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $arBuilding ?: null,
                     $arFloorRoom ?: null,
                     $arLocation ?: null,
+                    $arLocationId,
                     ($arPurchaseCost !== '') ? (float) $arPurchaseCost : null,
                     ($arDisposalDate !== '') ? $arDisposalDate : null,
                     ($arDisposalAmount !== '') ? (float) $arDisposalAmount : null,
@@ -306,11 +318,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     INSERT INTO inv_asset_details
                         (item_id, asset_code, acquired_date, asset_condition, asset_status,
                          custodian_name, custodian_role, accountable_officer, secondary_custodian,
-                         site, building, floor_room, address,
+                         site, building, floor_room, address, location_id,
                          purchase_cost, disposal_date, disposal_amount, is_disposed,
                          warranty_provider, warranty_start_date, warranty_end_date,
                          warranty_period, warranty_reference, warranty_notes, warranty_status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ")->execute([
                     $itemId,
                     $arInventoryNumber ?: null,
@@ -325,6 +337,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $arBuilding ?: null,
                     $arFloorRoom ?: null,
                     $arLocation ?: null,
+                    $arLocationId,
                     ($arPurchaseCost !== '') ? (float) $arPurchaseCost : null,
                     ($arDisposalDate !== '') ? $arDisposalDate : null,
                     ($arDisposalAmount !== '') ? (float) $arDisposalAmount : null,
@@ -706,12 +719,21 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     ?>
                     <select name="ar_custodian_role" id="ar_custodian_role" class="form-select">
                         <option value="">— Select Role —</option>
+                        <?php if (!empty($jobTitlesForCustodian)): ?>
+                        <?php foreach ($jobTitlesForCustodian as $jt): ?>
+                        <option value="<?= htmlspecialchars($jt['title_name']) ?>"
+                            <?= $savedCustodianRole === $jt['title_name'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($jt['title_name']) ?>
+                        </option>
+                        <?php endforeach; ?>
+                        <?php else: ?>
                         <?php foreach ($allRoles as $role): ?>
                         <option value="<?= htmlspecialchars($role['name']) ?>"
                             <?= $savedCustodianRole === $role['name'] ? 'selected' : '' ?>>
                             <?= htmlspecialchars($role['name']) ?>
                         </option>
                         <?php endforeach; ?>
+                        <?php endif; ?>
                     </select>
                     <small class="text-muted">Role assigned to the custodian for this asset.</small>
                 </div>
@@ -726,10 +748,11 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                 </div>
                 <!-- Location (cascading dropdowns) -->
                 <?php
-                $editSite  = $arv['ar_site']      ?? $arv['site']       ?? '';
-                $editBuild = $arv['ar_building']   ?? $arv['building']   ?? '';
-                $editFloor = $arv['ar_floor_room'] ?? $arv['floor_room'] ?? '';
-                $editAddr  = $arv['ar_location']   ?? $arv['address']    ?? '';
+                $editSite      = $arv['ar_site']       ?? $arv['site']       ?? '';
+                $editBuild     = $arv['ar_building']    ?? $arv['building']   ?? '';
+                $editFloor     = $arv['ar_floor_room']  ?? $arv['floor_room'] ?? '';
+                $editAddr      = $arv['ar_location']    ?? $arv['address']    ?? '';
+                $editLocationId = $arv['ar_location_id'] ?? $arv['location_id'] ?? '';
                 ?>
                 <div class="col-md-3">
                     <label class="form-label">Site / Campus <?= $arFieldRequired['ar_require_location'] ? '<span class="text-danger">*</span>' : '' ?></label>
@@ -764,6 +787,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                            placeholder="Street address or other"
                            value="<?= htmlspecialchars($editAddr) ?>">
                 </div>
+                <!-- Hidden field for resolved location_id -->
+                <input type="hidden" name="ar_location_id" id="ar_location_id"
+                       value="<?= htmlspecialchars($editLocationId) ?>">
                 <?php if ($arFieldRequired['ar_require_location']): ?>
                 <div class="col-12">
                     <small class="text-muted"><span class="text-danger">*</span> At least one location field (Site, Building, Floor/Room, or Address) must be completed.</small>
@@ -941,13 +967,18 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 // ── Cascading location dropdowns ─────────────────────────────────────────────
 (function () {
-    var siteSel  = document.getElementById('ar_site');
-    var buildSel = document.getElementById('ar_building');
-    var floorSel = document.getElementById('ar_floor_room');
+    var siteSel      = document.getElementById('ar_site');
+    var buildSel     = document.getElementById('ar_building');
+    var floorSel     = document.getElementById('ar_floor_room');
+    var locationIdEl = document.getElementById('ar_location_id');
 
     if (!siteSel || !buildSel || !floorSel) return;
 
     var ENDPOINT = '/inventory/items/get_locations.php';
+
+    function clearLocationId() {
+        if (locationIdEl) locationIdEl.value = '';
+    }
 
     function buildOptions(sel, values, currentVal, placeholder) {
         sel.innerHTML = '<option value="">' + placeholder + '</option>';
@@ -959,6 +990,21 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
             sel.appendChild(opt);
         });
         sel.disabled = (values.length === 0);
+    }
+
+    function buildRoomOptions(sel, rows, currentVal, placeholder) {
+        sel.innerHTML = '<option value="">' + placeholder + '</option>';
+        rows.forEach(function (row) {
+            var opt = document.createElement('option');
+            opt.value = row.room_storage_area;
+            opt.dataset.locationId = row.location_id || '';
+            opt.textContent = row.room_storage_area;
+            if (row.room_storage_area === currentVal) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.disabled = (rows.length === 0);
+        var selectedOpt = sel.options[sel.selectedIndex];
+        if (locationIdEl) locationIdEl.value = (selectedOpt && selectedOpt.dataset.locationId) ? selectedOpt.dataset.locationId : '';
     }
 
     function loadSites(currentSite) {
@@ -978,19 +1024,47 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     function loadFloors(site, building, currentFloor) {
         fetch(ENDPOINT + '?type=floors&site=' + encodeURIComponent(site) + '&building=' + encodeURIComponent(building))
             .then(function (r) { return r.json(); })
-            .then(function (data) { buildOptions(floorSel, data, currentFloor || '', '— Select Floor / Room —'); })
+            .then(function (data) {
+                if (data.length > 0) {
+                    buildOptions(floorSel, data, currentFloor || '', '— Select Floor / Room —');
+                } else {
+                    loadRooms(site, building, '', currentFloor);
+                }
+            })
+            .catch(function () { floorSel.disabled = false; });
+    }
+
+    function loadRooms(site, building, floor, currentRoom) {
+        fetch(ENDPOINT + '?type=rooms&site=' + encodeURIComponent(site)
+            + '&building=' + encodeURIComponent(building)
+            + '&floor=' + encodeURIComponent(floor))
+            .then(function (r) { return r.json(); })
+            .then(function (rows) { buildRoomOptions(floorSel, rows, currentRoom || '', '— Select Floor / Room —'); })
             .catch(function () { floorSel.disabled = false; });
     }
 
     siteSel.addEventListener('change', function () {
         buildOptions(buildSel, [], '', '— Select Building —');
         buildOptions(floorSel, [], '', '— Select Floor / Room —');
+        clearLocationId();
         if (siteSel.value) loadBuildings(siteSel.value, '');
     });
 
     buildSel.addEventListener('change', function () {
         buildOptions(floorSel, [], '', '— Select Floor / Room —');
+        clearLocationId();
         if (buildSel.value) loadFloors(siteSel.value, buildSel.value, '');
+    });
+
+    floorSel.addEventListener('change', function () {
+        clearLocationId();
+        var selectedOpt = floorSel.options[floorSel.selectedIndex];
+        if (selectedOpt && selectedOpt.dataset.locationId) {
+            if (locationIdEl) locationIdEl.value = selectedOpt.dataset.locationId;
+        } else if (floorSel.value) {
+            buildOptions(floorSel, [], '', '— Select Floor / Room —');
+            loadRooms(siteSel.value, buildSel.value, floorSel.value, '');
+        }
     });
 
     // Initial population — restore pre-selected values from stored record

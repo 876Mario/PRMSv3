@@ -63,7 +63,7 @@ try {
 
         case 'rooms':
             $stmt = $pdo->prepare(
-                "SELECT DISTINCT room_storage_area
+                "SELECT DISTINCT room_storage_area, location_id
                  FROM inv_locations
                  WHERE is_active = 1
                    AND room_storage_area IS NOT NULL AND room_storage_area <> ''
@@ -73,7 +73,7 @@ try {
                  ORDER BY room_storage_area"
             );
             $stmt->execute([':site' => $site, ':building' => $building, ':floor' => $floor]);
-            echo json_encode(array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'room_storage_area'));
+            echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
             break;
 
         default:

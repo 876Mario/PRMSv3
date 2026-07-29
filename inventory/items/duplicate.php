@@ -152,11 +152,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     INSERT INTO inv_asset_details
                         (item_id, asset_code, acquired_date, asset_condition, asset_status,
                          custodian_name, custodian_role, accountable_officer, secondary_custodian,
-                         site, building, floor_room, address,
+                         site, building, floor_room, address, location_id,
                          purchase_cost, disposal_date, disposal_amount, is_disposed,
                          warranty_provider, warranty_start_date, warranty_end_date,
                          warranty_period, warranty_reference, warranty_notes, warranty_status)
-                    VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $ad = $sourceAssetDetail;
                 $adIns->execute([
@@ -172,6 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $ad['building']           ?? null,
                     $ad['floor_room']         ?? null,
                     $ad['address']            ?? null,
+                    $ad['location_id']        ?? null,
                     isset($ad['purchase_cost']) ? (float) $ad['purchase_cost'] : null,
                     $ad['disposal_date']      ?? null,
                     isset($ad['disposal_amount']) ? (float) $ad['disposal_amount'] : null,

@@ -581,6 +581,14 @@ function isCollapsibleActive($urls, $currentPage) {
                href="/admin/branches.php">
                 <i class="bi bi-diagram-3 me-2"></i>Branches
             </a>
+            <a class="nav-link text-white sidebar-link <?= active('/admin/job_titles', $currentPage) ?>"
+               href="/admin/job_titles.php">
+                <i class="bi bi-briefcase me-2"></i>Job Titles
+            </a>
+            <a class="nav-link text-white sidebar-link <?= active('/admin/department_locations', $currentPage) ?>"
+               href="/admin/department_locations.php">
+                <i class="bi bi-geo-alt me-2"></i>Dept → Locations
+            </a>
             <?php endif; ?>
 
             <?php if (has_permission('view_audit_logs')): ?>
