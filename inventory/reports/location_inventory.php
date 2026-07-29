@@ -38,13 +38,21 @@ $acquiredFrom = trim($_GET['acquired_from']  ?? '');
 $acquiredTo   = trim($_GET['acquired_to']    ?? '');
 
 /* ── Build WHERE ─────────────────────────────────────────────────────────── */
-$where  = ["sl.quantity_on_hand > 0"];
+$where  = [];
 $params = [];
 
 if ($locationId > 0) {
+    // Specific location: only items that have stock there
     $where[]  = "sl.location_id = ?";
     $params[] = $locationId;
+    $where[]  = "sl.quantity_on_hand > 0";
+} elseif ($assetDetailsReady) {
+    // All locations: stock items OR non-disposed imported asset items
+    $where[] = "(sl.quantity_on_hand > 0 OR (ad.asset_detail_id IS NOT NULL AND COALESCE(ad.is_disposed, 0) = 0))";
+} else {
+    $where[] = "sl.quantity_on_hand > 0";
 }
+
 if ($categoryId > 0) {
     $where[]  = "i.category_id = ?";
     $params[] = $categoryId;
@@ -68,6 +76,11 @@ if ($acquiredTo !== '' && $assetDetailsReady) {
 }
 
 $whereClause = implode(' AND ', $where);
+
+/* ── Unit-cost expression (falls back to asset detail values when no stock) ── */
+$unitCostExpr = $assetDetailsReady
+    ? "COALESCE(sl.unit_cost, ad.balance_value, ad.purchase_cost, ad.bos_value, 0)"
+    : "COALESCE(sl.unit_cost, 0)";
 
 /* ── Conditional selects / joins ─────────────────────────────────────────── */
 $adJoin = $assetDetailsReady
@@ -95,10 +108,10 @@ extract(getPaginationParams(100));
 
 $countSql = "
     SELECT COUNT(*)
-    FROM inv_stock sl
-    JOIN inv_items i ON sl.item_id = i.item_id
+    FROM inv_items i
+    LEFT JOIN inv_stock sl ON sl.item_id = i.item_id
     $adJoin
-    LEFT JOIN inv_locations l ON sl.location_id = l.location_id
+    LEFT JOIN inv_locations l ON l.location_id = sl.location_id
     WHERE $whereClause
 ";
 $cntStmt = $pdo->prepare($countSql);
@@ -106,12 +119,12 @@ $cntStmt->execute($params);
 $totalRows = (int) $cntStmt->fetchColumn();
 
 $totalsStmt = $pdo->prepare("
-    SELECT COALESCE(SUM(sl.quantity_on_hand * sl.unit_cost), 0) AS grand_total,
-           COALESCE(SUM(sl.quantity_on_hand), 0) AS grand_qty
-    FROM inv_stock sl
-    JOIN inv_items i ON sl.item_id = i.item_id
+    SELECT COALESCE(SUM(COALESCE(sl.quantity_on_hand, 1) * $unitCostExpr), 0) AS grand_total,
+           COALESCE(SUM(COALESCE(sl.quantity_on_hand, 1)), 0) AS grand_qty
+    FROM inv_items i
+    LEFT JOIN inv_stock sl ON sl.item_id = i.item_id
     $adJoin
-    LEFT JOIN inv_locations l ON sl.location_id = l.location_id
+    LEFT JOIN inv_locations l ON l.location_id = sl.location_id
     WHERE $whereClause
 ");
 $totalsStmt->execute($params);
@@ -126,7 +139,6 @@ $dataStmt = $pdo->prepare("
         i.item_name,
         i.description,
         c.category_name,
-        l.location_id,
         l.location_code,
         CONCAT_WS(' › ',
             NULLIF(l.site_name, ''),
@@ -134,19 +146,19 @@ $dataStmt = $pdo->prepare("
             NULLIF(l.floor, ''),
             NULLIF(l.room_storage_area, '')
         ) AS location_path,
-        sl.quantity_on_hand,
-        sl.unit_cost,
-        (sl.quantity_on_hand * sl.unit_cost) AS total_value,
+        COALESCE(sl.quantity_on_hand, 1) AS quantity_on_hand,
+        $unitCostExpr AS unit_cost,
+        (COALESCE(sl.quantity_on_hand, 1) * $unitCostExpr) AS total_value,
         sl.stock_status,
         $adSelect
         i.item_status
-    FROM inv_stock sl
-    JOIN inv_items i ON sl.item_id = i.item_id
+    FROM inv_items i
+    LEFT JOIN inv_stock sl ON sl.item_id = i.item_id
     LEFT JOIN inv_categories c ON i.category_id = c.category_id
-    LEFT JOIN inv_locations l ON sl.location_id = l.location_id
+    LEFT JOIN inv_locations l ON l.location_id = sl.location_id
     $adJoin
     WHERE $whereClause
-    ORDER BY l.location_code, i.item_name
+    ORDER BY (l.location_code IS NULL), l.location_code, i.item_name
     LIMIT $perPage OFFSET $offset
 ");
 $dataStmt->execute($params);

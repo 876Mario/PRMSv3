@@ -40,10 +40,18 @@ $acquiredFrom = trim($_GET['acquired_from'] ?? '');
 $acquiredTo   = trim($_GET['acquired_to']   ?? '');
 
 /* ── WHERE ───────────────────────────────────────────────────────────────── */
-$where  = ["sl.quantity_on_hand > 0"];
+$where  = [];
 $params = [];
 
-if ($locationId > 0) { $where[] = "sl.location_id = ?"; $params[] = $locationId; }
+if ($locationId > 0) {
+    $where[] = "sl.location_id = ?"; $params[] = $locationId;
+    $where[] = "sl.quantity_on_hand > 0";
+} elseif ($adReady) {
+    // All locations: stock items OR non-disposed imported asset items
+    $where[] = "(sl.quantity_on_hand > 0 OR (ad.asset_detail_id IS NOT NULL AND COALESCE(ad.is_disposed, 0) = 0))";
+} else {
+    $where[] = "sl.quantity_on_hand > 0";
+}
 if ($categoryId > 0) { $where[] = "i.category_id = ?";  $params[] = $categoryId; }
 if ($statusF !== '') {
     $sc = ["sl.stock_status = ?"];
@@ -55,6 +63,11 @@ if ($acquiredFrom !== '' && $adReady) { $where[] = "ad.acquired_date >= ?"; $par
 if ($acquiredTo   !== '' && $adReady) { $where[] = "ad.acquired_date <= ?"; $params[] = $acquiredTo; }
 
 $whereClause = implode(' AND ', $where);
+
+/* ── Unit-cost expression (falls back to asset detail values when no stock) ── */
+$unitCostExpr = $adReady
+    ? "COALESCE(sl.unit_cost, ad.balance_value, ad.purchase_cost, ad.bos_value, 0)"
+    : "COALESCE(sl.unit_cost, 0)";
 
 /* ── Joins/selects ───────────────────────────────────────────────────────── */
 $adJoin = $adReady
@@ -86,19 +99,19 @@ $stmt = $pdo->prepare("
             NULLIF(l.floor, ''),
             NULLIF(l.room_storage_area, '')
         ) AS location_path,
-        sl.quantity_on_hand,
-        sl.unit_cost,
-        (sl.quantity_on_hand * sl.unit_cost) AS total_value,
+        COALESCE(sl.quantity_on_hand, 1) AS quantity_on_hand,
+        $unitCostExpr AS unit_cost,
+        (COALESCE(sl.quantity_on_hand, 1) * $unitCostExpr) AS total_value,
         sl.stock_status,
         $adSelect
         i.item_status
-    FROM inv_stock sl
-    JOIN inv_items i ON sl.item_id = i.item_id
+    FROM inv_items i
+    LEFT JOIN inv_stock sl ON sl.item_id = i.item_id
     LEFT JOIN inv_categories c ON i.category_id = c.category_id
-    LEFT JOIN inv_locations l ON sl.location_id = l.location_id
+    LEFT JOIN inv_locations l ON l.location_id = sl.location_id
     $adJoin
     WHERE $whereClause
-    ORDER BY l.location_code, i.item_name
+    ORDER BY (l.location_code IS NULL), l.location_code, i.item_name
     LIMIT 10000
 ");
 $stmt->execute($params);
