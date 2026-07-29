@@ -18,11 +18,12 @@ if (!$bosReady) {
 /* ── Reference data ──────────────────────────────────────────────────────── */
 $items     = $pdo->query(
     "SELECT i.item_id, i.item_code, i.item_name,
-            COALESCE(ad.asset_code, '') AS asset_code,
-            COALESCE(ad.serial_number, '') AS serial_number
+            COALESCE(MIN(ad.asset_code), '') AS asset_code,
+            COALESCE(MIN(ad.serial_number), '') AS serial_number
      FROM inv_items i
      LEFT JOIN inv_asset_details ad ON ad.item_id = i.item_id
      WHERE i.item_status = 'ACTIVE'
+     GROUP BY i.item_id, i.item_code, i.item_name
      ORDER BY i.item_name"
 )->fetchAll(PDO::FETCH_ASSOC);
 
@@ -100,12 +101,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $bosNumber = InventoryService::generateDocNumber($pdo, 'BOS', 'inv_board_of_survey', 'bos_number');
 
+        /* Determine action: save as DRAFT or submit immediately */
+        $submitAction = ($_POST['submit_action'] ?? 'draft') === 'submit';
+        $bosStatus    = $submitAction ? 'SUBMITTED' : 'DRAFT';
+        $submittedAt  = $submitAction ? 'NOW()' : 'NULL';
+
         $pdo->prepare("
             INSERT INTO inv_board_of_survey
                 (bos_number, survey_date, location_id, reason_for_survey,
                  board_recommendation, recommendation_notes, supporting_notes,
                  status, initiated_by, submitted_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'SUBMITTED', ?, NOW(), NOW())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, $submittedAt, NOW())
         ")->execute([
             $bosNumber,
             $surveyDate ?: null,
@@ -114,6 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $recommendation ?: null,
             $recNotes ?: null,
             $notes ?: null,
+            $bosStatus,
             $_SESSION['user_id'],
         ]);
 
@@ -148,12 +155,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
         }
 
-        logInventoryAudit($pdo, 'inv_board_of_survey', $bosId, 'CREATED',
-            "Board of Survey $bosNumber submitted by user {$_SESSION['user_id']}");
+        logInventoryAudit($pdo, 'inv_board_of_survey', $bosId, $bosStatus,
+            "Board of Survey $bosNumber created as $bosStatus by user {$_SESSION['user_id']}");
 
         $pdo->commit();
-        pop("Board of Survey $bosNumber submitted successfully.",
-            "/inventory/board_of_survey/view.php?id=$bosId", 1800, 'success');
+        $successMsg = $submitAction
+            ? "Board of Survey $bosNumber submitted for review."
+            : "Board of Survey $bosNumber saved as draft.";
+        pop($successMsg, "/inventory/board_of_survey/view.php?id=$bosId", 1800, 'success');
         exit;
     } catch (Exception $e) {
         $pdo->rollBack();
@@ -310,10 +319,13 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     </div>
 
     <div class="d-flex gap-2">
-        <button type="submit" class="btn btn-primary btn-lg">
-            <i class="bi bi-send"></i> Submit Board of Survey
+        <button type="submit" name="submit_action" value="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-send"></i> Submit for Review
         </button>
-        <a href="/inventory/board_of_survey/list.php" class="btn btn-outline-secondary btn-lg">
+        <button type="submit" name="submit_action" value="draft" class="btn btn-outline-secondary btn-lg">
+            <i class="bi bi-floppy"></i> Save as Draft
+        </button>
+        <a href="/inventory/board_of_survey/list.php" class="btn btn-outline-danger btn-lg">
             Cancel
         </a>
     </div>
