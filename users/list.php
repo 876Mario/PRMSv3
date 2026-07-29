@@ -12,6 +12,17 @@ $rolesStmt = $pdo->query("SELECT id, name FROM roles ORDER BY name ASC");
 $roles = $rolesStmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ================================
+   Fetch Job Titles (for filter)
+================================ */
+$jobTitles = [];
+try {
+    $jobTitles = $pdo->query("SELECT id, title_name FROM job_titles WHERE is_active = 1 ORDER BY sort_order, title_name")
+                     ->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    // graceful degradation if table not yet created
+}
+
+/* ================================
    Filters
 ================================ */
 $where = [];
@@ -27,6 +38,12 @@ if (!empty($_GET['q'])) {
 if (!empty($_GET['role'])) {
     $where[] = "u.role_id = :role_id";
     $params[':role_id'] = (int)$_GET['role'];
+}
+
+/* Job Title filter */
+if (!empty($_GET['job_title'])) {
+    $where[] = "u.job_title_id = :job_title_id";
+    $params[':job_title_id'] = (int)$_GET['job_title'];
 }
 
 /* Status filter */
@@ -60,9 +77,11 @@ $sql = "
         u.role_id,
         u.failed_attempts,
         u.lock_until,
-        r.name AS role_name
+        r.name AS role_name,
+        jt.title_name AS job_title_name
     FROM users u
     LEFT JOIN roles r ON u.role_id = r.id
+    LEFT JOIN job_titles jt ON u.job_title_id = jt.id
     $whereSQL
     ORDER BY u.full_name
     LIMIT :limit OFFSET :offset
@@ -242,6 +261,21 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
                 </select>
             </div>
 
+            <?php if (!empty($jobTitles)): ?>
+            <div class="col-md-3">
+                <label class="form-label small text-muted" style="font-weight: 600;">Job Title</label>
+                <select name="job_title" class="form-select" style="border-radius: 6px; border: 1px solid #e0e0e0;">
+                    <option value="">All Job Titles</option>
+                    <?php foreach ($jobTitles as $jt): ?>
+                        <option value="<?= (int)$jt['id'] ?>"
+                            <?= ($_GET['job_title'] ?? '') == $jt['id'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($jt['title_name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php endif; ?>
+
             <div class="col-md-2">
                 <label class="form-label small text-muted" style="font-weight: 600;">Status</label>
                 <select name="status" class="form-select" style="border-radius: 6px; border: 1px solid #e0e0e0;">
@@ -278,6 +312,7 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
                     <th >Name</th>
                     <th >Email</th>
                     <th >Role</th>
+                    <th >Job Title</th>
                     <th >Status</th>
                     <th >Actions</th>
                 </tr>
@@ -286,7 +321,7 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
 
 <?php if (empty($users)): ?>
                 <tr>
-                    <td colspan="5" class="text-center py-5" style="border: none;">
+                    <td colspan="6" class="text-center py-5" style="border: none;">
                         <p style="color: #999; font-size: 1rem;">
                             <i class="bi bi-inbox" style="font-size: 2rem; color: #ddd; display: block; margin-bottom: 0.5rem;"></i>
                             No users found
@@ -310,6 +345,15 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
                         <span class="badge" style="background-color: #667eea; color: white; padding: 0.35rem 0.75rem;">
                             <?= htmlspecialchars($u['role_name'] ?? 'No Role') ?>
                         </span>
+                    </td>
+                    <td style="padding: 1rem; border: none;">
+                        <?php if (!empty($u['job_title_name'])): ?>
+                        <span class="badge bg-secondary" style="padding: 0.35rem 0.75rem;">
+                            <?= htmlspecialchars($u['job_title_name']) ?>
+                        </span>
+                        <?php else: ?>
+                        <span class="text-muted small">—</span>
+                        <?php endif; ?>
                     </td>
                     <td style="padding: 1rem; border: none;">
                         <span class="badge" style="background-color: <?= $u['is_active'] ? '#4caf50' : '#f44336' ?>; color: white; padding: 0.35rem 0.75rem;">

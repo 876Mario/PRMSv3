@@ -41,10 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 /* Handle user creation */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_user') {
-    $full_name = trim($_POST['full_name'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $role_id = (int)($_POST['role_id'] ?? 0);
-    $password = $_POST['password'] ?? '';
+    $full_name    = trim($_POST['full_name']    ?? '');
+    $email        = trim($_POST['email']        ?? '');
+    $role_id      = (int)($_POST['role_id']     ?? 0);
+    $job_title_id = ($_POST['job_title_id'] !== '') ? (int)$_POST['job_title_id'] : null;
+    $password     = $_POST['password']          ?? '';
 
     if (!$full_name || !$email || !$role_id || !$password) {
         $error = "All fields are required.";
@@ -54,10 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             $stmt = $pdo->prepare("
                 INSERT INTO users
-                (full_name, email, role_id, password_hash, must_change_password, is_active)
-                VALUES (?, ?, ?, ?, 1, 1)
+                (full_name, email, role_id, job_title_id, password_hash, must_change_password, is_active)
+                VALUES (?, ?, ?, ?, ?, 1, 1)
             ");
-            $stmt->execute([$full_name, $email, $role_id, $hash]);
+            $stmt->execute([$full_name, $email, $role_id, $job_title_id, $hash]);
 
             $newUserId = $pdo->lastInsertId();
 
@@ -83,6 +84,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 /* Fetch all roles */
 $rolesStmt = $pdo->query("SELECT id, name, description FROM roles ORDER BY name ASC");
 $roles = $rolesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+/* Fetch job titles */
+$jobTitlesReady = false;
+$jobTitles = [];
+try {
+    $jt = $pdo->query("SELECT id, title_name FROM job_titles WHERE is_active = 1 ORDER BY sort_order, title_name");
+    $jobTitles = $jt->fetchAll(PDO::FETCH_ASSOC);
+    $jobTitlesReady = true;
+} catch (Throwable $e) {
+    // job_titles table may not exist yet; gracefully degrade
+}
 
 require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
 ?>
@@ -162,6 +174,21 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
                                 </select>
                                 <small class="text-muted d-block mt-1">Select the user's role to determine their permissions.</small>
                             </div>
+
+                            <?php if ($jobTitlesReady): ?>
+                            <div class="mb-3">
+                                <label class="form-label">Job Title</label>
+                                <select name="job_title_id" class="form-select">
+                                    <option value="">— Select Job Title —</option>
+                                    <?php foreach ($jobTitles as $jt): ?>
+                                        <option value="<?= (int)$jt['id'] ?>">
+                                            <?= htmlspecialchars($jt['title_name']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <small class="text-muted d-block mt-1">The user's official job title.</small>
+                            </div>
+                            <?php endif; ?>
 
                             <div class="mb-3">
                                 <label class="form-label">Temporary Password</label>

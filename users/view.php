@@ -16,9 +16,10 @@ if ($user_id <= 0) {
    Fetch User
 ================================ */
 $stmt = $pdo->prepare("
-    SELECT u.*, r.name AS role_name
+    SELECT u.*, r.name AS role_name, jt.title_name AS job_title_name
     FROM users u
     LEFT JOIN roles r ON u.role_id = r.id
+    LEFT JOIN job_titles jt ON u.job_title_id = jt.id
     WHERE u.user_id = ?
 ");
 $stmt->execute([$user_id]);
@@ -58,6 +59,17 @@ $overrides = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ================================ */
 $rolesStmt = $pdo->query("SELECT id, name FROM roles ORDER BY name ASC");
 $roles = $rolesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+/* ===============================
+   Fetch Job Titles (for changing)
+================================ */
+$jobTitles = [];
+try {
+    $jobTitles = $pdo->query("SELECT id, title_name FROM job_titles WHERE is_active = 1 ORDER BY sort_order, title_name")
+                     ->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    // graceful degradation
+}
 ?>
 
 <style>
@@ -220,6 +232,11 @@ $roles = $rolesStmt->fetchAll(PDO::FETCH_ASSOC);
                 <button class="btn-modern btn-warning-gradient" style="padding: 0.4rem 0.9rem; font-size: 0.85rem;" data-bs-toggle="modal" data-bs-target="#roleModal">
                     <i class="bi bi-shuffle"></i> Change Role
                 </button>
+                <?php if (!empty($jobTitles)): ?>
+                <button class="btn-modern" style="padding: 0.4rem 0.9rem; font-size: 0.85rem; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;" data-bs-toggle="modal" data-bs-target="#jobTitleModal">
+                    <i class="bi bi-briefcase"></i> Change Job Title
+                </button>
+                <?php endif; ?>
                 <button class="btn-modern" style="padding: 0.4rem 0.9rem; font-size: 0.85rem; background: <?= $user['is_active'] ? '#f093fb' : '#43e97b' ?>; color: white;" data-bs-toggle="modal" data-bs-target="#statusModal">
                     <i class="bi bi-toggle-<?= $user['is_active'] ? 'on' : 'off' ?>"></i> <?= $user['is_active'] ? 'Disable' : 'Enable' ?> User
                 </button>
@@ -242,6 +259,19 @@ $roles = $rolesStmt->fetchAll(PDO::FETCH_ASSOC);
                 <span class="badge-gradient badge-primary">
                     <?= htmlspecialchars($user['role_name']) ?>
                 </span>
+            </div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label"><i class="bi bi-briefcase"></i> Job Title</div>
+            <div class="info-value">
+                <?php if (!empty($user['job_title_name'])): ?>
+                    <span class="badge-gradient badge-primary" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                        <?= htmlspecialchars($user['job_title_name']) ?>
+                    </span>
+                <?php else: ?>
+                    <span style="color: #999;">Not assigned</span>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -409,6 +439,49 @@ $roles = $rolesStmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════
+     MODAL: Change Job Title
+═══════════════════════════════════════════════════════ -->
+<?php if (!empty($jobTitles)): ?>
+<div class="modal fade" id="jobTitleModal" tabindex="-1" aria-labelledby="jobTitleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header border-bottom" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                <h5 class="modal-title" id="jobTitleModalLabel"><i class="bi bi-briefcase"></i> Change Job Title</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body py-4">
+                <form id="jobTitleForm" action="/users/update_job_title.php" method="POST">
+                    <input type="hidden" name="user_id" value="<?= (int)$user_id ?>">
+                    <p style="color: #666; margin-bottom: 1.5rem;">
+                        Select a job title for <strong><?= htmlspecialchars($user['full_name']) ?></strong>.
+                    </p>
+                    <div class="mb-3">
+                        <label for="jobTitleSelect" class="form-label fw-600">Job Title</label>
+                        <select class="form-select form-select-lg" name="job_title_id" id="jobTitleSelect" style="border-color: #e0e0e0;">
+                            <option value="">— Remove / Clear Job Title —</option>
+                            <?php foreach ($jobTitles as $jt): ?>
+                                <option value="<?= (int)$jt['id'] ?>" <?= $jt['id'] == ($user['job_title_id'] ?? 0) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($jt['title_name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-top bg-light">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary"
+                        style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border: none; font-weight: 600;"
+                        onclick="document.getElementById('jobTitleForm').submit();">
+                    <i class="bi bi-check-lg me-1"></i> Update Job Title
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- ═══════════════════════════════════════════════════════
      MODAL: Toggle User Status

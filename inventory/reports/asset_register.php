@@ -53,6 +53,7 @@ $primaryType    = $_GET['primary_type'] ?? '';          // '', PPE, CONSUMABLE
 $classification = trim($_GET['classification'] ?? '');  // 'a:<id>' or 'i:<id>'
 $departmentId   = (int) ($_GET['department_id'] ?? 0);
 $custodian      = trim($_GET['custodian'] ?? '');
+$custodianRole  = trim($_GET['custodian_role'] ?? '');
 $locationId     = (int) ($_GET['location_id'] ?? 0);
 $condition      = trim($_GET['condition'] ?? '');
 $acquiredFrom   = trim($_GET['acquired_from'] ?? '');
@@ -129,12 +130,23 @@ if ($custodian !== '') {
     if ($custClauses) $where[] = '(' . implode(' OR ', $custClauses) . ')';
 }
 
+/* Custodian Role / Job Title (exact match) */
+if ($custodianRole !== '' && $assetDetailsReady) {
+    $where[]  = "ad.custodian_role = ?";
+    $params[] = $custodianRole;
+}
+
 /* Location */
 if ($locationId > 0 && $locationsReady) {
     $locClauses = ["EXISTS (SELECT 1 FROM inv_stock sl WHERE sl.item_id = i.item_id AND sl.location_id = ?)"];
     $params[] = $locationId;
     if ($serialTableReady) {
         $locClauses[] = "EXISTS (SELECT 1 FROM inv_serial_numbers snl WHERE snl.item_id = i.item_id AND snl.location_id = ?)";
+        $params[] = $locationId;
+    }
+    if ($assetDetailsReady) {
+        /* Also match assets whose location_id FK is set directly on the asset detail record */
+        $locClauses[] = "EXISTS (SELECT 1 FROM inv_asset_details adl WHERE adl.item_id = i.item_id AND adl.location_id = ?)";
         $params[] = $locationId;
     }
     $where[] = '(' . implode(' OR ', $locClauses) . ')';
@@ -309,6 +321,12 @@ if ($assetDetailsReady) {
     $conditionOptions = array_values(array_unique(array_merge($conditionOptions, $existing)));
 }
 
+$jobTitles = [];
+try {
+    $jobTitles = $pdo->query("SELECT id, title_name FROM job_titles WHERE is_active = 1 ORDER BY sort_order, title_name")
+                     ->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) { /* graceful degradation */ }
+
 $totalItems      = count($rows);
 $totalQty        = array_sum(array_map(static fn($r) => (float) $r['total_qty'], $rows));
 $totalValue      = array_sum(array_map(static fn($r) => (float) $r['total_value'], $rows));
@@ -405,6 +423,20 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                 <input type="text" name="custodian" class="form-control" placeholder="Custodian name..."
                        value="<?= htmlspecialchars($custodian) ?>">
             </div>
+            <?php if (!empty($jobTitles)): ?>
+            <div class="col-md-3">
+                <label class="form-label">Custodian Role / Job Title</label>
+                <select name="custodian_role" class="form-select">
+                    <option value="">All Job Titles</option>
+                    <?php foreach ($jobTitles as $jt): ?>
+                    <option value="<?= htmlspecialchars($jt['title_name']) ?>"
+                        <?= $custodianRole === $jt['title_name'] ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($jt['title_name']) ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php endif; ?>
             <?php if ($locations): ?>
             <div class="col-md-3">
                 <label class="form-label">Location</label>
