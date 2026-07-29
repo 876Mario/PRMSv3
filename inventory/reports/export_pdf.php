@@ -954,11 +954,12 @@ try {
 
         // ── Inventory Report by Location ────────────────────────────────────
         case 'location_inventory':
-            $locF     = (int) ($_GET['location_id']   ?? 0);
-            $catF     = (int) ($_GET['category_id']   ?? 0);
-            $statusF  = $_GET['status']               ?? '';
-            $acqFrom  = $_GET['acquired_from']        ?? '';
-            $acqTo    = $_GET['acquired_to']          ?? '';
+            $locF       = (int)  ($_GET['location_id']   ?? 0);
+            $catF       = (int)  ($_GET['category_id']   ?? 0);
+            $statusF    = trim($_GET['status']            ?? '');
+            $acqFrom    = trim($_GET['acquired_from']     ?? '');
+            $acqTo      = trim($_GET['acquired_to']       ?? '');
+            $searchText = trim($_GET['search']            ?? '');
 
             // Check tables
             $adExistsStmt = $pdo->query(
@@ -970,6 +971,11 @@ try {
                 "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='branches'"
             );
             $brReady = (int) $brExistsStmt->fetchColumn() > 0;
+
+            $snExistsStmt = $pdo->query(
+                "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='inv_serial_numbers'"
+            );
+            $snReady = (int) $snExistsStmt->fetchColumn() > 0;
 
             $adJoin = $adReady
                 ? "LEFT JOIN inv_asset_details ad ON ad.item_id = i.item_id"
@@ -986,10 +992,18 @@ try {
                    NULL AS acquired_date, NULL AS asset_status,
                    NULL AS officer_name, NULL AS department_name,";
 
-            $where  = ["sl.quantity_on_hand > 0"];
+            /* ── WHERE — mirrors location_inventory.php exactly ─────────── */
+            $where  = [];
             $params = [];
-            if ($locF > 0) { $where[] = "sl.location_id = ?"; $params[] = $locF; }
-            if ($catF > 0) { $where[] = "i.category_id = ?";  $params[] = $catF; }
+            if ($locF > 0) {
+                $where[] = "sl.location_id = ?"; $params[] = $locF;
+                $where[] = "sl.quantity_on_hand > 0";
+            } elseif ($adReady) {
+                $where[] = "(sl.quantity_on_hand > 0 OR (ad.asset_detail_id IS NOT NULL AND COALESCE(ad.is_disposed, 0) = 0))";
+            } else {
+                $where[] = "sl.quantity_on_hand > 0";
+            }
+            if ($catF > 0) { $where[] = "i.category_id = ?"; $params[] = $catF; }
             if ($statusF !== '') {
                 $sc = ["sl.stock_status = ?"];
                 $params[] = $statusF;
@@ -998,6 +1012,25 @@ try {
             }
             if ($acqFrom !== '' && $adReady) { $where[] = "ad.acquired_date >= ?"; $params[] = $acqFrom; }
             if ($acqTo   !== '' && $adReady) { $where[] = "ad.acquired_date <= ?"; $params[] = $acqTo; }
+            if ($searchText !== '') {
+                $s = "%$searchText%";
+                $searchClauses = [
+                    "i.item_name LIKE ?",
+                    "i.item_code LIKE ?",
+                    "i.description LIKE ?",
+                ];
+                $params[] = $s; $params[] = $s; $params[] = $s;
+                if ($adReady) {
+                    $searchClauses[] = "ad.serial_number LIKE ?";
+                    $searchClauses[] = "ad.asset_code LIKE ?";
+                    $params[] = $s; $params[] = $s;
+                }
+                if ($snReady) {
+                    $searchClauses[] = "EXISTS (SELECT 1 FROM inv_serial_numbers sn WHERE sn.item_id = i.item_id AND sn.serial_number LIKE ?)";
+                    $params[] = $s;
+                }
+                $where[] = '(' . implode(' OR ', $searchClauses) . ')';
+            }
 
             $whereClause = implode(' AND ', $where);
 
@@ -1012,6 +1045,10 @@ try {
                 }
             }
 
+            $unitCostExpr = $adReady
+                ? "COALESCE(sl.unit_cost, ad.balance_value, ad.purchase_cost, ad.bos_value, 0)"
+                : "COALESCE(sl.unit_cost, 0)";
+
             $rowsStmt = $pdo->prepare("
                 SELECT
                     i.item_code,
@@ -1025,19 +1062,19 @@ try {
                         NULLIF(l.floor, ''),
                         NULLIF(l.room_storage_area, '')
                     ) AS location_path,
-                    sl.quantity_on_hand,
-                    sl.unit_cost,
-                    (sl.quantity_on_hand * sl.unit_cost) AS total_value,
+                    COALESCE(sl.quantity_on_hand, 1) AS quantity_on_hand,
+                    $unitCostExpr AS unit_cost,
+                    (COALESCE(sl.quantity_on_hand, 1) * $unitCostExpr) AS total_value,
                     sl.stock_status,
                     $adSelect
                     i.item_status
-                FROM inv_stock sl
-                JOIN inv_items i ON sl.item_id = i.item_id
+                FROM inv_items i
+                LEFT JOIN inv_stock sl ON sl.item_id = i.item_id
                 LEFT JOIN inv_categories c ON i.category_id = c.category_id
-                LEFT JOIN inv_locations l ON sl.location_id = l.location_id
+                LEFT JOIN inv_locations l ON l.location_id = sl.location_id
                 $adJoin
                 WHERE $whereClause
-                ORDER BY l.location_code, i.item_name
+                ORDER BY (l.location_code IS NULL), l.location_code, i.item_name
                 LIMIT 3000
             ");
             $rowsStmt->execute($params);
@@ -1131,7 +1168,10 @@ Generated By: ' . htmlspecialchars($userName) . '
 </tr></table></div>
 <div style="padding:10px 16px 6px;">
 <h2 style="margin:0 0 3px;font-size:14px;color:#1a1a2e;">Inventory Report by Location</h2>
-<p style="margin:0;color:#6c757d;font-size:9px;">Location: <b>' . htmlspecialchars($locationLabel) . '</b> &mdash; Report Date: ' . date('d M Y') . '</p>
+<p style="margin:0;color:#6c757d;font-size:9px;">Location: <b>' . htmlspecialchars($locationLabel) . '</b>'
+. ($statusF  !== '' ? ' &nbsp;&bull;&nbsp; Status: <b>' . htmlspecialchars($statusF) . '</b>'   : '')
+. ($searchText !== '' ? ' &nbsp;&bull;&nbsp; Search: <b>&ldquo;' . htmlspecialchars($searchText) . '&rdquo;</b>' : '')
+. ' &mdash; Report Date: ' . date('d M Y') . '</p>
 </div>
 <div style="padding:4px 16px 8px;font-size:9px;">
 <table style="width:auto;border:0;"><tr>

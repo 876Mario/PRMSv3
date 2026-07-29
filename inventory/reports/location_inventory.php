@@ -31,11 +31,12 @@ $branchesReady     = locRptTableExists($pdo, 'branches');
 $serialTableReady  = locRptTableExists($pdo, 'inv_serial_numbers');
 
 /* ── Filter inputs ───────────────────────────────────────────────────────── */
-$locationId  = (int) ($_GET['location_id']  ?? 0);
-$categoryId  = (int) ($_GET['category_id']  ?? 0);
-$statusF     = trim($_GET['status']          ?? '');
-$acquiredFrom = trim($_GET['acquired_from']  ?? '');
-$acquiredTo   = trim($_GET['acquired_to']    ?? '');
+$locationId   = (int)  ($_GET['location_id']   ?? 0);
+$categoryId   = (int)  ($_GET['category_id']   ?? 0);
+$statusF      = trim($_GET['status']            ?? '');
+$acquiredFrom = trim($_GET['acquired_from']     ?? '');
+$acquiredTo   = trim($_GET['acquired_to']       ?? '');
+$searchText   = trim($_GET['search']            ?? '');
 
 /* ── Build WHERE ─────────────────────────────────────────────────────────── */
 $where  = [];
@@ -73,6 +74,31 @@ if ($acquiredFrom !== '' && $assetDetailsReady) {
 if ($acquiredTo !== '' && $assetDetailsReady) {
     $where[]  = "ad.acquired_date <= ?";
     $params[] = $acquiredTo;
+}
+if ($searchText !== '') {
+    $s        = "%$searchText%";
+    $searchClauses = [
+        "i.item_name LIKE ?",
+        "i.item_code LIKE ?",
+        "i.description LIKE ?",
+    ];
+    $params[] = $s;
+    $params[] = $s;
+    $params[] = $s;
+    if ($assetDetailsReady) {
+        $searchClauses[] = "ad.serial_number LIKE ?";
+        $searchClauses[] = "ad.asset_code LIKE ?";
+        $params[]        = $s;
+        $params[]        = $s;
+    }
+    if ($serialTableReady) {
+        $searchClauses[] = "EXISTS (
+            SELECT 1 FROM inv_serial_numbers sn
+            WHERE sn.item_id = i.item_id AND sn.serial_number LIKE ?
+        )";
+        $params[] = $s;
+    }
+    $where[] = '(' . implode(' OR ', $searchClauses) . ')';
 }
 
 $whereClause = implode(' AND ', $where);
@@ -201,6 +227,7 @@ $exportParams = http_build_query(array_filter([
     'status'        => $statusF      !== '' ? $statusF : null,
     'acquired_from' => $acquiredFrom !== '' ? $acquiredFrom : null,
     'acquired_to'   => $acquiredTo   !== '' ? $acquiredTo   : null,
+    'search'        => $searchText   !== '' ? $searchText   : null,
 ]));
 
 $pdfUrl   = '/inventory/reports/export_pdf.php?report=location_inventory&' . $exportParams;
@@ -217,6 +244,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     .report-header { background: linear-gradient(90deg,#0b5e2b,#c9a227) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 </style>
+<!-- Select2 for searchable dropdowns -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
 
 <div class="d-flex justify-content-between align-items-center mb-3 no-print">
     <h2><i class="bi bi-geo-alt"></i> Inventory Report by Location</h2>
@@ -238,9 +268,15 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 <!-- Filter Form -->
 <form class="row g-2 mb-4 no-print" method="get">
+    <div class="col-md-12">
+        <label class="form-label small text-muted">Search (Item name, code, description, asset tag, serial number)</label>
+        <input type="text" name="search" class="form-control"
+               placeholder="Type to search across all fields…"
+               value="<?= htmlspecialchars($searchText) ?>">
+    </div>
     <div class="col-md-3">
         <label class="form-label small text-muted">Location</label>
-        <select name="location_id" class="form-select">
+        <select name="location_id" class="form-select select2-location">
             <option value="">All Locations</option>
             <?php foreach ($locations as $loc): ?>
             <option value="<?= $loc['location_id'] ?>"
@@ -255,7 +291,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     </div>
     <div class="col-md-2">
         <label class="form-label small text-muted">Category</label>
-        <select name="category_id" class="form-select">
+        <select name="category_id" class="form-select select2-category">
             <option value="">All Categories</option>
             <?php foreach ($categories as $cat): ?>
             <option value="<?= $cat['category_id'] ?>"
@@ -290,6 +326,14 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="col-md-1 d-flex align-items-end">
         <button class="btn btn-dark w-100"><i class="bi bi-funnel"></i> Filter</button>
     </div>
+    <?php if ($searchText !== '' || $locationId > 0 || $categoryId > 0 || $statusF !== ''
+              || $acquiredFrom !== '' || $acquiredTo !== ''): ?>
+    <div class="col-md-2 d-flex align-items-end">
+        <a href="/inventory/reports/location_inventory.php" class="btn btn-outline-secondary w-100">
+            <i class="bi bi-x-circle"></i> Clear Filters
+        </a>
+    </div>
+    <?php endif; ?>
 </form>
 
 <!-- Report Header (visible on screen and in print) -->
@@ -313,6 +357,12 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
             <div>Generated By: <?= htmlspecialchars($_SESSION['full_name'] ?? 'System') ?></div>
             <?php if ($categoryId > 0): ?>
             <div>Category Filter Applied</div>
+            <?php endif; ?>
+            <?php if ($statusF !== ''): ?>
+            <div>Status: <?= htmlspecialchars($statusF) ?></div>
+            <?php endif; ?>
+            <?php if ($searchText !== ''): ?>
+            <div>Search: "<?= htmlspecialchars($searchText) ?>"</div>
             <?php endif; ?>
         </div>
     </div>
@@ -464,10 +514,29 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         'status'        => $statusF      !== '' ? $statusF : null,
         'acquired_from' => $acquiredFrom !== '' ? $acquiredFrom : null,
         'acquired_to'   => $acquiredTo   !== '' ? $acquiredTo   : null,
+        'search'        => $searchText   !== '' ? $searchText   : null,
     ]);
     
     renderPagination($totalRows, $perPage, $page, $paginationParams); 
     ?>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function () {
+    $('.select2-location').select2({
+        theme: 'bootstrap-5',
+        placeholder: 'All Locations',
+        allowClear: true,
+        width: '100%',
+    });
+    $('.select2-category').select2({
+        theme: 'bootstrap-5',
+        placeholder: 'All Categories',
+        allowClear: true,
+        width: '100%',
+    });
+});
+</script>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/footer.php'; ?>

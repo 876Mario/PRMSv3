@@ -42,6 +42,7 @@ $reportGroups = [
         ['icon' => 'bi-truck',              'color' => 'primary',   'title' => 'Supplier Performance',        'desc' => 'GRN acceptance rates, rejection rates, and short-supply analysis by supplier.', 'url' => '/inventory/reports/supplier_performance.php'],
     ],
     'Governance & Audit' => [
+        ['icon' => 'bi-clipboard2-pulse', 'color' => 'warning',   'title' => 'Board of Survey',             'desc' => 'Initiate and track Board of Survey requests for assets — condition assessment, recommendations, and approvals.', 'url' => '/inventory/board_of_survey/list.php'],
         ['icon' => 'bi-stopwatch',          'color' => 'secondary', 'title' => 'Approval Turnaround',         'desc' => 'Time taken for approvals across requisitions, transfers, adjustments, and disposals.', 'url' => '/inventory/reports/approval_turnaround.php'],
         ['icon' => 'bi-person-lines-fill',  'color' => 'dark',      'title' => 'User Activity Report',        'desc' => 'All inventory transactions by user, with value and type summary.', 'url' => '/inventory/reports/user_activity.php'],
         ['icon' => 'bi-shield-exclamation', 'color' => 'secondary', 'title' => 'Audit Exceptions',            'desc' => 'Inventory audit trail events for internal and external audit review.', 'url' => '/inventory/reports/audit_exceptions.php'],

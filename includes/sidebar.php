@@ -412,6 +412,12 @@ function isCollapsibleActive($urls, $currentPage) {
                 <i class="bi bi-trash3 me-2"></i>Disposal
             </a>
             <?php endif; ?>
+            <?php if (has_permission('manage_board_of_survey')): ?>
+            <a class="nav-link text-white sidebar-link <?= active('/inventory/board_of_survey', $currentPage) ?>"
+               href="/inventory/board_of_survey/list.php">
+                <i class="bi bi-clipboard2-pulse me-2"></i>Board of Survey
+            </a>
+            <?php endif; ?>
             <?php if (has_permission('conduct_stock_count')): ?>
             <a class="nav-link text-white sidebar-link <?= active('/inventory/stocktake', $currentPage) ?>"
                href="/inventory/stocktake/list.php">
