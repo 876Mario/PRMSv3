@@ -141,12 +141,12 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
             <div class="table-responsive">
                 <table class="table table-bordered align-middle mb-0">
                     <thead class="table-dark">
-                        <tr><th>Item <span class="text-danger">*</span></th><th>Lot #</th><th>Batch #</th><th>Serial #</th><th>Quantity <span class="text-danger">*</span></th><th></th></tr>
+                        <tr><th>Item <span class="text-danger">*</span></th><th>Lot #</th><th>Batch #</th><th>Serial #</th><th>Quantity <span class="text-danger">*</span></th><th>Available</th><th></th></tr>
                     </thead>
                     <tbody id="transferBody">
                         <tr>
                             <td>
-                                <select name="item_id[]" class="form-select form-select-sm" required>
+                                <select name="item_id[]" class="form-select form-select-sm item-select" required onchange="fetchAvailableStock(this)">
                                     <option value="">--</option>
                                     <?php foreach ($items as $it): ?>
                                     <option value="<?= $it['item_id'] ?>"><?= htmlspecialchars($it['item_code'] . ' - ' . $it['item_name']) ?></option>
@@ -156,7 +156,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                             <td><input type="text" name="lot_number[]" class="form-control form-control-sm"></td>
                             <td><input type="text" name="batch_number[]" class="form-control form-control-sm"></td>
                             <td><input type="text" name="serial_number[]" class="form-control form-control-sm"></td>
-                            <td><input type="number" step="0.01" name="quantity[]" class="form-control form-control-sm text-end" required></td>
+                            <td><input type="number" step="0.01" min="0.01" name="quantity[]" class="form-control form-control-sm text-end" required></td>
+                            <td><small class="stock-available text-muted">—</small></td>
                             <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()"><i class="bi bi-trash"></i></button></td>
                         </tr>
                     </tbody>
@@ -177,8 +178,31 @@ function addTransferRow() {
     const row = tbody.querySelector('tr').cloneNode(true);
     row.querySelectorAll('input').forEach(i => i.value = '');
     row.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+    row.querySelectorAll('.stock-available').forEach(el => { el.textContent = '—'; el.className = 'stock-available text-muted'; });
+    const newSel = row.querySelector('.item-select');
+    if (newSel) newSel.addEventListener('change', function() { fetchAvailableStock(this); });
     tbody.appendChild(row);
 }
+function fetchAvailableStock(selectEl) {
+    const row = selectEl.closest('tr');
+    const badge = row ? row.querySelector('.stock-available') : null;
+    if (!badge) return;
+    const itemId = selectEl.value;
+    const fromLoc = document.querySelector('[name="from_location_id"]');
+    const locId = fromLoc ? fromLoc.value : '';
+    if (!itemId || !locId) { badge.textContent = '—'; badge.className = 'stock-available text-muted'; return; }
+    fetch('/inventory/items/get_stock_level.php?item_id=' + encodeURIComponent(itemId) + '&location_id=' + encodeURIComponent(locId))
+        .then(r => r.json())
+        .then(d => {
+            badge.textContent = d.available !== undefined ? Number(d.available).toFixed(2) : '—';
+            badge.className = 'stock-available fw-bold ' + (parseFloat(d.available) > 0 ? 'text-success' : 'text-danger');
+        })
+        .catch(() => { badge.textContent = '—'; badge.className = 'stock-available text-muted'; });
+}
+// Refresh available stock when from_location changes
+document.querySelector('[name="from_location_id"]').addEventListener('change', function() {
+    document.querySelectorAll('#transferBody .item-select').forEach(sel => fetchAvailableStock(sel));
+});
 </script>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/footer.php'; ?>

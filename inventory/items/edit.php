@@ -369,6 +369,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Use item data as defaults
 $f = $item;
 
+// Load current stock levels for this item
+$currentStock = [];
+try {
+    $stockStmt = $pdo->prepare("
+        SELECT s.quantity_on_hand, s.quantity_reserved, s.quantity_available, s.unit_cost,
+               s.stock_status, s.batch_lot_number, s.received_date,
+               l.location_id, l.location_code, COALESCE(l.site_name, l.site_campus, '') AS location_display
+        FROM inv_stock s
+        JOIN inv_locations l ON s.location_id = l.location_id
+        WHERE s.item_id = ? AND s.stock_status = 'USABLE'
+        ORDER BY l.location_code, s.received_date
+    ");
+    $stockStmt->execute([$itemId]);
+    $currentStock = $stockStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) { /* graceful degradation */ }
+
 require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 ?>
 
@@ -892,6 +908,57 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         </div>
     </div>
     <?php endif; ?>
+
+    <!-- Current Stock Levels (read-only) -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-boxes"></i> Current Stock Levels</span>
+            <a href="/inventory/adjustments/add.php?item_id=<?= $itemId ?>" class="btn btn-sm btn-light">
+                <i class="bi bi-pencil-square"></i> Adjust Stock
+            </a>
+        </div>
+        <div class="card-body p-0">
+            <?php if (empty($currentStock)): ?>
+            <div class="alert alert-warning m-3 mb-3">
+                <i class="bi bi-exclamation-triangle"></i>
+                <strong>No stock records found.</strong>
+                This item has a quantity of <strong>0</strong> at all locations.
+                Transfers will fail until stock is initialised via a
+                <a href="/inventory/adjustments/add.php?item_id=<?= $itemId ?>">Stock Adjustment</a>
+                or by receiving stock.
+            </div>
+            <?php else: ?>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-0">
+                    <thead class="table-secondary">
+                        <tr>
+                            <th>Location</th>
+                            <th class="text-end">On Hand</th>
+                            <th class="text-end">Reserved</th>
+                            <th class="text-end">Available</th>
+                            <th>Batch / Lot</th>
+                            <th>Received</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($currentStock as $s): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($s['location_code'] . ($s['location_display'] ? ' — ' . $s['location_display'] : '')) ?></td>
+                            <td class="text-end"><?= number_format((float)$s['quantity_on_hand'], 2) ?></td>
+                            <td class="text-end"><?= number_format((float)$s['quantity_reserved'], 2) ?></td>
+                            <td class="text-end fw-bold <?= (float)$s['quantity_available'] > 0 ? 'text-success' : 'text-danger' ?>">
+                                <?= number_format((float)$s['quantity_available'], 2) ?>
+                            </td>
+                            <td><?= htmlspecialchars($s['batch_lot_number'] ?? '—') ?></td>
+                            <td><?= $s['received_date'] ? date('d M Y', strtotime($s['received_date'])) : '—' ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
 
     <div class="text-end mb-4">
         <a href="/inventory/items/view.php?id=<?= $itemId ?>" class="btn btn-outline-secondary me-2">Cancel</a>
