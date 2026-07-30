@@ -13,6 +13,7 @@ $assetTypes = getAssetTypes($pdo);
 $invTypes    = getInventoryTypes($pdo);
 $assetItemTypeGroups = getAssetItemTypeGroups($pdo);
 $assetItemTypes      = getAssetItemTypes($pdo);
+$locations = $pdo->query("SELECT location_id, location_code, COALESCE(site_name, site_campus, '') AS display_name FROM inv_locations WHERE is_active=1 ORDER BY location_code")->fetchAll(PDO::FETCH_ASSOC);
 
 /* Asset Register helpers — used by the Asset Register Details section */
 $assetDetailsTableExists = (function (PDO $pdo): bool {
@@ -316,6 +317,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             logInventoryAudit($pdo, 'inv_asset_details', $newItemId, 'CREATE',
                 "Asset Register record created: Inv# $arInventoryNumber, Condition: $arCondition, Status: $arStatus, Custodian: $arCustodian");
+        }
+
+        // ── Initial Stock ───────────────────────────────────────────────────
+        $initialQty     = max(0, (float) ($_POST['initial_quantity'] ?? 1));
+        $initialLocId   = (int) ($_POST['initial_location_id'] ?? 0);
+        if ($initialQty > 0 && $initialLocId > 0) {
+            $stockId = increaseStock($pdo, $newItemId, $initialLocId, $initialQty, ['unit_cost' => (float)($_POST['standard_cost'] ?? 0)]);
+            recordStockTransaction($pdo, [
+                'transaction_type' => 'RECEIPT',
+                'item_id'          => $newItemId,
+                'stock_id'         => $stockId,
+                'location_id'      => $initialLocId,
+                'quantity'         => $initialQty,
+                'unit_cost'        => (float) ($_POST['standard_cost'] ?? 0),
+                'notes'            => 'Opening balance set at item creation',
+            ]);
+            logInventoryAudit($pdo, 'inv_stock', $newItemId, 'OPENING_BALANCE',
+                "Initial stock of $initialQty set at location ID $initialLocId for item $itemCode");
         }
 
         logInventoryAudit($pdo, 'inv_items', $newItemId, 'CREATE', "Item created: $itemCode - $itemName");
@@ -949,6 +968,34 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     </div>
     <?php endif; ?>
 
+    <!-- Initial Stock -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-dark text-white"><i class="bi bi-boxes"></i> Initial Stock</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Initial Quantity</label>
+                    <input type="number" step="0.01" min="0" name="initial_quantity" id="initial_quantity"
+                           class="form-control" value="<?= htmlspecialchars($_POST['initial_quantity'] ?? '1') ?>">
+                    <small class="text-muted">Defaults to 1. Set to 0 to skip stock initialisation.</small>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Initial Location</label>
+                    <select name="initial_location_id" id="initial_location_id" class="form-select">
+                        <option value="">— Select a location (optional) —</option>
+                        <?php foreach ($locations as $loc): ?>
+                        <option value="<?= $loc['location_id'] ?>"
+                            <?= ($_POST['initial_location_id'] ?? '') == $loc['location_id'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($loc['location_code'] . ($loc['display_name'] ? ' — ' . $loc['display_name'] : '')) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small class="text-muted">The location where this item will be stocked. Required when Initial Quantity &gt; 0 to enable transfers.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="text-end mb-4">
         <a href="/inventory/items/list.php" class="btn btn-outline-secondary me-2">Cancel</a>
         <button type="submit" class="btn btn-primary btn-lg">
@@ -1199,6 +1246,67 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     if (initSite) {
         loadBuildings(initSite, initBuild);
         if (initBuild) loadFloors(initSite, initBuild, initFloor);
+    }
+}());
+
+// ── Asset code auto-parser ──────────────────────────────────────────────────
+// Parses codes of the form  "G.C.10A / OM32 / 1"
+// Part 1 = location code, Part 2 = category hint, Part 3 = quantity
+(function () {
+    var codeInput = document.querySelector('input[name="initial_quantity"]');
+    var itemCodeInput = document.querySelector('input[name="item_code"]');
+    var locSel       = document.getElementById('initial_location_id');
+    var qtyInput     = document.getElementById('initial_quantity');
+    // Map of location_code -> option value provided by server
+    var locationMap  = {};
+    <?php foreach ($locations as $loc): ?>
+    locationMap[<?= json_encode($loc['location_code']) ?>] = <?= (int)$loc['location_id'] ?>;
+    <?php endforeach; ?>
+
+    function parseAssetCode(raw) {
+        if (!raw || raw.indexOf('/') === -1) return null;
+        var parts = raw.split('/').map(function(p) { return p.trim(); });
+        if (parts.length < 2) return null;
+        var result = { locationCode: parts[0] || null, categoryCode: parts[1] || null, quantity: null };
+        if (parts.length >= 3 && parts[2] !== '') {
+            var q = parseFloat(parts[2]);
+            if (!isNaN(q) && q > 0) result.quantity = q;
+        }
+        return result;
+    }
+
+    function applyParsed(parsed) {
+        if (!parsed) return;
+        // Set initial quantity
+        if (parsed.quantity !== null && qtyInput) {
+            qtyInput.value = parsed.quantity;
+        }
+        // Set initial location from map
+        if (parsed.locationCode && locSel) {
+            var locId = locationMap[parsed.locationCode];
+            if (locId) {
+                locSel.value = locId;
+            } else {
+                // Show hint that location may need to be created
+                var hint = document.getElementById('locationParseHint');
+                if (!hint) {
+                    hint = document.createElement('small');
+                    hint.id = 'locationParseHint';
+                    hint.className = 'text-warning';
+                    locSel.parentNode.appendChild(hint);
+                }
+                hint.textContent = 'Location "' + parsed.locationCode + '" not found — select manually or create it first.';
+            }
+        }
+    }
+
+    if (itemCodeInput) {
+        itemCodeInput.addEventListener('blur', function () {
+            var parsed = parseAssetCode(this.value);
+            applyParsed(parsed);
+        });
+        // Apply on page load if item code already has a value (after failed POST)
+        if (itemCodeInput.value) applyParsed(parseAssetCode(itemCodeInput.value));
     }
 }());
 </script>
