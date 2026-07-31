@@ -134,30 +134,10 @@ $$
 DELIMITER ;
 
 -- Auto-initialize approvals when first quote is uploaded
-DELIMITER $$
-CREATE TRIGGER IF NOT EXISTS `trg_initialize_spec_review_on_first_quote` AFTER INSERT ON `rfq_quotes` FOR EACH ROW
-BEGIN
-    DECLARE quote_count INT;
-    
-    -- Count quotes for this RFQ vendor
-    SELECT COUNT(*) INTO quote_count
-    FROM rfq_quotes q
-    JOIN rfq_vendors rv ON q.rfq_vendor_id = rv.rfq_vendor_id
-    WHERE rv.rfq_id = (
-        SELECT rfq_id FROM rfq_vendors WHERE rfq_vendor_id = NEW.rfq_vendor_id
-    );
-    
-    -- If this is the first quote, initialize the workflow
-    IF quote_count = 1 THEN
-        UPDATE rfqs
-        SET spec_review_status = 'PENDING'
-        WHERE rfq_id = (
-            SELECT rfq_id FROM rfq_vendors WHERE rfq_vendor_id = NEW.rfq_vendor_id LIMIT 1
-        );
-    END IF;
-END
-$$
-DELIMITER ;
+-- NOTE: This trigger was removed to fix MySQL Error 1442 (Cannot update table in trigger).
+-- The specification review initialization is now handled in rfq/upload_quote.php (lines 106-148)
+-- when the first quote is uploaded, avoiding recursive trigger execution.
+-- See: rfq/upload_quote.php::uploadQuote() for the application-layer implementation.
 
 -- Prevent commitment creation until both approvals are complete
 DELIMITER $$

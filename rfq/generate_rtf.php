@@ -110,6 +110,18 @@ $stmt = $pdo->prepare("
 $stmt->execute([$data['request_id']]);
 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+/* Fetch Requestor Information */
+$stmtRequestor = $pdo->prepare("
+    SELECT pr.created_by, u.full_name, u.email, u.department
+    FROM procurement_requests pr
+    LEFT JOIN users u ON pr.created_by = u.user_id
+    WHERE pr.request_id = ?
+");
+$stmtRequestor->execute([$data['request_id']]);
+$requestorData = $stmtRequestor->fetch(PDO::FETCH_ASSOC);
+$requestorName = $requestorData ? htmlspecialchars($requestorData['full_name'] ?? 'N/A') : 'N/A';
+$requestorDept = $requestorData ? htmlspecialchars($requestorData['department'] ?? '') : '';
+
 require_once $_SERVER['DOCUMENT_ROOT'].'/lib/tcpdf/tcpdf.php';
 
 $rfqNumber   = htmlspecialchars($data['rfq_number']);
@@ -358,6 +370,47 @@ foreach ($terms as $i => $term) {
 }
 
 $pdf->Ln(6);
+
+
+// =============================
+// REQUESTOR AUTHORIZATION SECTION
+// =============================
+$pdf->SetFont('helvetica', 'B', 11);
+$pdf->SetTextColor(33, 37, 41);
+$pdf->Cell(0, 7, 'REQUESTOR AUTHORIZATION', 0, 1);
+
+$pdf->SetFont('helvetica', '', 10);
+$pdf->SetTextColor(33, 37, 41);
+$pdf->Ln(2);
+
+// Requestor Name Line
+$pdf->SetFont('helvetica', '', 9);
+$pdf->Cell(35, 5, 'Requestor Name:', 0, 0);
+$pdf->SetDrawColor(200, 200, 200);
+$pdf->Cell(65, 5, '', 'B', 0);
+$pdf->SetDrawColor(0, 0, 0);
+$pdf->Cell(10, 5, '', 0, 0);
+
+// Requestor Title
+$pdf->Cell(30, 5, 'Title:', 0, 0);
+$pdf->SetDrawColor(200, 200, 200);
+$pdf->Cell(0, 5, '', 'B', 1);
+$pdf->SetDrawColor(0, 0, 0);
+
+// Signature Line
+$pdf->Cell(35, 5, 'Signature:', 0, 0);
+$pdf->SetDrawColor(200, 200, 200);
+$pdf->Cell(65, 5, '', 'B', 0);
+$pdf->SetDrawColor(0, 0, 0);
+$pdf->Cell(10, 5, '', 0, 0);
+
+// Date Signed
+$pdf->Cell(30, 5, 'Date:', 0, 0);
+$pdf->SetDrawColor(200, 200, 200);
+$pdf->Cell(0, 5, '', 'B', 1);
+$pdf->SetDrawColor(0, 0, 0);
+
+$pdf->Ln(4);
 
 
 // =============================
