@@ -39,12 +39,22 @@ function allowedTransitions(): array {
         'RFQ_LETTER_AVAILABLE'   => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
                                      // ← backward
                                      'GC_APPROVED', 'DIRECTOR_APPROVED', 'HOD_APPROVED', 'SUBMITTED'],
-        'QUOTE_REVIEW_PENDING'   => ['QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED',
+        // Two-stage quote approval workflow
+        'QUOTE_REVIEW_PENDING'   => ['QUOTE_SPEC_REVIEW_PENDING', 'QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED',
                                      // ← backward
                                      'RFQ_LETTER_AVAILABLE'],
+        'QUOTE_SPEC_REVIEW_PENDING' => ['QUOTE_SPEC_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+                                        // ← backward (return for correction)
+                                        'RFQ_LETTER_AVAILABLE'],
+        'QUOTE_SPEC_REVIEW_APPROVED' => ['QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+                                         // ← backward (return to spec review)
+                                         'QUOTE_SPEC_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['QUOTE_APPROVED', 'QUOTE_SPEC_REVIEW_PENDING', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+                                                 // ← backward (return to spec review)
+                                                 'RFQ_LETTER_AVAILABLE'],
         'QUOTE_APPROVED'         => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PROCUREMENT_STAGE',
                                      // ← backward
-                                     'QUOTE_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
+                                     'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_SPEC_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
         'COMMITMENTS_PENDING'    => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'PROCUREMENT_STAGE',
                                      // ← backward
                                      'QUOTE_APPROVED', 'FUNDS_VERIFIED'],
@@ -93,7 +103,8 @@ function isBackwardTransition(string $from, string $to): bool {
     $order = [
         'DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED',
         'FUNDS_VERIFIED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE',
-        'QUOTE_REVIEW_PENDING', 'QUOTE_APPROVED', 'EVALUATION_STAGE',
+        'QUOTE_REVIEW_PENDING', 'QUOTE_SPEC_REVIEW_PENDING', 'QUOTE_SPEC_REVIEW_APPROVED',
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'EVALUATION_STAGE',
         'COMMITTEE_RECOMMENDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED',
         'PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED', 'COMPLETED',
     ];

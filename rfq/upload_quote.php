@@ -103,10 +103,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         WHERE rfq_vendor_id = ?
     ")->execute([$vendor_id]);
 
+    /* Initialize specification review workflow if this is the first quote */
+    $stmtQuoteCount = $pdo->prepare("
+        SELECT COUNT(*) as quote_count FROM rfq_quotes q
+        JOIN rfq_vendors rv ON q.rfq_vendor_id = rv.rfq_vendor_id
+        WHERE rv.rfq_id = ?
+    ");
+    $stmtQuoteCount->execute([$rfq_id]);
+    $quoteCountResult = $stmtQuoteCount->fetch(PDO::FETCH_ASSOC);
+     
+    if ($quoteCountResult && $quoteCountResult['quote_count'] == 1) {
+        // First quote uploaded - initialize specification review workflow
+        $pdo->prepare("
+            UPDATE rfqs
+            SET spec_review_status = 'PENDING'
+            WHERE rfq_id = ?
+        ")->execute([$rfq_id]);
+         
+        // Auto-assign default specification reviewer if configured
+        // This can be the procurement officer or a designated spec reviewer
+        $stmtDefaultReviewer = $pdo->prepare("
+            SELECT u.user_id, r.name as role_name FROM users u
+            INNER JOIN roles r ON u.role_id = r.id
+            WHERE r.name IN ('Procurement Officer', 'Specification Reviewer')
+            AND u.is_active = 1
+            LIMIT 1
+        ");
+        $stmtDefaultReviewer->execute();
+        $defaultReviewer = $stmtDefaultReviewer->fetch(PDO::FETCH_ASSOC);
+         
+        if ($defaultReviewer) {
+            // Assign as spec reviewer
+            try {
+                $pdo->prepare("
+                    INSERT INTO rfq_spec_reviewers (rfq_id, reviewer_id, reviewer_role, assigned_by, is_active)
+                    VALUES (?, ?, ?, ?, 1)
+                    ON DUPLICATE KEY UPDATE is_active = 1
+                ")->execute([$rfq_id, $defaultReviewer['user_id'], $defaultReviewer['role_name'], $_SESSION['user_id']]);
+            } catch (Exception $e) {
+                // Duplicate key is OK - reviewer already assigned
+                error_log("Note: Spec reviewer already assigned for RFQ $rfq_id");
+            }
+        }
+    }
+
     /* Audit */
     $pdo->prepare("
-        INSERT INTO audit_log (table_name, action, notes, change_date)
-        VALUES ('rfq_quotes','UPLOAD',?,NOW())
+        INSERT INTO audit_log (table_name, action, notes, change_date, approval_stage)
+        VALUES ('rfq_quotes','UPLOAD',?, NOW(), 'QUOTE_UPLOAD')
     ")->execute([
         "Quote uploaded for RFQ ID $rfq_id"
     ]);
