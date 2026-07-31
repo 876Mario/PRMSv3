@@ -44,11 +44,10 @@ $lineItems = $lineItems->fetchAll(PDO::FETCH_ASSOC);
 
 /* ── Audit trail ─────────────────────────────────────────────────────────── */
 $auditRows = $pdo->prepare("
-    SELECT al.*, u.full_name
-    FROM inv_audit_log al
-    LEFT JOIN users u ON al.user_id = u.user_id
+    SELECT al.*
+    FROM audit_log al
     WHERE al.table_name = 'inv_board_of_survey' AND al.record_id = ?
-    ORDER BY al.logged_at DESC
+    ORDER BY al.change_date DESC
     LIMIT 50
 ");
 $auditRows->execute([$bosId]);
@@ -534,8 +533,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                 <tbody>
                     <?php foreach ($auditRows as $al): ?>
                     <tr>
-                        <td class="text-muted"><?= htmlspecialchars($al['logged_at']) ?></td>
-                        <td><?= htmlspecialchars($al['full_name'] ?? 'System') ?></td>
+                        <td class="text-muted"><?= htmlspecialchars($al['change_date']) ?></td>
+                        <td><?= htmlspecialchars($al['changed_by'] ?? 'System') ?></td>
                         <td>
                             <span class="badge bg-secondary">
                                 <?= htmlspecialchars($al['action']) ?>
