@@ -2902,3 +2902,236 @@ HTML;
 }
 
 ?>
+
+/**
+ * ===================================
+ * RFQ Quote Approval Notifications
+ * ===================================
+ */
+
+/**
+ * Notify specification reviewer that quotes are ready for review
+ */
+function notifySpecReviewerQuotesReady(int $rfqId): bool {
+    if (!notificationsEnabled()) {
+        return false;
+    }
+
+    global $pdo;
+    try {
+        // Get RFQ details
+        $stmt = $pdo->prepare("
+            SELECT r.rfq_id, r.rfq_number, pr.request_number, pr.description,
+                   pr.estimated_value, r.submission_deadline
+            FROM rfqs r
+            JOIN procurement_requests pr ON r.request_id = pr.request_id
+            WHERE r.rfq_id = ?
+        ");
+        $stmt->execute([$rfqId]);
+        $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$rfq) return false;
+
+        // Get spec reviewers
+        $stmt = $pdo->prepare("
+            SELECT u.user_id, u.email, u.display_name
+            FROM rfq_spec_reviewers rsr
+            JOIN users u ON rsr.reviewer_id = u.user_id
+            WHERE rsr.rfq_id = ? AND rsr.is_active = 1
+        ");
+        $stmt->execute([$rfqId]);
+        $reviewers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($reviewers)) return false;
+
+        $appUrl = getAppUrl();
+        $subject = "RFQ {$rfq['rfq_number']} - Quotes Ready for Specification Review";
+        $html = "
+            <p>Quotations have been submitted for RFQ <strong>{$rfq['rfq_number']}</strong> (Request: {$rfq['request_number']}).</p>
+            <p><strong>Description:</strong> {$rfq['description']}</p>
+            <p><strong>Estimated Value:</strong> " . formatCurrency($rfq['estimated_value']) . "</p>
+            <p><strong>Submission Deadline:</strong> {$rfq['submission_deadline']}</p>
+            <p>Please review the submitted quotes for specification compliance and provide your approval decision.</p>
+            <a href='{$appUrl}/rfq/spec_review_approve.php?id={$rfqId}' class='btn btn-warning'>Review Quotes</a>
+        ";
+
+        foreach ($reviewers as $reviewer) {
+            if (sendMail($reviewer['email'], $subject, $html)) {
+                error_log("Spec review notification sent to {$reviewer['email']}");
+            }
+        }
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Error notifying spec reviewer: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Notify branch head that spec review is approved and awaiting final approval
+ */
+function notifyBranchHeadSpecReviewApproved(int $rfqId): bool {
+    if (!notificationsEnabled()) {
+        return false;
+    }
+
+    global $pdo;
+    try {
+        // Get RFQ details with spec reviewer name
+        $stmt = $pdo->prepare("
+            SELECT r.rfq_id, r.rfq_number, pr.request_number, pr.description,
+                   pr.estimated_value, r.submission_deadline, sr.display_name as spec_reviewer_name
+            FROM rfqs r
+            JOIN procurement_requests pr ON r.request_id = pr.request_id
+            LEFT JOIN users sr ON r.spec_reviewer_id = sr.user_id
+            WHERE r.rfq_id = ?
+        ");
+        $stmt->execute([$rfqId]);
+        $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$rfq) return false;
+
+        // Get branch head approvers
+        $stmt = $pdo->prepare("
+            SELECT u.user_id, u.email, u.display_name
+            FROM rfq_branch_head_approvers rbha
+            JOIN users u ON rbha.approver_id = u.user_id
+            WHERE rbha.rfq_id = ? AND rbha.is_active = 1
+        ");
+        $stmt->execute([$rfqId]);
+        $approvers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($approvers)) return false;
+
+        $appUrl = getAppUrl();
+        $subject = "RFQ {$rfq['rfq_number']} - Awaiting Your Branch Head Approval";
+        $html = "
+            <p>The specification review for RFQ <strong>{$rfq['rfq_number']}</strong> has been approved.</p>
+            <p><strong>Request Number:</strong> {$rfq['request_number']}</p>
+            <p><strong>Description:</strong> {$rfq['description']}</p>
+            <p><strong>Estimated Value:</strong> " . formatCurrency($rfq['estimated_value']) . "</p>
+            <p><strong>Specification Reviewer:</strong> {$rfq['spec_reviewer_name']}</p>
+            <p>As the Branch Head, please provide your final approval or clarification before supplier selection can proceed.</p>
+            <a href='{$appUrl}/rfq/branch_head_approve.php?id={$rfqId}' class='btn btn-primary'>Provide Approval</a>
+        ";
+
+        foreach ($approvers as $approver) {
+            if (sendMail($approver['email'], $subject, $html)) {
+                error_log("Branch head notification sent to {$approver['email']}");
+            }
+        }
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Error notifying branch head: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Notify requestor that spec review was rejected
+ */
+function notifyRequestorSpecReviewRejected(int $rfqId, string $reason): bool {
+    if (!notificationsEnabled()) {
+        return false;
+    }
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT r.rfq_id, r.rfq_number, pr.request_number, pr.created_by,
+                   u.email, u.display_name, sr.display_name as spec_reviewer_name
+            FROM rfqs r
+            JOIN procurement_requests pr ON r.request_id = pr.request_id
+            JOIN users u ON pr.created_by = u.user_id
+            LEFT JOIN users sr ON r.spec_reviewer_id = sr.user_id
+            WHERE r.rfq_id = ?
+        ");
+        $stmt->execute([$rfqId]);
+        $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$rfq) return false;
+
+        $appUrl = getAppUrl();
+        $subject = "RFQ {$rfq['rfq_number']} - Specification Review Rejected";
+        $html = "
+            <p>The specification review for RFQ <strong>{$rfq['rfq_number']}</strong> has been rejected.</p>
+            <p><strong>Request Number:</strong> {$rfq['request_number']}</p>
+            <p><strong>Reviewed by:</strong> {$rfq['spec_reviewer_name']}</p>
+            <p><strong>Reason:</strong></p>
+            <p>" . nl2br(he($reason)) . "</p>
+            <p>Please address the comments and resubmit revised quotes.</p>
+            <a href='{$appUrl}/rfq/view.php?id={$rfqId}' class='btn btn-info'>View RFQ Details</a>
+        ";
+
+        if (sendMail($rfq['email'], $subject, $html)) {
+            error_log("Rejection notification sent to requestor {$rfq['email']}");
+            return true;
+        }
+
+        return false;
+    } catch (Exception $e) {
+        error_log("Error notifying requestor of rejection: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Notify procurement team that all approvals are complete
+ */
+function notifyProcurementAllApprovalsComplete(int $rfqId): bool {
+    if (!notificationsEnabled()) {
+        return false;
+    }
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT r.rfq_id, r.rfq_number, pr.request_number, pr.description,
+                   pr.estimated_value
+            FROM rfqs r
+            JOIN procurement_requests pr ON r.request_id = pr.request_id
+            WHERE r.rfq_id = ?
+        ");
+        $stmt->execute([$rfqId]);
+        $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$rfq) return false;
+
+        // Get procurement officers
+        $stmt = $pdo->prepare("
+            SELECT u.user_id, u.email, u.display_name
+            FROM users u
+            INNER JOIN roles r ON u.role_id = r.id
+            WHERE r.name = 'Procurement Officer' AND u.is_active = 1
+        ");
+        $stmt->execute();
+        $officers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($officers)) return false;
+
+        $appUrl = getAppUrl();
+        $subject = "RFQ {$rfq['rfq_number']} - All Approvals Complete, Ready for Supplier Selection";
+        $html = "
+            <p>All approvals for RFQ <strong>{$rfq['rfq_number']}</strong> have been completed.</p>
+            <p><strong>Request Number:</strong> {$rfq['request_number']}</p>
+            <p><strong>Description:</strong> {$rfq['description']}</p>
+            <p><strong>Estimated Value:</strong> " . formatCurrency($rfq['estimated_value']) . "</p>
+            <p>You can now proceed with supplier selection and award of contract.</p>
+            <a href='{$appUrl}/rfq/view.php?id={$rfqId}' class='btn btn-success'>View RFQ & Select Supplier</a>
+        ";
+
+        foreach ($officers as $officer) {
+            if (sendMail($officer['email'], $subject, $html)) {
+                error_log("Completion notification sent to {$officer['email']}");
+            }
+        }
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Error notifying procurement of completion: " . $e->getMessage());
+        return false;
+    }
+}
+
