@@ -118,8 +118,15 @@ CREATE INDEX IF NOT EXISTS idx_audit_approval_action ON audit_log(approval_actio
 -- Auto-initialize approval status when RFQ is created
 -- NOTE: Using BEFORE INSERT trigger to avoid MySQL error 1442
 -- (Cannot update table in trigger when table is used by statement that invoked trigger)
+-- IMPORTANT: Always DROP before CREATE so re-running this migration replaces any
+-- previously-created (potentially recursive/broken) version of this trigger.
+-- `CREATE TRIGGER IF NOT EXISTS` alone is NOT sufficient here: if a trigger with
+-- this name already exists (e.g. an older AFTER-trigger that updated `rfqs`
+-- from within itself), MySQL silently skips creation and the broken definition
+-- remains in place, which is why error 1442 kept recurring.
+DROP TRIGGER IF EXISTS `trg_initialize_rfq_approval_workflow`;
 DELIMITER $$
-CREATE TRIGGER IF NOT EXISTS `trg_initialize_rfq_approval_workflow` BEFORE INSERT ON `rfqs` FOR EACH ROW
+CREATE TRIGGER `trg_initialize_rfq_approval_workflow` BEFORE INSERT ON `rfqs` FOR EACH ROW
 BEGIN
     -- When RFQ is created, initialize approval statuses using SET NEW
     -- This ensures the default values are set before row insertion
@@ -140,8 +147,9 @@ DELIMITER ;
 -- See: rfq/upload_quote.php::uploadQuote() for the application-layer implementation.
 
 -- Prevent commitment creation until both approvals are complete
+DROP TRIGGER IF EXISTS `trg_require_quote_approval_for_commitment`;
 DELIMITER $$
-CREATE TRIGGER IF NOT EXISTS `trg_require_quote_approval_for_commitment` BEFORE INSERT ON `commitments` FOR EACH ROW
+CREATE TRIGGER `trg_require_quote_approval_for_commitment` BEFORE INSERT ON `commitments` FOR EACH ROW
 BEGIN
     DECLARE spec_status VARCHAR(50);
     DECLARE branch_head_status VARCHAR(50);
@@ -172,8 +180,9 @@ DELIMITER ;
 -- ===================================
 -- 8. Create stored procedure for approval workflow
 -- ===================================
+DROP PROCEDURE IF EXISTS `sp_approve_rfq_spec_review`;
 DELIMITER $$
-CREATE PROCEDURE IF NOT EXISTS `sp_approve_rfq_spec_review`(
+CREATE PROCEDURE `sp_approve_rfq_spec_review`(
     IN p_rfq_id INT,
     IN p_approver_id INT,
     IN p_comments TEXT
@@ -199,8 +208,9 @@ END
 $$
 DELIMITER ;
 
+DROP PROCEDURE IF EXISTS `sp_approve_rfq_branch_head`;
 DELIMITER $$
-CREATE PROCEDURE IF NOT EXISTS `sp_approve_rfq_branch_head`(
+CREATE PROCEDURE `sp_approve_rfq_branch_head`(
     IN p_rfq_id INT,
     IN p_approver_id INT,
     IN p_comments TEXT
@@ -226,8 +236,9 @@ END
 $$
 DELIMITER ;
 
+DROP PROCEDURE IF EXISTS `sp_reject_rfq_spec_review`;
 DELIMITER $$
-CREATE PROCEDURE IF NOT EXISTS `sp_reject_rfq_spec_review`(
+CREATE PROCEDURE `sp_reject_rfq_spec_review`(
     IN p_rfq_id INT,
     IN p_approver_id INT,
     IN p_reason TEXT
@@ -253,8 +264,9 @@ END
 $$
 DELIMITER ;
 
+DROP PROCEDURE IF EXISTS `sp_reject_rfq_branch_head`;
 DELIMITER $$
-CREATE PROCEDURE IF NOT EXISTS `sp_reject_rfq_branch_head`(
+CREATE PROCEDURE `sp_reject_rfq_branch_head`(
     IN p_rfq_id INT,
     IN p_approver_id INT,
     IN p_reason TEXT

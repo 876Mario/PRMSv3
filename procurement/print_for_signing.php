@@ -266,6 +266,35 @@ $html = <<<HTML
   </table>
 </div>
 
+
+<!-- Requestor Signature Section -->
+<div class="signature-section" style="padding:20px 20px;margin-top:10px;border-top:2px solid #e9ecef;">
+  <h4 style="font-size:11px;color:#0b5e2b;margin:0 0 20px;font-weight:700;text-transform:uppercase;">Requestor Signature</h4>
+
+  <table cellspacing="0" cellpadding="0" style="font-size:9px;width:60%;">
+    <tr>
+      <td style="color:#6c757d;font-weight:600;width:30%;padding-bottom:2px;">Requestor Name:</td>
+      <td style="border-bottom:2px solid #212529;font-weight:700;font-size:11px;">$createdBy</td>
+    </tr>
+    <tr>
+      <td style="height:34px;"></td>
+      <td style="height:34px;"></td>
+    </tr>
+    <tr>
+      <td style="color:#6c757d;font-weight:600;padding-bottom:2px;">Signature:</td>
+      <td style="border-bottom:2px solid #212529;"></td>
+    </tr>
+    <tr>
+      <td style="height:34px;"></td>
+      <td style="height:34px;"></td>
+    </tr>
+    <tr>
+      <td style="color:#6c757d;font-weight:600;padding-bottom:2px;">Date:</td>
+      <td style="border-bottom:2px solid #212529;"></td>
+    </tr>
+  </table>
+</div>
+
 <!-- Instructions -->
 <div style="padding:10px 20px;background:#e3f2fd;border-left:3px solid #2196f3;margin-top:10px;border-radius:4px;">
   <h4 style="margin:0 0 4px;font-size:10px;color:#1565c0;font-weight:700;">NEXT STEPS:</h4>
@@ -273,6 +302,7 @@ $html = <<<HTML
     <li>Print this document</li>
     <li>Review the request details carefully</li>
     <li>Sign and date in the "Authorization by Branch Head" section</li>
+    <li>Have the Requestor sign and date in the "Requestor Signature" section</li>
     <li>Scan or photograph the signed document</li>
     <li>Upload the signed copy via the system</li>
     <li>Procurement will then review and proceed with processing</li>
