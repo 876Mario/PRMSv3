@@ -20,13 +20,18 @@ if ($request_id <= 0) {
 }
 
 // Verify request exists and user permissions
-$stmt = $pdo->prepare("
-    SELECT request_id, request_number, created_by, status
-    FROM procurement_requests 
-    WHERE request_id = ?
-");
-$stmt->execute([$request_id]);
-$request = $stmt->fetch(PDO::FETCH_ASSOC);
+try {
+    $stmt = $pdo->prepare("
+        SELECT request_id, request_number, created_by, status
+        FROM procurement_requests 
+        WHERE request_id = ?
+    ");
+    $stmt->execute([$request_id]);
+    $request = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    pop("Error fetching request: " . extractDbMessage($e), "/procurement/list.php", 2500, "error");
+    exit;
+}
 
 if (!$request) {
     pop("Request not found.", "/procurement/list.php", 2500, "error");
@@ -63,11 +68,19 @@ try {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ];
 
+    if (!function_exists('finfo_open')) {
+        throw new Exception("File type validation is not available. Please contact the system administrator.");
+    }
+
     $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    if ($finfo === false) {
+        throw new Exception("Unable to validate file type. Please try again.");
+    }
+    
     $mimeType = finfo_file($finfo, $file['tmp_name']);
     finfo_close($finfo);
 
-    if (!in_array($mimeType, $allowedTypes)) {
+    if ($mimeType === false || !in_array($mimeType, $allowedTypes)) {
         throw new Exception("Invalid file type. Only PDF, images (JPG/PNG/GIF), and Word documents are allowed.");
     }
 
@@ -79,7 +92,9 @@ try {
     // Create upload directory if needed
     $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/signed_requests/';
     if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
+        if (!mkdir($uploadDir, 0755, true)) {
+            throw new Exception("Failed to create upload directory. Please contact the system administrator.");
+        }
     }
 
     // Generate safe filename
@@ -96,47 +111,71 @@ try {
     $originalName = $file['name'];
 
     // Start transaction
-    $pdo->beginTransaction();
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+    }
 
     // Update procurement_requests with signed request info
-    $updateStmt = $pdo->prepare("
-        UPDATE procurement_requests
-        SET signed_request_document_path = ?,
-            signed_request_received_date = NOW(),
-            signed_by_user_id = ?
-        WHERE request_id = ?
-    ");
-    $updateStmt->execute([
-        $documentPath,
-        $_SESSION['user_id'],
-        $request_id
-    ]);
+    try {
+        $updateStmt = $pdo->prepare("
+            UPDATE procurement_requests
+            SET signed_request_document_path = ?,
+                signed_request_received_date = NOW(),
+                signed_by_user_id = ?
+            WHERE request_id = ?
+        ");
+        $updateStmt->execute([
+            $documentPath,
+            $_SESSION['user_id'],
+            $request_id
+        ]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        throw new Exception("Failed to update request: " . $e->getMessage());
+    }
 
     // Also save to request_documents for audit trail
-    $docStmt = $pdo->prepare("
-        INSERT INTO request_documents 
-        (request_id, document_type, document_name, document_path, uploaded_by, notes)
-        VALUES (?, 'SIGNED_REQUEST', ?, ?, ?, ?)
-    ");
-    $docStmt->execute([
-        $request_id,
-        $originalName,
-        $documentPath,
-        $_SESSION['user_id'],
-        'Signed request uploaded by ' . ($_SESSION['full_name'] ?? 'User')
-    ]);
+    try {
+        $docStmt = $pdo->prepare("
+            INSERT INTO request_documents 
+            (request_id, document_type, document_name, document_path, uploaded_by, notes)
+            VALUES (?, 'SIGNED_REQUEST', ?, ?, ?, ?)
+        ");
+        $docStmt->execute([
+            $request_id,
+            $originalName,
+            $documentPath,
+            $_SESSION['user_id'],
+            'Signed request uploaded by ' . ($_SESSION['full_name'] ?? 'User')
+        ]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        throw new Exception("Failed to save document record: " . $e->getMessage());
+    }
 
     // Log the action
-    logAudit($pdo, 'procurement_requests', $request_id, 'UPDATE',
-            "Signed request uploaded: $originalName");
-    logRequestTimeline($pdo, $request_id, 'SIGNED_REQUEST_UPLOADED',
-                      "Signed request uploaded by " . ($_SESSION['full_name'] ?? 'User') . ": $originalName");
+    try {
+        logAudit($pdo, 'procurement_requests', $request_id, 'UPDATE',
+                "Signed request uploaded: $originalName");
+        logRequestTimeline($pdo, $request_id, 'SIGNED_REQUEST_UPLOADED',
+                         "Signed request uploaded by " . ($_SESSION['full_name'] ?? 'User') . ": $originalName");
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        throw new Exception("Failed to log action: " . $e->getMessage());
+    }
 
     $pdo->commit();
 
     // Notify procurement officers
-    require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
-    notifySignedRequestReceived($request_id, $request['request_number']);
+    try {
+        require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
+        if (function_exists('notifySignedRequestReceived')) {
+            notifySignedRequestReceived($request_id, $request['request_number']);
+        }
+    } catch (Exception $e) {
+        // Log notification error but don't fail the entire operation
+        error_log("Warning: Failed to send notification for signed request " . $request_id . ": " . $e->getMessage());
+    }
 
     pop(
         "Signed request uploaded successfully! Procurement team will review it shortly.",
