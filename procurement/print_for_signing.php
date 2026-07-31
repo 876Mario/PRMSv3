@@ -7,7 +7,15 @@ $REQUIRE_PERMISSION = 'view_requests';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
-require_once __DIR__."/../vendor/autoload.php";
+
+// Check if Dompdf library is installed
+$autoloadPath = __DIR__."/../vendor/autoload.php";
+if (!file_exists($autoloadPath)) {
+    http_response_code(500);
+    exit('Error: Required dependencies are not installed. Please contact the system administrator to run "composer install".');
+}
+
+require_once $autoloadPath;
 
 use Dompdf\Dompdf;
 use Dompdf\Options;
@@ -21,19 +29,24 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 $request_id = (int)$_GET['id'];
 
 // Fetch request details
-$stmt = $pdo->prepare("
-    SELECT pr.*, 
-           b.branch_name,
-           u1.full_name AS created_by_name,
-           u2.full_name AS approved_by_name
-    FROM procurement_requests pr
-    LEFT JOIN branches b ON pr.branch_id = b.branch_id
-    LEFT JOIN users u1 ON pr.created_by = u1.user_id
-    LEFT JOIN users u2 ON pr.approved_by = u2.user_id
-    WHERE pr.request_id = ?
-");
-$stmt->execute([$request_id]);
-$r = $stmt->fetch(PDO::FETCH_ASSOC);
+try {
+    $stmt = $pdo->prepare("
+        SELECT pr.*, 
+               b.branch_name,
+               u1.full_name AS created_by_name,
+               u2.full_name AS approved_by_name
+        FROM procurement_requests pr
+        LEFT JOIN branches b ON pr.branch_id = b.branch_id
+        LEFT JOIN users u1 ON pr.created_by = u1.user_id
+        LEFT JOIN users u2 ON pr.approved_by = u2.user_id
+        WHERE pr.request_id = ?
+    ");
+    $stmt->execute([$request_id]);
+    $r = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    http_response_code(500);
+    exit('Error fetching request details: ' . htmlspecialchars($e->getMessage()));
+}
 
 if (!$r) {
     http_response_code(404);
@@ -41,27 +54,37 @@ if (!$r) {
 }
 
 // Fetch request items
-$itemStmt = $pdo->prepare("
-    SELECT item_name, specification, quantity, remarks
-    FROM procurement_request_items
-    WHERE request_id = ?
-    ORDER BY item_id ASC
-");
-$itemStmt->execute([$request_id]);
-$items = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
+try {
+    $itemStmt = $pdo->prepare("
+        SELECT item_name, specification, quantity, remarks
+        FROM procurement_request_items
+        WHERE request_id = ?
+        ORDER BY item_id ASC
+    ");
+    $itemStmt->execute([$request_id]);
+    $items = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    http_response_code(500);
+    exit('Error fetching request items: ' . htmlspecialchars($e->getMessage()));
+}
 
 // Pre-format values
-$reqNum = htmlspecialchars($r['request_number']);
-$reqDate = date('d M Y', strtotime($r['request_date']));
-$branchName = htmlspecialchars($r['branch_name'] ?? 'N/A');
-$createdBy = htmlspecialchars($r['created_by_name'] ?? 'N/A');
-$description = htmlspecialchars($r['description'] ?? '');
-$currency = normalizeCurrency($r['currency'] ?? 'JMD');
-$currSymbol = $currency === 'USD' ? 'US$' : '$';
-$estValue = $currency . ' ' . $currSymbol . number_format((float)($r['estimated_value'] ?? 0), 2);
-$procMethod = htmlspecialchars($r['procurement_method'] ?? 'SINGLE_SOURCE');
-$genDate = date('d M Y');
-$genTime = date('g:i A');
+try {
+    $reqNum = htmlspecialchars($r['request_number']);
+    $reqDate = date('d M Y', strtotime($r['request_date']));
+    $branchName = htmlspecialchars($r['branch_name'] ?? 'N/A');
+    $createdBy = htmlspecialchars($r['created_by_name'] ?? 'N/A');
+    $description = htmlspecialchars($r['description'] ?? '');
+    $currency = normalizeCurrency($r['currency'] ?? 'JMD');
+    $currSymbol = $currency === 'USD' ? 'US$' : '$';
+    $estValue = $currency . ' ' . $currSymbol . number_format((float)($r['estimated_value'] ?? 0), 2);
+    $procMethod = htmlspecialchars($r['procurement_method'] ?? 'SINGLE_SOURCE');
+    $genDate = date('d M Y');
+    $genTime = date('g:i A');
+} catch (Exception $e) {
+    http_response_code(500);
+    exit('Error processing request data: ' . htmlspecialchars($e->getMessage()));
+}
 
 // Build items list HTML
 $itemsHtml = '';
@@ -266,13 +289,18 @@ $html = <<<HTML
 HTML;
 
 // Generate PDF
-$options = new Options();
-$options->set('isHtml5ParserEnabled', true);
-$options->set('defaultFont', 'Helvetica');
+try {
+    $options = new Options();
+    $options->set('isHtml5ParserEnabled', true);
+    $options->set('defaultFont', 'Helvetica');
 
-$pdf = new Dompdf($options);
-$pdf->loadHtml($html);
-$pdf->setPaper('A4');
-$pdf->render();
-$pdf->stream("procurement_request_{$request_id}_for_signing.pdf", ["Attachment" => false]);
+    $pdf = new Dompdf($options);
+    $pdf->loadHtml($html);
+    $pdf->setPaper('A4');
+    $pdf->render();
+    $pdf->stream("procurement_request_{$request_id}_for_signing.pdf", ["Attachment" => false]);
+} catch (Exception $e) {
+    http_response_code(500);
+    exit('Error generating PDF: ' . htmlspecialchars($e->getMessage()));
+}
 exit;
