@@ -7,10 +7,10 @@
 
 -- Add bos_number column to inv_asset_details table if it doesn't exist
 ALTER TABLE `inv_asset_details`
-ADD COLUMN `bos_number` VARCHAR(30) DEFAULT NULL COMMENT 'Board of Survey number reference' AFTER `acquisition_method`;
+ADD COLUMN IF NOT EXISTS `bos_number` VARCHAR(30) DEFAULT NULL COMMENT 'Board of Survey number reference' AFTER `acquisition_method`;
 
--- Add an index for performance on lookups by bos_number
-CREATE INDEX `idx_asset_details_bos_number` ON `inv_asset_details` (`bos_number`);
+-- Add an index for performance on lookups by bos_number (if column was just created)
+CREATE INDEX IF NOT EXISTS `idx_asset_details_bos_number` ON `inv_asset_details` (`bos_number`);
 
 -- ============================================================================
 -- VERIFICATION
