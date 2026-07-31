@@ -4,7 +4,6 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once __DIR__ . '/../check_compliance_setup.php';
 
-$items = $pdo->query("SELECT item_id, item_code, item_name FROM inv_items WHERE item_status='ACTIVE' ORDER BY item_name")->fetchAll(PDO::FETCH_ASSOC);
 $locations = $pdo->query("SELECT location_id, location_code, site_name FROM inv_locations WHERE is_active=1 ORDER BY site_name")->fetchAll(PDO::FETCH_ASSOC);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -44,6 +43,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 ?>
 
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-shield-exclamation"></i> Quarantine Stock</h2>
     <a href="/inventory/quarantine/list.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
@@ -59,11 +61,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label">Item *</label>
-                    <select name="item_id" class="form-select" required>
-                        <option value="">Select item...</option>
-                        <?php foreach ($items as $it): ?>
-                        <option value="<?= $it['item_id'] ?>"><?= htmlspecialchars($it['item_code'] . ' — ' . $it['item_name']) ?></option>
-                        <?php endforeach; ?>
+                    <select name="item_id" class="form-select item-select" required>
+                        <option value="">-- Search by code or name --</option>
                     </select>
                 </div>
                 <div class="col-md-6">
@@ -98,5 +97,36 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         </form>
     </div>
 </div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    $('.item-select').select2({
+        theme: 'bootstrap-5',
+        placeholder: '-- Search by code or name --',
+        allowClear: true,
+        ajax: {
+            url: '/inventory/items/search_api.php',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return {
+                    q: params.term,
+                    limit: 50
+                };
+            },
+            processResults: function(data) {
+                return {
+                    results: data.results || [],
+                    pagination: data.pagination || {}
+                };
+            },
+            cache: true
+        },
+        minimumInputLength: 1
+    });
+});
+</script>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/footer.php'; ?>

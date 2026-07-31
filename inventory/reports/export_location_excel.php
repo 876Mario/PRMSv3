@@ -85,6 +85,11 @@ if ($searchText !== '') {
     $where[] = '(' . implode(' OR ', $searchClauses) . ')';
 }
 
+// Exclude BOS status items from active inventory reports (unless specifically filtered)
+if ($statusF !== 'BOS' && $adReady) {
+    $where[] = "(ad.asset_status IS NULL OR ad.asset_status != 'BOS')";
+}
+
 $whereClause = implode(' AND ', $where);
 
 /* ── Unit-cost expression (falls back to asset detail values when no stock) ── */

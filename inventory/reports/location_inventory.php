@@ -54,6 +54,11 @@ if ($locationId > 0) {
     $where[] = "sl.quantity_on_hand > 0";
 }
 
+// Exclude BOS status items from active inventory reports (unless specifically filtered)
+if ($statusF !== 'BOS' && $assetDetailsReady) {
+    $where[] = "(ad.asset_status IS NULL OR ad.asset_status != 'BOS')";
+}
+
 if ($categoryId > 0) {
     $where[]  = "i.category_id = ?";
     $params[] = $categoryId;

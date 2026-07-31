@@ -4,7 +4,6 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once __DIR__ . '/../check_setup.php';
 
-$items = $pdo->query("SELECT item_id, item_code, item_name FROM inv_items WHERE item_status = 'ACTIVE' ORDER BY item_name")->fetchAll(PDO::FETCH_ASSOC);
 $locations = getActiveLocations($pdo);
 $branches = $pdo->query("SELECT branch_id, branch_name FROM branches ORDER BY branch_name")->fetchAll(PDO::FETCH_ASSOC);
 
@@ -91,6 +90,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 ?>
 
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-clipboard-plus"></i> New Stock Requisition</h2>
     <a href="/inventory/requisitions/list.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
@@ -173,10 +175,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         <tr>
                             <td>
                                 <select name="items[0][item_id]" class="form-select item-select" required>
-                                    <option value="">Select item...</option>
-                                    <?php foreach ($items as $it): ?>
-                                    <option value="<?= $it['item_id'] ?>"><?= htmlspecialchars($it['item_code'] . ' - ' . $it['item_name']) ?></option>
-                                    <?php endforeach; ?>
+                                    <option value="">-- Search by code or name --</option>
                                 </select>
                             </td>
                             <td><span class="stock-display text-muted">-</span></td>
@@ -200,32 +199,118 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     </div>
 </form>
 
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 let rowIdx = 1;
-const itemOptions = <?= json_encode(array_map(fn($it) => ['id' => $it['item_id'], 'label' => $it['item_code'] . ' - ' . $it['item_name']], $items)) ?>;
 
-document.getElementById('addItemRow').addEventListener('click', function() {
+$(document).ready(function() {
+    initializeSelect2();
+    document.getElementById('addItemRow').addEventListener('click', addItemRow);
+    document.querySelector('[name="urgency"]').addEventListener('change', function() {
+        document.getElementById('emergencyReasonDiv').style.display = this.value === 'EMERGENCY' ? 'block' : 'none';
+    });
+});
+
+function initializeSelect2() {
+    $('#itemsTable .item-select').select2({
+        theme: 'bootstrap-5',
+        placeholder: '-- Search by code or name --',
+        allowClear: true,
+        ajax: {
+            url: '/inventory/items/search_api.php',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return {
+                    q: params.term,
+                    limit: 50
+                };
+            },
+            processResults: function(data) {
+                return {
+                    results: data.results || [],
+                    pagination: data.pagination || {}
+                };
+            },
+            cache: true
+        },
+        minimumInputLength: 1
+    }).on('change', function() {
+        updateStockDisplay($(this));
+    });
+}
+
+function addItemRow() {
     const tbody = document.querySelector('#itemsTable tbody');
     const row = document.createElement('tr');
-    let opts = '<option value="">Select item...</option>';
-    itemOptions.forEach(it => { opts += `<option value="${it.id}">${it.label}</option>`; });
     row.innerHTML = `
-        <td><select name="items[${rowIdx}][item_id]" class="form-select item-select" required>${opts}</select></td>
+        <td><select name="items[${rowIdx}][item_id]" class="form-select item-select" required></select></td>
         <td><span class="stock-display text-muted">-</span></td>
         <td><input type="number" step="0.01" min="0.01" name="items[${rowIdx}][quantity]" class="form-control" required></td>
         <td><input type="text" name="items[${rowIdx}][remarks]" class="form-control"></td>
         <td><button type="button" class="btn btn-sm btn-danger removeRow">×</button></td>
     `;
     tbody.appendChild(row);
+    
+    // Initialize Select2 on the new select
+    $(row).find('.item-select').select2({
+        theme: 'bootstrap-5',
+        placeholder: '-- Search by code or name --',
+        allowClear: true,
+        ajax: {
+            url: '/inventory/items/search_api.php',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return {
+                    q: params.term,
+                    limit: 50
+                };
+            },
+            processResults: function(data) {
+                return {
+                    results: data.results || [],
+                    pagination: data.pagination || {}
+                };
+            },
+            cache: true
+        },
+        minimumInputLength: 1
+    }).on('change', function() {
+        updateStockDisplay($(this));
+    });
+    
     rowIdx++;
-});
+}
+
+function updateStockDisplay(selectElement) {
+    const itemId = selectElement.val();
+    const row = selectElement.closest('tr');
+    const badge = row.find('.stock-display');
+    
+    if (!itemId) {
+        badge.text('-').removeClass('text-success text-danger').addClass('text-muted');
+        return;
+    }
+    
+    fetch('/inventory/items/get_stock_level.php?item_id=' + encodeURIComponent(itemId))
+        .then(r => r.json())
+        .then(d => {
+            const stock = d.available !== undefined ? parseFloat(d.available) : 0;
+            badge.text(stock.toFixed(2))
+                 .removeClass('text-muted text-success text-danger')
+                 .addClass(stock > 0 ? 'text-success' : 'text-danger');
+        })
+        .catch(() => {
+            badge.text('-').removeClass('text-success text-danger').addClass('text-muted');
+        });
+}
 
 document.addEventListener('click', function(e) {
-    if (e.target.classList.contains('removeRow')) e.target.closest('tr').remove();
-});
-
-document.querySelector('[name="urgency"]').addEventListener('change', function() {
-    document.getElementById('emergencyReasonDiv').style.display = this.value === 'EMERGENCY' ? 'block' : 'none';
+    if (e.target.classList.contains('removeRow')) {
+        e.target.closest('tr').remove();
+    }
 });
 </script>
 

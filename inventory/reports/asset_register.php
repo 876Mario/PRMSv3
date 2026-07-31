@@ -240,6 +240,11 @@ if ($q !== '') {
     $params = array_merge($params, $searchParams);
 }
 
+/* Exclude BOS status items from active inventory reports (unless specifically filtered) */
+if ($condition !== 'BOS' && $assetDetailsReady) {
+    $where[] = "(ad.asset_status IS NULL OR ad.asset_status != 'BOS')";
+}
+
 /* ── Joins / selects ─────────────────────────────────────────────────────── */
 $assetTypeJoin   = ($assetTypeReady && $assetTypesTableReady) ? "LEFT JOIN asset_types at ON i.asset_type_id = at.asset_type_id" : "";
 $assetTypeSelect = ($assetTypeReady && $assetTypesTableReady) ? "at.type_name AS asset_type_name," : "NULL AS asset_type_name,";
