@@ -4,7 +4,6 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once __DIR__ . '/../check_setup.php';
 
-$items = $pdo->query("SELECT item_id, item_code, item_name FROM inv_items WHERE item_status='ACTIVE' ORDER BY item_name")->fetchAll(PDO::FETCH_ASSOC);
 $locations = $pdo->query("SELECT location_id, location_code, site_name FROM inv_locations WHERE is_active=1 ORDER BY site_name")->fetchAll(PDO::FETCH_ASSOC);
 
 $disposalMethods = ['SALE','AUCTION','DONATION','DESTRUCTION','RECYCLING','TRADE_IN','RETURN_TO_SUPPLIER','CANNIBALIZATION'];
@@ -64,6 +63,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 ?>
 
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-trash3"></i> New Disposal Request</h2>
     <a href="/inventory/disposal/list.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
@@ -122,11 +124,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <tbody id="dispBody">
                         <tr>
                             <td>
-                                <select name="item_id[]" class="form-select form-select-sm" required>
-                                    <option value="">--</option>
-                                    <?php foreach ($items as $it): ?>
-                                    <option value="<?= $it['item_id'] ?>"><?= htmlspecialchars($it['item_code'] . ' - ' . $it['item_name']) ?></option>
-                                    <?php endforeach; ?>
+                                <select name="item_id[]" class="form-select form-select-sm item-select" required>
+                                    <option value="">-- Search by code or name --</option>
                                 </select>
                             </td>
                             <td><input type="number" step="0.01" name="quantity[]" class="form-control form-control-sm text-end" required></td>
@@ -143,13 +142,56 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-send"></i> Submit for Survey</button>
 </form>
 
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
+$(document).ready(function() {
+    initSelect2();
+});
+
+function initSelect2() {
+    $('.item-select').each(function() {
+        if (!$(this).data('select2')) {
+            $(this).select2({
+                theme: 'bootstrap-5',
+                placeholder: '-- Search by code or name --',
+                allowClear: true,
+                ajax: {
+                    url: '/inventory/items/search_api.php',
+                    dataType: 'json',
+                    delay: 250,
+                    data: function(params) {
+                        return {
+                            q: params.term,
+                            limit: 50
+                        };
+                    },
+                    processResults: function(data) {
+                        return {
+                            results: data.results || [],
+                            pagination: data.pagination || {}
+                        };
+                    },
+                    cache: true
+                },
+                minimumInputLength: 1
+            });
+        }
+    });
+}
+
 function addDispRow() {
     const tbody = document.getElementById('dispBody');
     const row = tbody.querySelector('tr').cloneNode(true);
     row.querySelectorAll('input').forEach(i => i.value = '');
-    row.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+    row.querySelectorAll('select').forEach(s => {
+        if ($(s).data('select2')) {
+            $(s).select2('destroy');
+        }
+        s.selectedIndex = 0;
+    });
     tbody.appendChild(row);
+    initSelect2();
 }
 </script>
 
