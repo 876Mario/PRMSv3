@@ -132,6 +132,25 @@ function generatePONumber(PDO $pdo): string
 ================================ */
 function extractDbMessage(Throwable $e): string {
     $msg = $e->getMessage();
+
+    // MySQL error 1442: a trigger/stored function tried to modify a table
+    // that is already being modified by the statement that invoked it
+    // (recursive trigger execution). Log full diagnostics — including a
+    // backtrace pinpointing the exact workflow action/file/line that issued
+    // the offending statement — so the specific trigger/procedure at fault
+    // can be identified quickly, then return a clear, actionable message.
+    if (strpos($msg, '1442') !== false && stripos($msg, "can't update table") !== false) {
+        $trace = $e->getTraceAsString();
+        error_log(
+            "[DB ERROR 1442 - RECURSIVE TRIGGER] {$msg}\n" .
+            "Triggering call site: {$e->getFile()}:{$e->getLine()}\n" .
+            "Backtrace:\n{$trace}"
+        );
+        return 'Database error: This action could not be completed because it triggered a '
+             . 'conflicting update on the same record (Error 1442). This has been logged for '
+             . 'investigation — please contact the system administrator if the problem persists.';
+    }
+
     // PDO trigger error format: "SQLSTATE[XXXXX]: <YYYYY>: NNNN Actual message"
     if (preg_match('/SQLSTATE\[[^\]]*\]:\s*<[^>]*>:\s*\d*\s*(.+)$/s', $msg, $matches)) {
         return trim($matches[1]);
