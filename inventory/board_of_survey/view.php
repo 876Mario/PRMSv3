@@ -138,10 +138,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  WHERE bos_id = ?"
             )->execute([$completionNotes, $completionNotes, $bosId]);
 
-            /* Update inv_asset_details bos_number for items that have asset detail records */
+            /* Update inv_asset_details bos_number and asset_status for items that have asset detail records */
             $updateBosRef = $pdo->prepare("
                 UPDATE inv_asset_details
-                SET bos_number = ?
+                SET bos_number = ?,
+                    asset_status = 'BOS'
                 WHERE item_id = ?
             ");
             foreach ($lineItems as $li) {
