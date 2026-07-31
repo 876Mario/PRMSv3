@@ -120,18 +120,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             WHERE rfq_id = ?
         ")->execute([$rfq_id]);
          
-        // Auto-assign default specification reviewer if configured
-        // This can be the procurement officer or a designated spec reviewer
-        $stmtDefaultReviewer = $pdo->prepare("
-            SELECT u.user_id, r.name as role_name FROM users u
-            INNER JOIN roles r ON u.role_id = r.id
-            WHERE r.name IN ('Procurement Officer', 'Specification Reviewer')
-            AND u.is_active = 1
-            LIMIT 1
+        // Stage 1 (Specification Review) is performed by the Requestor per the
+        // approval workflow. Assign the actual request owner as the spec reviewer
+        // instead of a generic Procurement Officer/Specification Reviewer.
+        $stmtRequestor = $pdo->prepare("
+            SELECT pr.created_by as user_id, r.name as role_name
+            FROM rfqs rf
+            JOIN procurement_requests pr ON rf.request_id = pr.request_id
+            JOIN users u ON pr.created_by = u.user_id AND u.is_active = 1
+            LEFT JOIN roles r ON u.role_id = r.id
+            WHERE rf.rfq_id = ?
         ");
-        $stmtDefaultReviewer->execute();
-        $defaultReviewer = $stmtDefaultReviewer->fetch(PDO::FETCH_ASSOC);
-         
+        $stmtRequestor->execute([$rfq_id]);
+        $defaultReviewer = $stmtRequestor->fetch(PDO::FETCH_ASSOC);
+
+        if (!$defaultReviewer) {
+            // Fallback: Requestor account is inactive/missing - route to Procurement
+            // Officer or a designated Specification Reviewer so the workflow is not
+            // silently stalled.
+            $stmtDefaultReviewer = $pdo->prepare("
+                SELECT u.user_id, r.name as role_name FROM users u
+                INNER JOIN roles r ON u.role_id = r.id
+                WHERE r.name IN ('Procurement Officer', 'Specification Reviewer')
+                AND u.is_active = 1
+                LIMIT 1
+            ");
+            $stmtDefaultReviewer->execute();
+            $defaultReviewer = $stmtDefaultReviewer->fetch(PDO::FETCH_ASSOC);
+        }
+
         if ($defaultReviewer) {
             // Assign as spec reviewer
             try {
@@ -139,11 +156,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     INSERT INTO rfq_spec_reviewers (rfq_id, reviewer_id, reviewer_role, assigned_by, is_active)
                     VALUES (?, ?, ?, ?, 1)
                     ON DUPLICATE KEY UPDATE is_active = 1
-                ")->execute([$rfq_id, $defaultReviewer['user_id'], $defaultReviewer['role_name'], $_SESSION['user_id']]);
+                ")->execute([$rfq_id, $defaultReviewer['user_id'], $defaultReviewer['role_name'] ?? 'Requestor', $_SESSION['user_id']]);
             } catch (Exception $e) {
                 // Duplicate key is OK - reviewer already assigned
                 error_log("Note: Spec reviewer already assigned for RFQ $rfq_id");
             }
+        }
+
+        // Stage 2 (Final Approval) is performed by the assigned Branch Head.
+        // Without an assignment here, rfq_branch_head_approvers stays empty and
+        // the RFQ can never be routed to/approved by a Branch Head. Auto-assign a
+        // default Branch Head approver (HOD / Director HRM&A) so the workflow can
+        // proceed once the spec review is approved. Admins can reassign this via
+        // the assign_rfq_branch_head_approver permission.
+        $stmtDefaultBranchHead = $pdo->prepare("
+            SELECT u.user_id, r.name as role_name FROM users u
+            INNER JOIN roles r ON u.role_id = r.id
+            WHERE r.name IN ('HOD', 'Director HRM&A')
+            AND u.is_active = 1
+            ORDER BY FIELD(r.name, 'HOD', 'Director HRM&A')
+            LIMIT 1
+        ");
+        $stmtDefaultBranchHead->execute();
+        $defaultBranchHead = $stmtDefaultBranchHead->fetch(PDO::FETCH_ASSOC);
+
+        if ($defaultBranchHead) {
+            try {
+                $pdo->prepare("
+                    INSERT INTO rfq_branch_head_approvers (rfq_id, approver_id, approver_role, assigned_by, is_active)
+                    VALUES (?, ?, ?, ?, 1)
+                    ON DUPLICATE KEY UPDATE is_active = 1
+                ")->execute([$rfq_id, $defaultBranchHead['user_id'], $defaultBranchHead['role_name'], $_SESSION['user_id']]);
+            } catch (Exception $e) {
+                // Duplicate key is OK - approver already assigned
+                error_log("Note: Branch Head approver already assigned for RFQ $rfq_id");
+            }
+        } else {
+            error_log("Warning: No active HOD/Director HRM&A found to auto-assign as Branch Head approver for RFQ $rfq_id");
         }
     }
 

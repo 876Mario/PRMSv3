@@ -3121,15 +3121,40 @@ function notifyRequestorSpecReviewRejected(int $rfqId, string $reason): bool {
             <a href='" . he($rfqUrl) . "' class='btn btn-info'>View RFQ Details</a>
         ";
 
-        if (empty($rfq['email']) || !filter_var($rfq['email'], FILTER_VALIDATE_EMAIL)) {
+        // Per the approval workflow requirements, a spec review rejection must
+        // notify both the RFQ owner (requestor) and the Procurement Officer(s).
+        $recipients = [];
+        if (!empty($rfq['email']) && filter_var($rfq['email'], FILTER_VALIDATE_EMAIL)) {
+            $recipients[] = $rfq['email'];
+        } else {
             error_log("Notification[RequestorSpecReviewRejected]: RFQ {$rfqId} skipped invalid requestor email");
+        }
+
+        $officerStmt = $pdo->prepare("
+            SELECT u.email FROM users u
+            INNER JOIN roles r ON u.role_id = r.id
+            WHERE r.name = 'Procurement Officer' AND u.is_active = 1
+        ");
+        $officerStmt->execute();
+        foreach ($officerStmt->fetchAll(PDO::FETCH_ASSOC) as $officer) {
+            if (!empty($officer['email']) && filter_var($officer['email'], FILTER_VALIDATE_EMAIL)) {
+                $recipients[] = $officer['email'];
+            }
+        }
+
+        if (empty($recipients)) {
+            error_log("Notification[RequestorSpecReviewRejected]: RFQ {$rfqId} had no valid recipients");
             return false;
         }
 
-        $sent = sendMail($rfq['email'], $subject, $html);
-        error_log("Notification[RequestorSpecReviewRejected]: RFQ {$rfqId} recipient={$rfq['email']} url={$rfqUrl} status=" . ($sent ? 'Sent' : 'Failed'));
+        $anySent = false;
+        foreach (array_unique($recipients) as $email) {
+            $sent = sendMail($email, $subject, $html);
+            error_log("Notification[RequestorSpecReviewRejected]: RFQ {$rfqId} recipient={$email} url={$rfqUrl} status=" . ($sent ? 'Sent' : 'Failed'));
+            $anySent = $anySent || $sent;
+        }
 
-        return $sent;
+        return $anySent;
     } catch (Exception $e) {
         error_log("Error notifying requestor of rejection for RFQ {$rfqId}: " . $e->getMessage());
         return false;

@@ -37,7 +37,8 @@ if (!$quote_id || !$rfq_id) {
 
 // Fetch quote details
 $stmt = $pdo->prepare("
-    SELECT q.*, rv.rfq_vendor_id, v.vendor_name, r.request_id, pr.status as request_status
+    SELECT q.*, rv.rfq_vendor_id, v.vendor_name, r.request_id, pr.status as request_status,
+           r.spec_review_status, r.branch_head_approval_status
     FROM rfq_quotes q
     JOIN rfq_vendors rv ON q.rfq_vendor_id = rv.rfq_vendor_id
     JOIN vendors v ON rv.vendor_id = v.vendor_id
@@ -56,6 +57,19 @@ if (!$quote) {
 // Check request status - must be QUOTE_REVIEW_PENDING
 if ($quote['request_status'] !== 'QUOTE_REVIEW_PENDING') {
     pop('Quote selection is only available during QUOTE_REVIEW_PENDING stage', '/rfq/view.php?id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
+// Enforce the two-stage approval workflow: supplier selection cannot proceed
+// until both the Requestor's Specification Review and the Branch Head's Final
+// Approval have been completed. This prevents bypassing either approval stage.
+if (($quote['spec_review_status'] ?? 'PENDING') !== 'APPROVED') {
+    pop('Specification review must be approved by the Requestor before a quote can be selected.', '/rfq/view.php?id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
+if (($quote['branch_head_approval_status'] ?? 'PENDING') !== 'APPROVED') {
+    pop('Branch Head final approval is required before a quote can be selected.', '/rfq/view.php?id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');
     exit;
 }
 
