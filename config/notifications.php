@@ -2901,8 +2901,6 @@ HTML;
     }
 }
 
-?>
-
 /**
  * ===================================
  * RFQ Quote Approval Notifications
