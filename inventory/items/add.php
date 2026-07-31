@@ -789,7 +789,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <label class="form-label">Asset Status <?= $arFieldRequired['ar_require_status'] ? '<span class="text-danger">*</span>' : '' ?></label>
                     <select name="ar_asset_status" id="ar_asset_status" class="form-select <?= $arFieldRequired['ar_require_status'] ? 'ar-required' : '' ?>">
                         <option value="">— Select —</option>
-                        <?php foreach (['Active','In Use','In Storage','Under Repair','Disposed'] as $st): ?>
+                        <?php foreach (['Active','In Use','In Storage','Under Repair','Not in Service','Disposed'] as $st): ?>
                         <option value="<?= $st ?>" <?= ($_POST['ar_asset_status'] ?? '') === $st ? 'selected' : '' ?>><?= $st ?></option>
                         <?php endforeach; ?>
                     </select>

@@ -714,7 +714,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         <option value="">— Select —</option>
                         <?php
                         $arStatVal = $arv['ar_asset_status'] ?? $arv['asset_status'] ?? '';
-                        foreach (['Active','In Use','In Storage','Under Repair','Disposed'] as $st): ?>
+                        foreach (['Active','In Use','In Storage','Under Repair','Not in Service','Disposed'] as $st): ?>
                         <option value="<?= $st ?>" <?= $arStatVal === $st ? 'selected' : '' ?>><?= $st ?></option>
                         <?php endforeach; ?>
                     </select>

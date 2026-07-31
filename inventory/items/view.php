@@ -532,7 +532,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                             <th>Asset Status</th>
                             <td>
                                 <?php
-                                $statColors = ['Active'=>'success','In Use'=>'primary','In Storage'=>'secondary','Under Repair'=>'warning','Disposed'=>'danger'];
+                                $statColors = ['Active'=>'success','In Use'=>'primary','In Storage'=>'secondary','Under Repair'=>'warning','Not in Service'=>'dark','Disposed'=>'danger'];
                                 $statVal = $ad['asset_status'] ?? '-';
                                 $statColor = $statColors[$statVal] ?? 'secondary';
                                 ?>
