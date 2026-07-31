@@ -159,6 +159,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
     notifyQuoteUploaded($rfq_id, $vendor['vendor_name']);
 
+    /* Notify assigned specification reviewer(s) once quotes are ready for review */
+    if ($quoteCountResult && $quoteCountResult['quote_count'] == 1) {
+        notifySpecReviewerQuotesReady($rfq_id);
+    }
+
     header("Location: view.php?id=" . $rfq_id);
     exit;
     } catch (Throwable $e) {

@@ -111,7 +111,8 @@ class RFQQuoteApprovalService {
             $this->logApproval($rfq_id, 'SPEC_REVIEW', 'APPROVED', $comments);
 
             // Send notification to branch head
-            $this->sendBranchHeadNotification($rfq_id, 'spec_review_approved');
+            require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
+            notifyBranchHeadSpecReviewApproved($rfq_id);
 
             $this->pdo->commit();
             return true;
@@ -147,7 +148,8 @@ class RFQQuoteApprovalService {
             $this->logApproval($rfq_id, 'SPEC_REVIEW', 'REJECTED', $reason);
 
             // Send notification to requestor (quotes need revision)
-            $this->sendRequestorNotification($rfq_id, 'spec_review_rejected', $reason);
+            require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
+            notifyRequestorSpecReviewRejected($rfq_id, $reason);
 
             $this->pdo->commit();
             return true;
@@ -192,7 +194,8 @@ class RFQQuoteApprovalService {
             $this->logApproval($rfq_id, 'BRANCH_HEAD_APPROVAL', 'APPROVED', $comments);
 
             // Send notification to finance/procurement for supplier selection
-            $this->sendSupplierSelectionNotification($rfq_id);
+            require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
+            notifyProcurementAllApprovalsComplete($rfq_id);
 
             $this->pdo->commit();
             return true;
@@ -365,66 +368,17 @@ class RFQQuoteApprovalService {
     }
 
     /**
-     * Send notification to branch head for approval
-     */
-    private function sendBranchHeadNotification($rfq_id, $event_type) {
-        require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
-        
-        try {
-            // Get RFQ details
-            $stmt = $this->pdo->prepare("
-                SELECT r.*, pr.request_number, u.display_name as spec_reviewer_name
-                FROM rfqs r
-                JOIN procurement_requests pr ON r.request_id = pr.request_id
-                JOIN users u ON r.spec_reviewer_id = u.user_id
-                WHERE r.rfq_id = ?
-            ");
-            $stmt->execute([$rfq_id]);
-            $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$rfq) return;
-
-            // Get branch head email (this would typically be configured per branch)
-            // For now, we'll get the appropriate approver from the workflow
-            $appUrl = getAppUrl();
-            $subject = "RFQ {$rfq['rfq_number']} - Specification Review Approved, Awaiting Branch Head Approval";
-            
-            $html = "
-                <p>The specification review for RFQ <strong>{$rfq['rfq_number']}</strong> (Request: {$rfq['request_number']}) has been approved.</p>
-                <p><strong>Reviewer:</strong> {$rfq['spec_reviewer_name']}</p>
-                <p>As the Branch Head, please review and provide your final approval:</p>
-                <a href='{$appUrl}/rfq/branch_head_approve.php?id={$rfq_id}' class='btn btn-primary'>Approve/Review RFQ</a>
-                <p>Submission deadline: {$rfq['submission_deadline']}</p>
-            ";
-
-            // Send to configured branch head(s)
-            // This would use the new rfq_branch_head_approvers table
-            $stmt = $this->pdo->prepare("
-                SELECT u.email, u.display_name
-                FROM rfq_branch_head_approvers rba
-                JOIN users u ON rba.approver_id = u.user_id
-                WHERE rba.rfq_id = ? AND rba.is_active = 1
-            ");
-            $stmt->execute([$rfq_id]);
-            $approvers = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-            if (notificationsEnabled()) {
-                foreach ($approvers as $approver) {
-                    sendMail($approver['email'], $subject, $html);
-                }
-            }
-        } catch (Exception $e) {
-            error_log("Error sending branch head notification: " . $e->getMessage());
-        }
-    }
-
-    /**
      * Send notification to requestor for approval status changes
      */
     private function sendRequestorNotification($rfq_id, $event_type, $details = '') {
         require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
-        
+
         try {
+            if ((int)$rfq_id <= 0) {
+                error_log("Notification[RequestorNotification]: invalid RFQ ID provided");
+                return;
+            }
+
             // Get RFQ and requestor details
             $stmt = $this->pdo->prepare("
                 SELECT r.*, pr.request_number, pr.created_by, u.email, u.display_name
@@ -436,10 +390,18 @@ class RFQQuoteApprovalService {
             $stmt->execute([$rfq_id]);
             $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            if (!$rfq) return;
+            if (!$rfq) {
+                error_log("Notification[RequestorNotification]: RFQ {$rfq_id} not found");
+                return;
+            }
 
             $appUrl = getAppUrl();
-            $subjectPrefix = "RFQ {$rfq['rfq_number']} (Request: {$rfq['request_number']})";
+            if ($appUrl === '') {
+                error_log("Notification[RequestorNotification]: application URL could not be resolved for RFQ {$rfq_id}");
+                return;
+            }
+
+            $subjectPrefix = "RFQ " . he($rfq['rfq_number']) . " (Request: " . he($rfq['request_number']) . ")";
 
             if ($event_type === 'spec_review_rejected') {
                 $subject = "{$subjectPrefix} - Specification Review Returned for Corrections";
@@ -457,65 +419,43 @@ class RFQQuoteApprovalService {
                 return;
             }
 
+            $rfqUrl = "{$appUrl}/rfq/view.php?id={$rfq_id}";
             $html = "
-                <p>Your RFQ <strong>{$rfq['rfq_number']}</strong> has been {$action}.</p>
-                <p><strong>Details:</strong> {$details}</p>
-                <a href='{$appUrl}/rfq/view.php?id={$rfq_id}' class='btn btn-info'>View RFQ Details</a>
+                <p>Your RFQ <strong>" . he($rfq['rfq_number']) . "</strong> has been {$action}.</p>
+                <p><strong>Details:</strong> " . nl2br(he($details)) . "</p>
+                <a href='" . he($rfqUrl) . "' class='btn btn-info'>View RFQ Details</a>
             ";
 
             if (notificationsEnabled()) {
-                sendMail($rfq['email'], $subject, $html);
-            }
-        } catch (Exception $e) {
-            error_log("Error sending requestor notification: " . $e->getMessage());
-        }
-    }
+                $recipients = [];
+                if (!empty($rfq['email']) && filter_var($rfq['email'], FILTER_VALIDATE_EMAIL)) {
+                    $recipients[] = $rfq['email'];
+                } else {
+                    error_log("Notification[RequestorNotification]: RFQ {$rfq_id} skipped invalid requestor email");
+                }
 
-    /**
-     * Send notification for supplier selection after approvals complete
-     */
-    private function sendSupplierSelectionNotification($rfq_id) {
-        require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
-        
-        try {
-            $stmt = $this->pdo->prepare("
-                SELECT r.*, pr.request_number, pr.created_by, u.email, u.display_name
-                FROM rfqs r
-                JOIN procurement_requests pr ON r.request_id = pr.request_id
-                JOIN users u ON pr.created_by = u.user_id
-                WHERE r.rfq_id = ?
-            ");
-            $stmt->execute([$rfq_id]);
-            $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
+                // Branch head rejections also need to reach the procurement team
+                if ($event_type === 'branch_head_approval_rejected') {
+                    $stmt = $this->pdo->prepare("
+                        SELECT u.email FROM users u
+                        INNER JOIN roles r ON u.role_id = r.id
+                        WHERE r.name = 'Procurement Officer' AND u.is_active = 1
+                    ");
+                    $stmt->execute();
+                    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $officer) {
+                        if (!empty($officer['email']) && filter_var($officer['email'], FILTER_VALIDATE_EMAIL)) {
+                            $recipients[] = $officer['email'];
+                        }
+                    }
+                }
 
-            if (!$rfq) return;
-
-            $appUrl = getAppUrl();
-            $subject = "RFQ {$rfq['rfq_number']} (Request: {$rfq['request_number']}) - Ready for Supplier Selection";
-            
-            $html = "
-                <p>All approvals for RFQ <strong>{$rfq['rfq_number']}</strong> have been completed.</p>
-                <p>The procurement team can now proceed with supplier selection and award.</p>
-                <a href='{$appUrl}/rfq/view.php?id={$rfq_id}' class='btn btn-success'>View RFQ and Select Supplier</a>
-            ";
-
-            // Send to procurement team
-            if (notificationsEnabled()) {
-                // Get procurement officers
-                $stmt = $this->pdo->prepare("
-                    SELECT u.email FROM users u
-                    INNER JOIN roles r ON u.role_id = r.id
-                    WHERE r.name = 'Procurement Officer' AND u.is_active = 1
-                ");
-                $stmt->execute();
-                $officers = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-                foreach ($officers as $officer) {
-                    sendMail($officer['email'], $subject, $html);
+                foreach (array_unique($recipients) as $email) {
+                    $sent = sendMail($email, $subject, $html);
+                    error_log("Notification[RequestorNotification]: RFQ {$rfq_id} event={$event_type} recipient={$email} url={$rfqUrl} status=" . ($sent ? 'Sent' : 'Failed'));
                 }
             }
         } catch (Exception $e) {
-            error_log("Error sending supplier selection notification: " . $e->getMessage());
+            error_log("Error sending requestor notification for RFQ {$rfq_id}: " . $e->getMessage());
         }
     }
 }

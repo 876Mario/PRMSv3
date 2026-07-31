@@ -2917,6 +2917,11 @@ function notifySpecReviewerQuotesReady(int $rfqId): bool {
         return false;
     }
 
+    if ($rfqId <= 0) {
+        error_log("Notification[SpecReviewQuotesReady]: invalid RFQ ID provided");
+        return false;
+    }
+
     global $pdo;
     try {
         // Get RFQ details
@@ -2930,7 +2935,10 @@ function notifySpecReviewerQuotesReady(int $rfqId): bool {
         $stmt->execute([$rfqId]);
         $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$rfq) return false;
+        if (!$rfq) {
+            error_log("Notification[SpecReviewQuotesReady]: RFQ {$rfqId} not found");
+            return false;
+        }
 
         // Get spec reviewers
         $stmt = $pdo->prepare("
@@ -2942,28 +2950,42 @@ function notifySpecReviewerQuotesReady(int $rfqId): bool {
         $stmt->execute([$rfqId]);
         $reviewers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        if (empty($reviewers)) return false;
-
-        $appUrl = getAppUrl();
-        $subject = "RFQ {$rfq['rfq_number']} - Quotes Ready for Specification Review";
-        $html = "
-            <p>Quotations have been submitted for RFQ <strong>{$rfq['rfq_number']}</strong> (Request: {$rfq['request_number']}).</p>
-            <p><strong>Description:</strong> {$rfq['description']}</p>
-            <p><strong>Estimated Value:</strong> " . formatCurrency($rfq['estimated_value']) . "</p>
-            <p><strong>Submission Deadline:</strong> {$rfq['submission_deadline']}</p>
-            <p>Please review the submitted quotes for specification compliance and provide your approval decision.</p>
-            <a href='{$appUrl}/rfq/spec_review_approve.php?id={$rfqId}' class='btn btn-warning'>Review Quotes</a>
-        ";
-
-        foreach ($reviewers as $reviewer) {
-            if (sendMail($reviewer['email'], $subject, $html)) {
-                error_log("Spec review notification sent to {$reviewer['email']}");
-            }
+        if (empty($reviewers)) {
+            error_log("Notification[SpecReviewQuotesReady]: no active specification reviewers assigned for RFQ {$rfqId}");
+            return false;
         }
 
-        return true;
+        $appUrl = getAppUrl();
+        if ($appUrl === '') {
+            error_log("Notification[SpecReviewQuotesReady]: application URL could not be resolved for RFQ {$rfqId}");
+            return false;
+        }
+
+        $rfqUrl = "{$appUrl}/rfq/spec_review_approve.php?id={$rfqId}";
+        $subject = "RFQ " . he($rfq['rfq_number']) . " - Quotes Ready for Specification Review";
+        $html = "
+            <p>Quotations have been submitted for RFQ <strong>" . he($rfq['rfq_number']) . "</strong> (Request: " . he($rfq['request_number']) . ").</p>
+            <p><strong>Description:</strong> " . he($rfq['description']) . "</p>
+            <p><strong>Estimated Value:</strong> " . formatCurrency($rfq['estimated_value']) . "</p>
+            <p><strong>Submission Deadline:</strong> " . he($rfq['submission_deadline']) . "</p>
+            <p>Please review the submitted quotes for specification compliance and provide your approval decision.</p>
+            <a href='" . he($rfqUrl) . "' class='btn btn-warning'>Review Quotes</a>
+        ";
+
+        $anySent = false;
+        foreach ($reviewers as $reviewer) {
+            if (empty($reviewer['email']) || !filter_var($reviewer['email'], FILTER_VALIDATE_EMAIL)) {
+                error_log("Notification[SpecReviewQuotesReady]: RFQ {$rfqId} skipped invalid recipient email for user {$reviewer['user_id']}");
+                continue;
+            }
+            $sent = sendMail($reviewer['email'], $subject, $html);
+            error_log("Notification[SpecReviewQuotesReady]: RFQ {$rfqId} recipient={$reviewer['email']} url={$rfqUrl} status=" . ($sent ? 'Sent' : 'Failed'));
+            $anySent = $anySent || $sent;
+        }
+
+        return $anySent;
     } catch (Exception $e) {
-        error_log("Error notifying spec reviewer: " . $e->getMessage());
+        error_log("Error notifying spec reviewer for RFQ {$rfqId}: " . $e->getMessage());
         return false;
     }
 }
@@ -2973,6 +2995,11 @@ function notifySpecReviewerQuotesReady(int $rfqId): bool {
  */
 function notifyBranchHeadSpecReviewApproved(int $rfqId): bool {
     if (!notificationsEnabled()) {
+        return false;
+    }
+
+    if ($rfqId <= 0) {
+        error_log("Notification[BranchHeadSpecReviewApproved]: invalid RFQ ID provided");
         return false;
     }
 
@@ -2990,7 +3017,10 @@ function notifyBranchHeadSpecReviewApproved(int $rfqId): bool {
         $stmt->execute([$rfqId]);
         $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$rfq) return false;
+        if (!$rfq) {
+            error_log("Notification[BranchHeadSpecReviewApproved]: RFQ {$rfqId} not found");
+            return false;
+        }
 
         // Get branch head approvers
         $stmt = $pdo->prepare("
@@ -3002,29 +3032,43 @@ function notifyBranchHeadSpecReviewApproved(int $rfqId): bool {
         $stmt->execute([$rfqId]);
         $approvers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        if (empty($approvers)) return false;
-
-        $appUrl = getAppUrl();
-        $subject = "RFQ {$rfq['rfq_number']} - Awaiting Your Branch Head Approval";
-        $html = "
-            <p>The specification review for RFQ <strong>{$rfq['rfq_number']}</strong> has been approved.</p>
-            <p><strong>Request Number:</strong> {$rfq['request_number']}</p>
-            <p><strong>Description:</strong> {$rfq['description']}</p>
-            <p><strong>Estimated Value:</strong> " . formatCurrency($rfq['estimated_value']) . "</p>
-            <p><strong>Specification Reviewer:</strong> {$rfq['spec_reviewer_name']}</p>
-            <p>As the Branch Head, please provide your final approval or clarification before supplier selection can proceed.</p>
-            <a href='{$appUrl}/rfq/branch_head_approve.php?id={$rfqId}' class='btn btn-primary'>Provide Approval</a>
-        ";
-
-        foreach ($approvers as $approver) {
-            if (sendMail($approver['email'], $subject, $html)) {
-                error_log("Branch head notification sent to {$approver['email']}");
-            }
+        if (empty($approvers)) {
+            error_log("Notification[BranchHeadSpecReviewApproved]: no active branch head approvers assigned for RFQ {$rfqId}");
+            return false;
         }
 
-        return true;
+        $appUrl = getAppUrl();
+        if ($appUrl === '') {
+            error_log("Notification[BranchHeadSpecReviewApproved]: application URL could not be resolved for RFQ {$rfqId}");
+            return false;
+        }
+
+        $rfqUrl = "{$appUrl}/rfq/branch_head_approve.php?id={$rfqId}";
+        $subject = "RFQ " . he($rfq['rfq_number']) . " - Awaiting Your Branch Head Approval";
+        $html = "
+            <p>The specification review for RFQ <strong>" . he($rfq['rfq_number']) . "</strong> has been approved.</p>
+            <p><strong>Request Number:</strong> " . he($rfq['request_number']) . "</p>
+            <p><strong>Description:</strong> " . he($rfq['description']) . "</p>
+            <p><strong>Estimated Value:</strong> " . formatCurrency($rfq['estimated_value']) . "</p>
+            <p><strong>Specification Reviewer:</strong> " . he($rfq['spec_reviewer_name']) . "</p>
+            <p>As the Branch Head, please provide your final approval or clarification before supplier selection can proceed.</p>
+            <a href='" . he($rfqUrl) . "' class='btn btn-primary'>Provide Approval</a>
+        ";
+
+        $anySent = false;
+        foreach ($approvers as $approver) {
+            if (empty($approver['email']) || !filter_var($approver['email'], FILTER_VALIDATE_EMAIL)) {
+                error_log("Notification[BranchHeadSpecReviewApproved]: RFQ {$rfqId} skipped invalid recipient email for user {$approver['user_id']}");
+                continue;
+            }
+            $sent = sendMail($approver['email'], $subject, $html);
+            error_log("Notification[BranchHeadSpecReviewApproved]: RFQ {$rfqId} recipient={$approver['email']} url={$rfqUrl} status=" . ($sent ? 'Sent' : 'Failed'));
+            $anySent = $anySent || $sent;
+        }
+
+        return $anySent;
     } catch (Exception $e) {
-        error_log("Error notifying branch head: " . $e->getMessage());
+        error_log("Error notifying branch head for RFQ {$rfqId}: " . $e->getMessage());
         return false;
     }
 }
@@ -3034,6 +3078,11 @@ function notifyBranchHeadSpecReviewApproved(int $rfqId): bool {
  */
 function notifyRequestorSpecReviewRejected(int $rfqId, string $reason): bool {
     if (!notificationsEnabled()) {
+        return false;
+    }
+
+    if ($rfqId <= 0) {
+        error_log("Notification[RequestorSpecReviewRejected]: invalid RFQ ID provided");
         return false;
     }
 
@@ -3051,28 +3100,40 @@ function notifyRequestorSpecReviewRejected(int $rfqId, string $reason): bool {
         $stmt->execute([$rfqId]);
         $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$rfq) return false;
+        if (!$rfq) {
+            error_log("Notification[RequestorSpecReviewRejected]: RFQ {$rfqId} not found");
+            return false;
+        }
 
         $appUrl = getAppUrl();
-        $subject = "RFQ {$rfq['rfq_number']} - Specification Review Rejected";
+        if ($appUrl === '') {
+            error_log("Notification[RequestorSpecReviewRejected]: application URL could not be resolved for RFQ {$rfqId}");
+            return false;
+        }
+
+        $rfqUrl = "{$appUrl}/rfq/view.php?id={$rfqId}";
+        $subject = "RFQ " . he($rfq['rfq_number']) . " - Specification Review Rejected";
         $html = "
-            <p>The specification review for RFQ <strong>{$rfq['rfq_number']}</strong> has been rejected.</p>
-            <p><strong>Request Number:</strong> {$rfq['request_number']}</p>
-            <p><strong>Reviewed by:</strong> {$rfq['spec_reviewer_name']}</p>
+            <p>The specification review for RFQ <strong>" . he($rfq['rfq_number']) . "</strong> has been rejected.</p>
+            <p><strong>Request Number:</strong> " . he($rfq['request_number']) . "</p>
+            <p><strong>Reviewed by:</strong> " . he($rfq['spec_reviewer_name']) . "</p>
             <p><strong>Reason:</strong></p>
             <p>" . nl2br(he($reason)) . "</p>
             <p>Please address the comments and resubmit revised quotes.</p>
-            <a href='{$appUrl}/rfq/view.php?id={$rfqId}' class='btn btn-info'>View RFQ Details</a>
+            <a href='" . he($rfqUrl) . "' class='btn btn-info'>View RFQ Details</a>
         ";
 
-        if (sendMail($rfq['email'], $subject, $html)) {
-            error_log("Rejection notification sent to requestor {$rfq['email']}");
-            return true;
+        if (empty($rfq['email']) || !filter_var($rfq['email'], FILTER_VALIDATE_EMAIL)) {
+            error_log("Notification[RequestorSpecReviewRejected]: RFQ {$rfqId} skipped invalid requestor email");
+            return false;
         }
 
-        return false;
+        $sent = sendMail($rfq['email'], $subject, $html);
+        error_log("Notification[RequestorSpecReviewRejected]: RFQ {$rfqId} recipient={$rfq['email']} url={$rfqUrl} status=" . ($sent ? 'Sent' : 'Failed'));
+
+        return $sent;
     } catch (Exception $e) {
-        error_log("Error notifying requestor of rejection: " . $e->getMessage());
+        error_log("Error notifying requestor of rejection for RFQ {$rfqId}: " . $e->getMessage());
         return false;
     }
 }
@@ -3082,6 +3143,11 @@ function notifyRequestorSpecReviewRejected(int $rfqId, string $reason): bool {
  */
 function notifyProcurementAllApprovalsComplete(int $rfqId): bool {
     if (!notificationsEnabled()) {
+        return false;
+    }
+
+    if ($rfqId <= 0) {
+        error_log("Notification[ProcurementAllApprovalsComplete]: invalid RFQ ID provided");
         return false;
     }
 
@@ -3097,7 +3163,10 @@ function notifyProcurementAllApprovalsComplete(int $rfqId): bool {
         $stmt->execute([$rfqId]);
         $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$rfq) return false;
+        if (!$rfq) {
+            error_log("Notification[ProcurementAllApprovalsComplete]: RFQ {$rfqId} not found");
+            return false;
+        }
 
         // Get procurement officers
         $stmt = $pdo->prepare("
@@ -3109,28 +3178,42 @@ function notifyProcurementAllApprovalsComplete(int $rfqId): bool {
         $stmt->execute();
         $officers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        if (empty($officers)) return false;
-
-        $appUrl = getAppUrl();
-        $subject = "RFQ {$rfq['rfq_number']} - All Approvals Complete, Ready for Supplier Selection";
-        $html = "
-            <p>All approvals for RFQ <strong>{$rfq['rfq_number']}</strong> have been completed.</p>
-            <p><strong>Request Number:</strong> {$rfq['request_number']}</p>
-            <p><strong>Description:</strong> {$rfq['description']}</p>
-            <p><strong>Estimated Value:</strong> " . formatCurrency($rfq['estimated_value']) . "</p>
-            <p>You can now proceed with supplier selection and award of contract.</p>
-            <a href='{$appUrl}/rfq/view.php?id={$rfqId}' class='btn btn-success'>View RFQ & Select Supplier</a>
-        ";
-
-        foreach ($officers as $officer) {
-            if (sendMail($officer['email'], $subject, $html)) {
-                error_log("Completion notification sent to {$officer['email']}");
-            }
+        if (empty($officers)) {
+            error_log("Notification[ProcurementAllApprovalsComplete]: no active procurement officers found for RFQ {$rfqId}");
+            return false;
         }
 
-        return true;
+        $appUrl = getAppUrl();
+        if ($appUrl === '') {
+            error_log("Notification[ProcurementAllApprovalsComplete]: application URL could not be resolved for RFQ {$rfqId}");
+            return false;
+        }
+
+        $rfqUrl = "{$appUrl}/rfq/view.php?id={$rfqId}";
+        $subject = "RFQ " . he($rfq['rfq_number']) . " - All Approvals Complete, Ready for Supplier Selection";
+        $html = "
+            <p>All approvals for RFQ <strong>" . he($rfq['rfq_number']) . "</strong> have been completed.</p>
+            <p><strong>Request Number:</strong> " . he($rfq['request_number']) . "</p>
+            <p><strong>Description:</strong> " . he($rfq['description']) . "</p>
+            <p><strong>Estimated Value:</strong> " . formatCurrency($rfq['estimated_value']) . "</p>
+            <p>You can now proceed with supplier selection and award of contract.</p>
+            <a href='" . he($rfqUrl) . "' class='btn btn-success'>View RFQ &amp; Select Supplier</a>
+        ";
+
+        $anySent = false;
+        foreach ($officers as $officer) {
+            if (empty($officer['email']) || !filter_var($officer['email'], FILTER_VALIDATE_EMAIL)) {
+                error_log("Notification[ProcurementAllApprovalsComplete]: RFQ {$rfqId} skipped invalid recipient email for user {$officer['user_id']}");
+                continue;
+            }
+            $sent = sendMail($officer['email'], $subject, $html);
+            error_log("Notification[ProcurementAllApprovalsComplete]: RFQ {$rfqId} recipient={$officer['email']} url={$rfqUrl} status=" . ($sent ? 'Sent' : 'Failed'));
+            $anySent = $anySent || $sent;
+        }
+
+        return $anySent;
     } catch (Exception $e) {
-        error_log("Error notifying procurement of completion: " . $e->getMessage());
+        error_log("Error notifying procurement of completion for RFQ {$rfqId}: " . $e->getMessage());
         return false;
     }
 }
