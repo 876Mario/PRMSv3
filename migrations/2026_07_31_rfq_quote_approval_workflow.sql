@@ -116,15 +116,19 @@ CREATE INDEX IF NOT EXISTS idx_audit_approval_action ON audit_log(approval_actio
 -- ===================================
 
 -- Auto-initialize approval status when RFQ is created
+-- NOTE: Using BEFORE INSERT trigger to avoid MySQL error 1442
+-- (Cannot update table in trigger when table is used by statement that invoked trigger)
 DELIMITER $$
-CREATE TRIGGER IF NOT EXISTS `trg_initialize_rfq_approval_workflow` AFTER INSERT ON `rfqs` FOR EACH ROW
+CREATE TRIGGER IF NOT EXISTS `trg_initialize_rfq_approval_workflow` BEFORE INSERT ON `rfqs` FOR EACH ROW
 BEGIN
-    -- When RFQ is created, initialize approval statuses
-    -- These will be updated when quotes are actually uploaded
-    UPDATE `rfqs`
-    SET spec_review_status = 'PENDING',
-        branch_head_approval_status = 'PENDING'
-    WHERE rfq_id = NEW.rfq_id;
+    -- When RFQ is created, initialize approval statuses using SET NEW
+    -- This ensures the default values are set before row insertion
+    IF NEW.spec_review_status IS NULL THEN
+        SET NEW.spec_review_status = 'PENDING';
+    END IF;
+    IF NEW.branch_head_approval_status IS NULL THEN
+        SET NEW.branch_head_approval_status = 'PENDING';
+    END IF;
 END
 $$
 DELIMITER ;
