@@ -373,31 +373,44 @@ $pdf->Ln(6);
 
 
 // =============================
-// REQUESTOR SIGNATURE SECTION
+// REQUESTOR AUTHORIZATION SECTION
 // =============================
 $pdf->SetFont('helvetica', 'B', 11);
 $pdf->SetTextColor(33, 37, 41);
-$pdf->Cell(0, 6, 'REQUESTOR AUTHORIZATION', 0, 1);
+$pdf->Cell(0, 7, 'REQUESTOR AUTHORIZATION', 0, 1);
 
 $pdf->SetFont('helvetica', '', 10);
 $pdf->SetTextColor(33, 37, 41);
 $pdf->Ln(2);
 
-// Requestor Name
+// Requestor Name Line
 $pdf->SetFont('helvetica', '', 9);
-$pdf->Cell(30, 5, 'Requestor Name:', 0, 0);
+$pdf->Cell(35, 5, 'Requestor Name:', 0, 0);
+$pdf->SetDrawColor(200, 200, 200);
+$pdf->Cell(65, 5, '', 'B', 0);
+$pdf->SetDrawColor(0, 0, 0);
+$pdf->Cell(10, 5, '', 0, 0);
+
+// Requestor Title
+$pdf->Cell(30, 5, 'Title:', 0, 0);
 $pdf->SetDrawColor(200, 200, 200);
 $pdf->Cell(0, 5, '', 'B', 1);
+$pdf->SetDrawColor(0, 0, 0);
 
-// Requestor Signature
-$pdf->Cell(30, 5, 'Signature:', 0, 0);
-$pdf->Cell(0, 5, '', 'B', 1);
+// Signature Line
+$pdf->Cell(35, 5, 'Signature:', 0, 0);
+$pdf->SetDrawColor(200, 200, 200);
+$pdf->Cell(65, 5, '', 'B', 0);
+$pdf->SetDrawColor(0, 0, 0);
+$pdf->Cell(10, 5, '', 0, 0);
 
 // Date Signed
 $pdf->Cell(30, 5, 'Date:', 0, 0);
+$pdf->SetDrawColor(200, 200, 200);
 $pdf->Cell(0, 5, '', 'B', 1);
+$pdf->SetDrawColor(0, 0, 0);
 
-$pdf->Ln(3);
+$pdf->Ln(4);
 
 
 // =============================
