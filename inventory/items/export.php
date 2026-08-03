@@ -47,11 +47,18 @@ $sortMap = array_filter(
 );
 
 /* ── Load user column preferences ────────────────────────────────────────────── */
-$userId     = (int) $_SESSION['user_id'];
-$pageId     = 'inventory_items_list';
-$prefStmt   = $pdo->prepare("SELECT visible_columns, column_order, default_sort_column, default_sort_direction FROM user_table_preferences WHERE user_id = ? AND page_identifier = ? LIMIT 1");
-$prefStmt->execute([$userId, $pageId]);
-$prefsRow   = $prefStmt->fetch(PDO::FETCH_ASSOC);
+$userId   = (int) $_SESSION['user_id'];
+$pageId   = 'inventory_items_list';
+$prefsRow = null;
+
+try {
+    $prefStmt = $pdo->prepare("SELECT visible_columns, column_order, default_sort_column, default_sort_direction FROM user_table_preferences WHERE user_id = ? AND page_identifier = ? LIMIT 1");
+    $prefStmt->execute([$userId, $pageId]);
+    $prefsRow = $prefStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+} catch (Throwable $e) {
+    // Table may not exist yet (migration not applied); fall through to defaults.
+    $prefsRow = null;
+}
 
 /* Resolve visible columns */
 $defaultOrder   = array_column($allColumns, 'key');
