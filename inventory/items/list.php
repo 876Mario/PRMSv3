@@ -405,108 +405,107 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     $statusColors = ['ACTIVE' => 'success', 'BLOCKED' => 'secondary', 'OBSOLETE' => 'dark',
                                      'QUARANTINED' => 'warning', 'DISPOSAL' => 'danger'];
 
+                    /**
+                     * Renders a single <td> for the given column and row data.
+                     * Using a closure keeps the helper scoped to this page without
+                     * polluting the global namespace.
+                     */
+                    $renderCell = function (array $col, array $row) use ($domainBadge, $domainLabel, $statusColors): void {
+                        switch ($col['key']) {
+                            case 'item_code':
+                                echo '<td><code>' . htmlspecialchars($row['item_code']) . '</code></td>';
+                                break;
+
+                            case 'item_name':
+                                $flags = '';
+                                if (!empty($row['serial_number_flag'])) $flags .= '<span class="badge bg-info ms-1" title="Serialized">SN</span>';
+                                if (!empty($row['hazard_class_flag']))   $flags .= '<span class="badge bg-danger ms-1" title="Hazardous">⚠️</span>';
+                                if (!empty($row['expiry_date_flag']))    $flags .= '<span class="badge bg-warning text-dark ms-1" title="Expiry Tracked">EXP</span>';
+                                echo '<td>'
+                                    . '<a href="/inventory/items/view.php?id=' . (int) $row['item_id'] . '" class="text-decoration-none fw-semibold">'
+                                    . htmlspecialchars($row['item_name'])
+                                    . '</a>' . $flags . '</td>';
+                                break;
+
+                            case 'item_domain':
+                                $d = $row['item_domain'] ?? 'INVENTORY';
+                                echo '<td><span class="badge bg-' . ($domainBadge[$d] ?? 'secondary') . '">'
+                                    . ($domainLabel[$d] ?? htmlspecialchars($d))
+                                    . '</span></td>';
+                                break;
+
+                            case 'category_name':
+                                echo '<td>' . htmlspecialchars($row['category_name'] ?? '-') . '</td>';
+                                break;
+
+                            case 'manufacturer':
+                                $mfr   = htmlspecialchars($row['manufacturer'] ?? '');
+                                $model = htmlspecialchars($row['model'] ?? '');
+                                if ($mfr !== '' && $model !== '') {
+                                    $cell = $mfr . '<br><small class="text-muted">' . $model . '</small>';
+                                } elseif ($mfr !== '') {
+                                    $cell = $mfr;
+                                } elseif ($model !== '') {
+                                    $cell = '<span class="text-muted">' . $model . '</span>';
+                                } else {
+                                    $cell = '<span class="text-muted">—</span>';
+                                }
+                                echo '<td>' . $cell . '</td>';
+                                break;
+
+                            case 'uom_code':
+                                echo '<td>' . htmlspecialchars($row['uom_code'] ?? '-') . '</td>';
+                                break;
+
+                            case 'total_stock':
+                                echo '<td class="text-end">' . number_format((int) $row['total_stock'], 0) . '</td>';
+                                break;
+
+                            case 'available_stock':
+                                $lowCls = $row['available_stock'] <= ($row['reorder_level'] ?? 0) ? ' text-danger fw-bold' : '';
+                                echo '<td class="text-end' . $lowCls . '">' . number_format((int) $row['available_stock'], 0) . '</td>';
+                                break;
+
+                            case 'average_cost':
+                                echo '<td class="text-end">$' . number_format((float) ($row['average_cost'] ?? 0), 2) . '</td>';
+                                break;
+
+                            case 'item_status':
+                                $sc = $statusColors[$row['item_status']] ?? 'secondary';
+                                echo '<td><span class="badge bg-' . $sc . '">' . htmlspecialchars($row['item_status']) . '</span></td>';
+                                break;
+
+                            case 'criticality_name':
+                                echo '<td>' . htmlspecialchars($row['criticality_name'] ?? '-') . '</td>';
+                                break;
+
+                            case 'actions':
+                                echo '<td class="text-center">';
+                                echo '<a href="/inventory/items/view.php?id=' . (int) $row['item_id'] . '" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> ';
+                                if (has_permission('manage_inventory_items')) {
+                                    echo '<a href="/inventory/items/edit.php?id=' . (int) $row['item_id'] . '" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a> ';
+                                    echo '<a href="/inventory/items/duplicate.php?id=' . (int) $row['item_id'] . '" class="btn btn-sm btn-outline-info" title="Duplicate"><i class="bi bi-copy"></i></a> ';
+                                }
+                                if (has_permission('delete_inventory_items')) {
+                                    $confirmMsg = 'Delete ' . addslashes($row['item_name']) . '? This cannot be undone.';
+                                    echo '<form method="post" action="/inventory/items/delete.php" class="d-inline" onsubmit="return confirm(' . json_encode($confirmMsg) . ');">'
+                                        . '<input type="hidden" name="item_id" value="' . (int) $row['item_id'] . '">'
+                                        . '<button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>'
+                                        . '</form>';
+                                }
+                                echo '</td>';
+                                break;
+                        }
+                    };
+
                     foreach ($rows as $row):
+                        echo '<tr>';
+                        foreach ($visibleColumns as $col) {
+                            $renderCell($col, $row);
+                        }
+                        echo '</tr>' . "\n";
+                    endforeach;
                     ?>
-                    <tr>
-                        <?php foreach ($visibleColumns as $col): switch ($col['key']): ?>
-
-                        <?php case 'item_code': ?>
-                        <td><code><?= htmlspecialchars($row['item_code']) ?></code></td>
-                        <?php break; ?>
-
-                        <?php case 'item_name': ?>
-                        <td>
-                            <a href="/inventory/items/view.php?id=<?= $row['item_id'] ?>" class="text-decoration-none fw-semibold">
-                                <?= htmlspecialchars($row['item_name']) ?>
-                            </a>
-                            <?php if ($row['serial_number_flag']): ?><span class="badge bg-info ms-1" title="Serialized">SN</span><?php endif; ?>
-                            <?php if ($row['hazard_class_flag']): ?><span class="badge bg-danger ms-1" title="Hazardous">⚠️</span><?php endif; ?>
-                            <?php if ($row['expiry_date_flag']): ?><span class="badge bg-warning text-dark ms-1" title="Expiry Tracked">EXP</span><?php endif; ?>
-                        </td>
-                        <?php break; ?>
-
-                        <?php case 'item_domain': ?>
-                        <td>
-                            <?php $d = $row['item_domain'] ?? 'INVENTORY'; ?>
-                            <span class="badge bg-<?= $domainBadge[$d] ?? 'secondary' ?>"><?= $domainLabel[$d] ?? htmlspecialchars($d) ?></span>
-                        </td>
-                        <?php break; ?>
-
-                        <?php case 'category_name': ?>
-                        <td><?= htmlspecialchars($row['category_name'] ?? '-') ?></td>
-                        <?php break; ?>
-
-                        <?php case 'manufacturer': ?>
-                        <td>
-                            <?php
-                            $mfr   = htmlspecialchars($row['manufacturer'] ?? '');
-                            $model = htmlspecialchars($row['model'] ?? '');
-                            if ($mfr !== '' && $model !== '') {
-                                echo $mfr . '<br><small class="text-muted">' . $model . '</small>';
-                            } elseif ($mfr !== '') {
-                                echo $mfr;
-                            } elseif ($model !== '') {
-                                echo '<span class="text-muted">' . $model . '</span>';
-                            } else {
-                                echo '<span class="text-muted">—</span>';
-                            }
-                            ?>
-                        </td>
-                        <?php break; ?>
-
-                        <?php case 'uom_code': ?>
-                        <td><?= htmlspecialchars($row['uom_code'] ?? '-') ?></td>
-                        <?php break; ?>
-
-                        <?php case 'total_stock': ?>
-                        <td class="text-end"><?= number_format($row['total_stock'], 0) ?></td>
-                        <?php break; ?>
-
-                        <?php case 'available_stock': ?>
-                        <td class="text-end <?= $row['available_stock'] <= ($row['reorder_level'] ?? 0) ? 'text-danger fw-bold' : '' ?>">
-                            <?= number_format($row['available_stock'], 0) ?>
-                        </td>
-                        <?php break; ?>
-
-                        <?php case 'average_cost': ?>
-                        <td class="text-end">$<?= number_format($row['average_cost'], 2) ?></td>
-                        <?php break; ?>
-
-                        <?php case 'item_status': ?>
-                        <td><span class="badge bg-<?= $statusColors[$row['item_status']] ?? 'secondary' ?>"><?= $row['item_status'] ?></span></td>
-                        <?php break; ?>
-
-                        <?php case 'criticality_name': ?>
-                        <td><?= htmlspecialchars($row['criticality_name'] ?? '-') ?></td>
-                        <?php break; ?>
-
-                        <?php case 'actions': ?>
-                        <td class="text-center">
-                            <a href="/inventory/items/view.php?id=<?= $row['item_id'] ?>" class="btn btn-sm btn-outline-primary" title="View">
-                                <i class="bi bi-eye"></i>
-                            </a>
-                            <?php if (has_permission('manage_inventory_items')): ?>
-                            <a href="/inventory/items/edit.php?id=<?= $row['item_id'] ?>" class="btn btn-sm btn-outline-secondary" title="Edit">
-                                <i class="bi bi-pencil"></i>
-                            </a>
-                            <a href="/inventory/items/duplicate.php?id=<?= $row['item_id'] ?>" class="btn btn-sm btn-outline-info" title="Duplicate">
-                                <i class="bi bi-copy"></i>
-                            </a>
-                            <?php endif; ?>
-                            <?php if (has_permission('delete_inventory_items')): ?>
-                            <form method="post" action="/inventory/items/delete.php" class="d-inline" onsubmit='return confirm(<?= json_encode("Delete {$row['item_name']}? This cannot be undone.") ?>);'>
-                                <input type="hidden" name="item_id" value="<?= (int) $row['item_id'] ?>">
-                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </form>
-                            <?php endif; ?>
-                        </td>
-                        <?php break; ?>
-
-                        <?php endswitch; endforeach; ?>
-                    </tr>
-                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
