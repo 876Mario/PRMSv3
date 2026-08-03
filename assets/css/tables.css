@@ -77,6 +77,62 @@
 /* ── Empty state text ── */
 .table .text-muted { color: #9ca3af !important; }
 
+/* ── Sortable column headers ── */
+.table thead th a.col-sort-link {
+  color: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.table thead th a.col-sort-link:hover {
+  opacity: 0.85;
+}
+
+.col-sort-icon {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.col-sort-icon.active {
+  opacity: 1;
+  color: #c9a227;
+}
+
+/* ── Column manager drag-and-drop list ── */
+#colManagerList {
+  user-select: none;
+}
+
+#colManagerList .list-group-item {
+  cursor: default;
+  transition: background-color 0.1s ease;
+}
+
+#colManagerList .list-group-item[draggable="true"] {
+  cursor: grab;
+}
+
+#colManagerList .list-group-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+#colManagerList .list-group-item.drag-over {
+  background-color: #e8f5ee;
+  border-color: #0b5e2b;
+}
+
+#colManagerList .col-drag-handle {
+  color: #9ca3af;
+  font-size: 1.1rem;
+}
+
+#colManagerList .list-group-item[draggable="true"]:hover .col-drag-handle {
+  color: #374151;
+}
+
 /* ── Amount column ── */
 .td-amount {
   font-weight: 600;
