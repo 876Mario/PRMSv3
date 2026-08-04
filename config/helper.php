@@ -424,6 +424,7 @@ function trend($current, $previous): array
    Audit Helpers
 ================================ */
 
+if (!function_exists('logAudit')) {
 function logAudit(PDO $pdo, string $table, ?int $recordId, string $action, ?string $notes = null): void
 {
     $stmt = $pdo->prepare("
@@ -439,6 +440,7 @@ function logAudit(PDO $pdo, string $table, ?int $recordId, string $action, ?stri
         $_SESSION['full_name'] ?? null,
         $notes
     ]);
+}
 }
 
 function auditUrl(string $table, int $id): string
@@ -515,6 +517,7 @@ function formatJamaicanDate($datetime, $format = 'd M Y'): string {
  * @param string $status  Value of procurement_requests.status
  * @return string         Safe inline HTML <span> badge
  */
+if (!function_exists('statusBadge')) {
 function statusBadge(string $status): string {
     $map = [
         'DRAFT'                 => ['#f5f5f5', '#666',    '📝'],
@@ -572,6 +575,7 @@ function statusBadge(string $status): string {
     return "<span style=\"display:inline-flex;align-items:center;gap:0.25rem;background:{$bg};"
          . "color:{$color};padding:0.3rem 0.65rem;border-radius:20px;font-size:0.78rem;font-weight:600;\">"
          . "{$icon} {$safeLabel}</span>";
+}
 }
 
 
