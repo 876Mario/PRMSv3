@@ -156,22 +156,14 @@ function getAwardAndBeyondStatuses(): array {
  * cannot be used reliably because the BEFORE UPDATE trigger resets it to 1 for
  * all REGULAR requests on every UPDATE (see trg_auto_update_requires_rfq).
  *
- * Known edge case: if an RFQ record is later deleted this would give a false
- * positive — that scenario is treated as an acceptable limitation.
- *
- * @param string   $requestType  Value of procurement_requests.request_type
- * @param int|bool $rfqId        ID of the linked rfqs row, or falsy if none exists
- * @param string   $currentStatus Current status of the request (uppercase)
- * @return bool
- */
-/**
- * Determine whether a procurement request used the "Proceed Without RFQ" path.
- *
  * Accepts an optional fourth argument: the full procurement_requests row array.
  * When supplied and the row contains workflow_path = 'NON_PO_SKIP_RFQ', that flag
  * takes precedence and the function returns true regardless of the other arguments.
  * This covers cases where Finance explicitly chose "No PO Required" at commitment
  * creation time but the request may already have an RFQ row from a prior attempt.
+ *
+ * Known edge case: if an RFQ record is later deleted this would give a false
+ * positive — that scenario is treated as an acceptable limitation.
  *
  * @param string      $requestType  Value of procurement_requests.request_type
  * @param int|bool    $rfqId        ID of the linked rfqs row, or falsy if none
