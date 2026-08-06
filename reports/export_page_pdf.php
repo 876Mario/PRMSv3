@@ -10,6 +10,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit('Method not allowed');
 }
 
+if (
+    empty($_POST['csrf_token'])
+    || empty($_SESSION['prms_export_csrf_token'])
+    || !hash_equals($_SESSION['prms_export_csrf_token'], (string)$_POST['csrf_token'])
+) {
+    http_response_code(403);
+    exit('Invalid export token');
+}
+
 $title = trim((string)($_POST['title'] ?? 'Export'));
 $html = (string)($_POST['html'] ?? '');
 

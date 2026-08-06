@@ -2,6 +2,9 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/auth.php";
 
 $__prmsExportEnabled = !preg_match('#^/(auth|uploads|lib|vendor)/#', $_SERVER['SCRIPT_NAME'] ?? '');
+if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
+  $_SESSION['prms_export_csrf_token'] = bin2hex(random_bytes(32));
+}
 ?>
 
 <!DOCTYPE html>
@@ -136,6 +139,7 @@ $__prmsExportEnabled = !preg_match('#^/(auth|uploads|lib|vendor)/#', $_SERVER['S
   </button>
 </div>
 <script>
+window.PRMS_EXPORT_CSRF_TOKEN = <?= json_encode($_SESSION['prms_export_csrf_token'] ?? '') ?>;
 window.prmsExportPdf = function () {
   const main = document.querySelector('main') || document.body;
   const title = (document.querySelector('main h1, main h2, main h3, main h4')?.innerText || document.title || 'Export').trim();
@@ -152,8 +156,13 @@ window.prmsExportPdf = function () {
   htmlInput.type = 'hidden';
   htmlInput.name = 'html';
   htmlInput.value = main.innerHTML;
+  const tokenInput = document.createElement('input');
+  tokenInput.type = 'hidden';
+  tokenInput.name = 'csrf_token';
+  tokenInput.value = window.PRMS_EXPORT_CSRF_TOKEN || '';
   form.appendChild(titleInput);
   form.appendChild(htmlInput);
+  form.appendChild(tokenInput);
   document.body.appendChild(form);
   form.submit();
   form.remove();

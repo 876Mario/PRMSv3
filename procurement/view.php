@@ -2052,7 +2052,7 @@ function timelineMeta(string $action): array {
 <div class="modal fade" id="pauseResumeModal" tabindex="-1">
     <div class="modal-dialog">
         <form method="POST" action="/procurement/pause_resume.php" class="modal-content">
-            <div class="modal-header <?= $current === 'PAUSED' ? 'bg-success' : 'bg-warning text-dark' ?>">
+            <div class="modal-header <?= $current === 'PAUSED' ? 'bg-success text-white' : 'bg-warning text-dark' ?>">
                 <h5 class="modal-title">
                     <i class="bi <?= $current === 'PAUSED' ? 'bi-play-circle' : 'bi-pause-circle' ?> me-2"></i><?= $current === 'PAUSED' ? 'Resume Procurement' : 'Pause Procurement' ?>
                 </h5>

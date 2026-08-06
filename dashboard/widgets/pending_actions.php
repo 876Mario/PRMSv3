@@ -20,6 +20,7 @@ $dashboardSort = $_GET['dashboard_sort'] ?? 'date';
 $dashboardDir = strtoupper($_GET['dashboard_dir'] ?? 'ASC') === 'DESC' ? 'DESC' : 'ASC';
 $dashboardOrderBy = $dashboardSortFields[$dashboardSort] ?? $dashboardSortFields['date'];
 
+if (!function_exists('dashboardSortLink')) {
 function dashboardSortLink(string $field, string $label): string
 {
     $params = $_GET;
@@ -31,11 +32,14 @@ function dashboardSortLink(string $field, string $label): string
     return '<a href="?' . htmlspecialchars(http_build_query($params)) . '" style="color:inherit;text-decoration:none;">'
         . htmlspecialchars($label) . '<span style="font-size:.7rem;">' . $arrow . '</span></a>';
 }
+}
 
+if (!function_exists('dashboardShortText')) {
 function dashboardShortText(?string $text, int $limit = 80): string
 {
     $text = trim((string)$text);
     return strlen($text) > $limit ? substr($text, 0, $limit - 3) . '...' : $text;
+}
 }
 
 // Database and workflow config should already be loaded by dashboard
