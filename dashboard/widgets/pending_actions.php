@@ -8,6 +8,40 @@
 $userRole = $_SESSION['role_name'] ?? '';
 $userId = $_SESSION['user_id'] ?? 0;
 
+$dashboardSortFields = [
+    'ref'          => 'pr.request_number',
+    'description'  => 'pr.description',
+    'requested_by' => 'u.full_name',
+    'amount'       => 'pr.estimated_value',
+    'status'       => 'pr.status',
+    'date'         => 'pr.created_at',
+];
+$dashboardSort = $_GET['dashboard_sort'] ?? 'date';
+$dashboardDir = strtoupper($_GET['dashboard_dir'] ?? 'ASC') === 'DESC' ? 'DESC' : 'ASC';
+$dashboardOrderBy = $dashboardSortFields[$dashboardSort] ?? $dashboardSortFields['date'];
+
+if (!function_exists('dashboardSortLink')) {
+function dashboardSortLink(string $field, string $label): string
+{
+    $params = $_GET;
+    $currentSort = $params['dashboard_sort'] ?? 'date';
+    $currentDir = strtoupper($params['dashboard_dir'] ?? 'ASC') === 'DESC' ? 'DESC' : 'ASC';
+    $params['dashboard_sort'] = $field;
+    $params['dashboard_dir'] = ($currentSort === $field && $currentDir === 'ASC') ? 'DESC' : 'ASC';
+    $arrow = $currentSort === $field ? ($currentDir === 'ASC' ? ' ▲' : ' ▼') : '';
+    return '<a href="?' . htmlspecialchars(http_build_query($params)) . '" style="color:inherit;text-decoration:none;">'
+        . htmlspecialchars($label) . '<span style="font-size:.7rem;">' . $arrow . '</span></a>';
+}
+}
+
+if (!function_exists('dashboardShortText')) {
+function dashboardShortText(?string $text, int $limit = 80): string
+{
+    $text = trim((string)$text);
+    return strlen($text) > $limit ? substr($text, 0, $limit - 3) . '...' : $text;
+}
+}
+
 // Database and workflow config should already be loaded by dashboard
 // but we'll ensure they're available
 if (!isset($pdo)) {
@@ -25,6 +59,7 @@ $requestApprovalsStmt = $pdo->prepare("
         pr.request_id,
         pr.request_number,
         pr.request_type,
+        pr.description,
         pr.estimated_value,
         pr.currency,
         pr.status as request_status,
@@ -38,8 +73,8 @@ $requestApprovalsStmt = $pdo->prepare("
     WHERE ra.entity_type = 'REQUEST'
       AND ra.role = ?
       AND ra.status = 'pending'
-      AND UPPER(pr.status) NOT IN ('DECLINED', 'COMPLETED', 'AWARDED')
-    ORDER BY pr.created_at ASC
+      AND UPPER(pr.status) NOT IN ('DECLINED', 'COMPLETED', 'AWARDED', 'PAUSED')
+    ORDER BY {$dashboardOrderBy} {$dashboardDir}
 ");
 $requestApprovalsStmt->execute([$userRole]);
 $pendingApprovals = $requestApprovalsStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -80,6 +115,7 @@ if (!empty($myStatuses)) {
             pr.request_id,
             pr.request_number,
             pr.request_type,
+            pr.description,
             pr.estimated_value,
             pr.currency,
             pr.status as request_status,
@@ -91,7 +127,7 @@ if (!empty($myStatuses)) {
         LEFT JOIN users u ON pr.created_by = u.user_id
         WHERE UPPER(pr.status) IN ({$placeholders})
           {$branchFilter}
-        ORDER BY pr.created_at ASC
+        ORDER BY {$dashboardOrderBy} {$dashboardDir}
     ");
     
     $params = array_merge($myStatuses, $branchParams);
@@ -134,12 +170,14 @@ $statusActionMap = [
             <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
                 <thead style="background: #f5f5f5;">
                     <tr>
-                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Request #</th>
+                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('ref', 'Ref #') ?></th>
+                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('description', 'Description') ?></th>
                         <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Type</th>
-                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Requestor</th>
-                        <th style="padding: 0.75rem 1rem; text-align: right; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Amount</th>
+                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('requested_by', 'Requested By') ?></th>
+                        <th style="padding: 0.75rem 1rem; text-align: right; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('amount', 'Amount') ?></th>
+                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('status', 'Status') ?></th>
                         <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Branch</th>
-                        <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Submitted</th>
+                        <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('date', 'Date') ?></th>
                         <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Action</th>
                     </tr>
                 </thead>
@@ -147,9 +185,11 @@ $statusActionMap = [
                 <?php foreach ($pendingApprovals as $approval): ?>
                     <tr style="border-bottom: 1px solid #f0f0f0;">
                         <td style="padding: 0.75rem 1rem; font-weight: 600; color: #333;"><?= htmlspecialchars($approval['request_number']) ?></td>
+                        <td style="padding: 0.75rem 1rem; color: #666; max-width: 260px;"><?= htmlspecialchars(dashboardShortText($approval['description'] ?? '')) ?></td>
                         <td style="padding: 0.75rem 1rem; color: #666;"><?= htmlspecialchars($approval['request_type']) ?></td>
                         <td style="padding: 0.75rem 1rem; color: #666;"><?= htmlspecialchars($approval['requestor_name'] ?? 'N/A') ?></td>
                         <td style="padding: 0.75rem 1rem; text-align: right; font-weight: 600; color: #333;"><?= htmlspecialchars(normalizeCurrency($approval['currency'] ?? 'JMD')) ?> <?= number_format((float)$approval['estimated_value'], 2) ?></td>
+                        <td style="padding: 0.75rem 1rem;"><?= statusBadge($approval['request_status']) ?></td>
                         <td style="padding: 0.75rem 1rem; color: #666;"><?= htmlspecialchars($approval['branch_name'] ?? 'N/A') ?></td>
                         <td style="padding: 0.75rem 1rem; text-align: center; color: #999; font-size: 0.8rem;"><?= date('d M Y', strtotime($approval['created_at'])) ?></td>
                         <td style="padding: 0.75rem 1rem; text-align: center;">
@@ -173,11 +213,13 @@ $statusActionMap = [
             <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
                 <thead style="background: #f5f5f5;">
                     <tr>
-                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Request #</th>
+                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('ref', 'Ref #') ?></th>
+                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('description', 'Description') ?></th>
                         <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Type</th>
-                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Requestor</th>
-                        <th style="padding: 0.75rem 1rem; text-align: right; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Amount</th>
-                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Current Status</th>
+                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('requested_by', 'Requested By') ?></th>
+                        <th style="padding: 0.75rem 1rem; text-align: right; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('amount', 'Amount') ?></th>
+                        <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('status', 'Status') ?></th>
+                        <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('date', 'Date') ?></th>
                         <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Next Action</th>
                         <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Action</th>
                     </tr>
@@ -189,12 +231,14 @@ $statusActionMap = [
                 ?>
                     <tr style="border-bottom: 1px solid #f0f0f0;">
                         <td style="padding: 0.75rem 1rem; font-weight: 600; color: #333;"><?= htmlspecialchars($action['request_number']) ?></td>
+                        <td style="padding: 0.75rem 1rem; color: #666; max-width: 260px;"><?= htmlspecialchars(dashboardShortText($action['description'] ?? '')) ?></td>
                         <td style="padding: 0.75rem 1rem; color: #666;"><?= htmlspecialchars($action['request_type']) ?></td>
                         <td style="padding: 0.75rem 1rem; color: #666;"><?= htmlspecialchars($action['requestor_name'] ?? 'N/A') ?></td>
                         <td style="padding: 0.75rem 1rem; text-align: right; font-weight: 600; color: #333;"><?= htmlspecialchars(normalizeCurrency($action['currency'] ?? 'JMD')) ?> <?= number_format((float)$action['estimated_value'], 2) ?></td>
                         <td style="padding: 0.75rem 1rem;">
                             <span style="background: #fff3cd; color: #856404; padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600;"><?= htmlspecialchars($status) ?></span>
                         </td>
+                        <td style="padding: 0.75rem 1rem; text-align: center; color: #999; font-size: 0.8rem;"><?= date('d M Y', strtotime($action['created_at'])) ?></td>
                         <td style="padding: 0.75rem 1rem; text-align: center;">
                             <i class="bi <?= $actionInfo['icon'] ?>" style="color: <?= $actionInfo['color'] ?>; margin-right: 0.25rem;"></i><?= htmlspecialchars($actionInfo['label']) ?>
                         </td>

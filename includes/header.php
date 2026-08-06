@@ -1,5 +1,10 @@
 <?php
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/auth.php";
+
+$__prmsExportEnabled = !preg_match('#^/(auth|uploads|lib|vendor)/#', $_SERVER['SCRIPT_NAME'] ?? '');
+if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
+  $_SESSION['prms_export_csrf_token'] = bin2hex(random_bytes(32));
+}
 ?>
 
 <!DOCTYPE html>
@@ -20,6 +25,22 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/auth.php";
   <link rel="stylesheet" href="/assets/css/dashboard.css?v=<?= time() ?>">
   <link rel="stylesheet" href="/assets/css/tables.css?v=<?= time() ?>">
   <link rel="stylesheet" href="/assets/css/modern-ui.css?v=<?= time() ?>">
+  <style>
+    @media print {
+      #sidebarMenu,
+      .mobile-topbar,
+      .global-topbar,
+      .prms-footer,
+      .prms-export-toolbar,
+      .btn,
+      button,
+      form { display: none !important; }
+      main { width: 100% !important; margin: 0 !important; padding: 0 !important; }
+      body { background: #fff !important; }
+      .card { box-shadow: none !important; border: 1px solid #ddd !important; }
+      a { color: inherit !important; text-decoration: none !important; }
+    }
+  </style>
 </head>
 
 <body class="prms-body">
@@ -104,6 +125,72 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/auth.php";
     </a>
   </div>
 </div>
+
+<?php if ($__prmsExportEnabled): ?>
+<div class="prms-export-toolbar d-flex justify-content-end gap-2 mb-3">
+  <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.prmsExportPdf && window.prmsExportPdf()">
+    <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+  </button>
+  <button type="button" class="btn btn-sm btn-outline-success" onclick="window.prmsExportExcel && window.prmsExportExcel()">
+    <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export Excel
+  </button>
+  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+    <i class="bi bi-printer me-1"></i>Print
+  </button>
+</div>
+<script>
+window.PRMS_EXPORT_CSRF_TOKEN = <?= json_encode($_SESSION['prms_export_csrf_token'] ?? '') ?>;
+window.prmsExportPdf = function () {
+  const main = document.querySelector('main') || document.body;
+  const title = (document.querySelector('main h1, main h2, main h3, main h4')?.innerText || document.title || 'Export').trim();
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/reports/export_page_pdf.php';
+  form.target = '_blank';
+  form.style.display = 'none';
+  const titleInput = document.createElement('input');
+  titleInput.type = 'hidden';
+  titleInput.name = 'title';
+  titleInput.value = title;
+  const htmlInput = document.createElement('input');
+  htmlInput.type = 'hidden';
+  htmlInput.name = 'html';
+  htmlInput.value = main.innerHTML;
+  const tokenInput = document.createElement('input');
+  tokenInput.type = 'hidden';
+  tokenInput.name = 'csrf_token';
+  tokenInput.value = window.PRMS_EXPORT_CSRF_TOKEN || '';
+  form.appendChild(titleInput);
+  form.appendChild(htmlInput);
+  form.appendChild(tokenInput);
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+};
+window.prmsExportExcel = function () {
+  const tables = Array.from(document.querySelectorAll('main table'));
+  if (!tables.length) {
+    window.print();
+    return;
+  }
+  const title = (document.querySelector('main h1, main h2, main h3, main h4')?.innerText || document.title || 'Export').trim();
+  const html = [
+    '<html><head><meta charset="UTF-8"></head><body>',
+    '<h3>' + title.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) + '</h3>',
+    ...tables.map(table => table.outerHTML),
+    '</body></html>'
+  ].join('');
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = title.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() + '.xls';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+};
+</script>
+<?php endif; ?>
 
 <?php
 // Flash and login notification modals

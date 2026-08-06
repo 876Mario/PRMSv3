@@ -541,6 +541,7 @@ function statusBadge(string $status): string {
         'COMPLETED'             => ['#212529', '#fff',    '✓'],
         'DECLINED'              => ['#f8d7da', '#842029', '❌'],
         'CANCELLED'             => ['#f8d7da', '#842029', '🚫'],
+        'PAUSED'                => ['#fff3cd', '#856404', '⏸️'],
     ];
 
     $status = strtoupper($status);
@@ -568,6 +569,7 @@ function statusBadge(string $status): string {
         'COMPLETED'             => 'Completed',
         'DECLINED'              => 'Declined',
         'CANCELLED'             => 'Cancelled',
+        'PAUSED'                => 'Paused',
         default                 => str_replace('_', ' ', $status),
     };
 
@@ -598,4 +600,3 @@ function normalizeCurrency(string $currency = 'JMD'): string {
     // Validate and return - default to JMD if invalid
     return in_array($currency, ['JMD', 'USD']) ? $currency : 'JMD';
 }
-

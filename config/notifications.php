@@ -2786,6 +2786,157 @@ HTML;
     }
 }
 
+function notifyProcurementPauseResume(int $requestId, string $action, string $reason, string $actorName, string $statusAtAction = ''): bool {
+    global $pdo;
+
+    if (!notificationsEnabled()) {
+        return false;
+    }
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.description, pr.estimated_value, pr.currency, pr.status,
+                   u.email AS requestor_email, u.full_name AS requestor_name,
+                   b.branch_name
+            FROM procurement_requests pr
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$request) {
+            return false;
+        }
+
+        $emails = [];
+        if (!empty($request['requestor_email'])) {
+            $emails[$request['requestor_email']] = true;
+        }
+
+        $userStmt = $pdo->prepare("
+            SELECT DISTINCT u.email
+            FROM users u
+            WHERE u.is_active = 1
+              AND u.email IS NOT NULL
+              AND (
+                    u.user_id IN (
+                        SELECT approved_by FROM request_approvals
+                        WHERE request_id = ? AND approved_by IS NOT NULL
+                    )
+                    OR u.user_id IN (
+                        SELECT approved_by FROM procurement_requests
+                        WHERE request_id = ? AND approved_by IS NOT NULL
+                    )
+                    OR u.user_id IN (
+                        SELECT finance_reviewed_by FROM procurement_requests
+                        WHERE request_id = ? AND finance_reviewed_by IS NOT NULL
+                    )
+              )
+        ");
+        $userStmt->execute([$requestId, $requestId, $requestId]);
+        foreach ($userStmt->fetchAll(PDO::FETCH_COLUMN) as $email) {
+            if (!empty($email)) {
+                $emails[$email] = true;
+            }
+        }
+
+        $roleStmt = $pdo->prepare("
+            SELECT DISTINCT ra.role
+            FROM request_approvals ra
+            WHERE ra.request_id = ?
+              AND (
+                    ra.status = 'approved'
+                    OR ra.stage_order <= COALESCE((
+                        SELECT MIN(stage_order)
+                        FROM request_approvals
+                        WHERE request_id = ? AND status = 'pending'
+                    ), ra.stage_order)
+              )
+        ");
+        $roleStmt->execute([$requestId, $requestId]);
+        foreach ($roleStmt->fetchAll(PDO::FETCH_COLUMN) as $roleName) {
+            foreach (getUsersByRole((string)$roleName) as $user) {
+                if (!empty($user['email'])) {
+                    $emails[$user['email']] = true;
+                }
+            }
+        }
+
+        foreach (getUsersByRole('Procurement Officer') as $user) {
+            if (!empty($user['email'])) {
+                $emails[$user['email']] = true;
+            }
+        }
+
+        if (empty($emails)) {
+            return false;
+        }
+
+        $isPause = strtolower($action) === 'pause';
+        $actionLabel = $isPause ? 'Paused' : 'Resumed';
+        $subject = "Procurement {$actionLabel}: {$request['request_number']}";
+        $appUrl = getAppUrl();
+        $safeRequestNumber = he($request['request_number']);
+        $safeDescription = he($request['description'] ?? '');
+        $safeReason = he($reason);
+        $safeActor = he($actorName);
+        $safeBranch = he($request['branch_name'] ?? 'N/A');
+        $safeStatus = he($statusAtAction ?: ($request['status'] ?? 'N/A'));
+        $currency = he($request['currency'] ?? 'JMD');
+        $amount = number_format((float)($request['estimated_value'] ?? 0), 2);
+        $headerColor = $isPause ? '#ffc107' : '#198754';
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header { background: {$headerColor}; color: #111; padding: 20px; text-align: center; border-radius: 4px 4px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; }
+        .details { background: white; padding: 15px; margin: 15px 0; border: 1px solid #ddd; border-radius: 4px; }
+        .detail-row { padding: 8px 0; border-bottom: 1px solid #eee; }
+        .label { font-weight: bold; color: #555; }
+        .button { display: inline-block; background: #2196F3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header"><h2 style="margin: 0;">Procurement {$actionLabel}</h2></div>
+        <div class="content">
+            <div class="details">
+                <div class="detail-row"><span class="label">Request Number:</span> <strong>{$safeRequestNumber}</strong></div>
+                <div class="detail-row"><span class="label">Branch:</span> {$safeBranch}</div>
+                <div class="detail-row"><span class="label">Estimated Value:</span> <strong>{$currency} {$amount}</strong></div>
+                <div class="detail-row"><span class="label">Description:</span> {$safeDescription}</div>
+                <div class="detail-row"><span class="label">Status at Action:</span> {$safeStatus}</div>
+                <div class="detail-row"><span class="label">Action By:</span> {$safeActor}</div>
+            </div>
+            <h3>Reason</h3>
+            <p style="background: #fff; padding: 12px; border-left: 4px solid {$headerColor};">{$safeReason}</p>
+            <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        $sent = false;
+        foreach (array_keys($emails) as $email) {
+            $sent = sendMail($email, $subject, $html) || $sent;
+        }
+
+        return $sent;
+    } catch (Exception $e) {
+        error_log("Notify procurement pause/resume error: {$e->getMessage()}");
+        return false;
+    }
+}
+
 /**
  * Escalating reminder for missing post-completion documents
  * (Signed Commitment Document — Finance; Signed Purchase Order — Procurement Officer)
@@ -3240,4 +3391,3 @@ function notifyProcurementAllApprovalsComplete(int $rfqId): bool {
         return false;
     }
 }
-

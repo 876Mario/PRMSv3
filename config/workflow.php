@@ -122,7 +122,11 @@ function canTransition(string $current, string $next): bool {
 
     // Cancellation is allowed from any stage except final/terminal states
     if ($next === 'CANCELLED') {
-        return !in_array($current, ['COMPLETED', 'DECLINED', 'CANCELLED']);
+        return !in_array($current, ['COMPLETED', 'DECLINED', 'CANCELLED', 'PAUSED']);
+    }
+
+    if ($next === 'PAUSED') {
+        return !in_array($current, ['DRAFT', 'COMPLETED', 'DECLINED', 'CANCELLED', 'PAUSED']);
     }
 
     $map = allowedTransitions();
@@ -1245,4 +1249,3 @@ function applyNonPoWorkflow(PDO $pdo, int $requestId): void {
 }
 
 ?>
-
