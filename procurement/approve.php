@@ -45,6 +45,11 @@ if (!$request) {
     exit;
 }
 
+if (strtoupper($request['status'] ?? '') === 'PAUSED') {
+    modalPop("Procurement Paused", "Resume this procurement before approving it.", "/procurement/view.php?id=" . $id, "warning");
+    exit;
+}
+
 /* ===============================
    Prevent self-approval
 ================================ */
@@ -203,8 +208,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         modalPop(
             "Approval Successful",
-            "Approval recorded successfully.",
-            "/procurement/view.php?id=" . $id,
+            "Approval recorded successfully. Returning to Dashboard.",
+            "/dashboard/index.php",
             "success"
         );
         exit;

@@ -274,6 +274,7 @@ function reqBadgeClass(string $status): string {
         'COMMITTEE_RECOMMENDED' => 'info',
         'DECLINED'              => 'danger',
         'CANCELLED'             => 'danger',
+        'PAUSED'                => 'warning text-dark',
         'DRAFT'                 => 'secondary',
         default                 => 'secondary',
     };
@@ -300,6 +301,7 @@ function reqLabel(string $status): string {
         'COMPLETED'             => 'Completed',
         'DECLINED'              => 'Declined',
         'CANCELLED'             => 'Cancelled',
+        'PAUSED'                => 'Paused',
         default                 => $status,
     };
 }
@@ -358,6 +360,7 @@ $statusOptions = [
     'COMPLETED'             => 'Completed',
     'DECLINED'              => 'Declined',
     'CANCELLED'             => 'Cancelled',
+    'PAUSED'                => 'Paused',
 ];
 
 $hasFilters = !empty($_GET['q']) || !empty($_GET['request_status']) || !empty($_GET['po_status']) || !empty($_GET['from']) || !empty($_GET['to']) || !empty($_GET['branch_id']) || !empty($_GET['requestor']) || !empty($_GET['budget_year']) || !empty($_GET['workflow_path']) || !empty($_GET['request_number']);
@@ -655,6 +658,8 @@ $budgetYears = $pdo->query("SELECT DISTINCT YEAR(request_date) AS yr FROM procur
                     $rowBgColor = '#e8f5e9';
                 } elseif ($row['request_status'] === 'DECLINED') {
                     $rowBgColor = '#ffebee';
+                } elseif ($row['request_status'] === 'PAUSED') {
+                    $rowBgColor = '#fff8e1';
                 }
             ?>
             <tr style="background-color: <?= $rowBgColor ?>; border-bottom: 1px solid #e0e0e0; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f5f5f5'" onmouseout="this.style.backgroundColor='<?= $rowBgColor ?>'">

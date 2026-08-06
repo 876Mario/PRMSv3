@@ -26,6 +26,11 @@ if (!$request) {
     exit;
 }
 
+if (strtoupper($request['status'] ?? '') === 'PAUSED') {
+    pop('Resume this procurement before approving it.', '/procurement/view.php?id='.$id, POP_DEFAULT_DELAY_MS, 'warning');
+    exit;
+}
+
 $user_id = $_SESSION['user_id'];
 
 /* ===============================
@@ -110,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         pop(
             "Request approved successfully.",
-            "/procurement/view.php?id=".$id,
+            "/dashboard/index.php",
             1500,
             "success"
         );

@@ -421,6 +421,7 @@ $badgeMap = [
     'COMPLETED'             => ['success',            'bi-check-circle'],
     'DECLINED'              => ['danger',             'bi-x-octagon'],
     'CANCELLED'             => ['danger',             'bi-slash-circle'],
+    'PAUSED'                => ['warning text-dark',  'bi-pause-circle'],
     'DISBURSED'             => ['success text-dark',  'bi-wallet2'],
     'FINANCE_AUTHORIZED'    => ['success text-dark',  'bi-cash-coin'],
 ];
@@ -986,7 +987,11 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                 $nextStepColor = 'text-info';
                 
                 // Show awaiting approval for any status with a pending approval
-                if ($nextApproverRole && $nextApprovalId) {
+                if ($current === 'PAUSED') {
+                    $nextStepDisplay = "Procurement paused. Resume is required before workflow actions can continue.";
+                    $nextStepIcon = 'bi-pause-circle';
+                    $nextStepColor = 'text-warning';
+                } elseif ($nextApproverRole && $nextApprovalId) {
                     $nextStepDisplay = "Awaiting {$nextApproverRole} approval";
                     $nextStepIcon = 'bi-person-check';
                     $nextStepColor = 'text-info';
@@ -1171,7 +1176,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     $canSendBackForEdit = false;
                     
                     // Check if there's a pending approval for this user (regardless of current status)
-                    if ($nextApproverRole && $nextApprovalId && hasPermission('approve_request')) {
+                    if ($current !== 'PAUSED' && $nextApproverRole && $nextApprovalId && hasPermission('approve_request')) {
                         $userCanApprove = canApproveStage($role, $nextApproverRole, $estimatedValue);
                         
                         // Map role to endpoint
@@ -1223,7 +1228,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                         };
                     }
 
-                    $canSendBackForEdit =
+                    $canSendBackForEdit = $current !== 'PAUSED' && (
                         (
                             $nextApproverRole
                             && $nextApprovalId
@@ -1234,7 +1239,8 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                             in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin'], true)
                             && in_array($current, $procurementEditableStatuses, true)
                             && !in_array($current, ['DRAFT', 'DECLINED', 'COMPLETED'], true)
-                        );
+                        )
+                    );
                     ?>
                     
                     <?php $signedRequestPending = signedRequestUploadPending($request); ?>
@@ -1272,7 +1278,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
 
                     <?php
                     // Revert Stage — available to authorized roles when backward transitions exist
-                    $canRevertStage = in_array($role, allowedRevertRoles(), true)
+                    $canRevertStage = $current !== 'PAUSED' && in_array($role, allowedRevertRoles(), true)
                         && !in_array($current, ['DRAFT', 'COMPLETED', 'DECLINED', 'CANCELLED'], true);
                     $revertTargets = [];
                     if ($canRevertStage) {
@@ -1293,7 +1299,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
 
                     <?php
                     // Request cancellation — allowed at any non-terminal stage
-                    $canCancelRequest = canTransition($current, 'CANCELLED')
+                    $canCancelRequest = $current !== 'PAUSED' && canTransition($current, 'CANCELLED')
                         && (
                             $request['created_by'] == $_SESSION['user_id']
                             || hasPermission('approve_request')
@@ -1304,6 +1310,22 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                         <button type="button" class="btn btn-outline-secondary"
                                 data-bs-toggle="modal" data-bs-target="#cancelRequestModal">
                             <i class="bi bi-slash-circle me-1"></i>Cancel Request
+                        </button>
+                    <?php endif; ?>
+
+                    <?php
+                    $canPauseResume = (
+                        $request['created_by'] == $_SESSION['user_id']
+                        || hasPermission('approve_request')
+                        || in_array($role, ['Admin', 'SuperAdmin', 'Procurement Officer'], true)
+                    );
+                    ?>
+                    <?php if ($canPauseResume && !in_array($current, ['DRAFT', 'COMPLETED', 'DECLINED', 'CANCELLED'], true)): ?>
+                        <button type="button"
+                                class="btn <?= $current === 'PAUSED' ? 'btn-outline-success' : 'btn-outline-warning' ?>"
+                                data-bs-toggle="modal"
+                                data-bs-target="#pauseResumeModal">
+                            <i class="bi <?= $current === 'PAUSED' ? 'bi-play-circle' : 'bi-pause-circle' ?> me-1"></i><?= $current === 'PAUSED' ? 'Resume Procurement' : 'Pause Procurement' ?>
                         </button>
                     <?php endif; ?>
 
@@ -2022,6 +2044,35 @@ function timelineMeta(string $action): array {
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 <button type="submit" class="btn btn-danger"><i class="bi bi-slash-circle me-1"></i>Confirm Cancellation</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="pauseResumeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="POST" action="/procurement/pause_resume.php" class="modal-content">
+            <div class="modal-header <?= $status === 'PAUSED' ? 'bg-success' : 'bg-warning text-dark' ?>">
+                <h5 class="modal-title">
+                    <i class="bi <?= $status === 'PAUSED' ? 'bi-play-circle' : 'bi-pause-circle' ?> me-2"></i><?= $status === 'PAUSED' ? 'Resume Procurement' : 'Pause Procurement' ?>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" name="id" value="<?= (int)$request['request_id'] ?>">
+                <input type="hidden" name="action" value="<?= $status === 'PAUSED' ? 'resume' : 'pause' ?>">
+                <p class="text-muted small mb-3">A reason is required and will be recorded in the audit trail. Participants and stakeholders will be notified.</p>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Reason <span class="text-danger">*</span></label>
+                    <textarea name="reason" class="form-control" rows="4" required
+                              placeholder="Enter the reason for this <?= $status === 'PAUSED' ? 'resume' : 'pause' ?> action..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn <?= $status === 'PAUSED' ? 'btn-success' : 'btn-warning' ?>">
+                    <i class="bi <?= $status === 'PAUSED' ? 'bi-play-circle' : 'bi-pause-circle' ?> me-1"></i><?= $status === 'PAUSED' ? 'Confirm Resume' : 'Confirm Pause' ?>
+                </button>
             </div>
         </form>
     </div>
