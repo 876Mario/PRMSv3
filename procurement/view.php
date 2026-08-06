@@ -2052,26 +2052,26 @@ function timelineMeta(string $action): array {
 <div class="modal fade" id="pauseResumeModal" tabindex="-1">
     <div class="modal-dialog">
         <form method="POST" action="/procurement/pause_resume.php" class="modal-content">
-            <div class="modal-header <?= $status === 'PAUSED' ? 'bg-success' : 'bg-warning text-dark' ?>">
+            <div class="modal-header <?= $current === 'PAUSED' ? 'bg-success' : 'bg-warning text-dark' ?>">
                 <h5 class="modal-title">
-                    <i class="bi <?= $status === 'PAUSED' ? 'bi-play-circle' : 'bi-pause-circle' ?> me-2"></i><?= $status === 'PAUSED' ? 'Resume Procurement' : 'Pause Procurement' ?>
+                    <i class="bi <?= $current === 'PAUSED' ? 'bi-play-circle' : 'bi-pause-circle' ?> me-2"></i><?= $current === 'PAUSED' ? 'Resume Procurement' : 'Pause Procurement' ?>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" name="id" value="<?= (int)$request['request_id'] ?>">
-                <input type="hidden" name="action" value="<?= $status === 'PAUSED' ? 'resume' : 'pause' ?>">
+                <input type="hidden" name="action" value="<?= $current === 'PAUSED' ? 'resume' : 'pause' ?>">
                 <p class="text-muted small mb-3">A reason is required and will be recorded in the audit trail. Participants and stakeholders will be notified.</p>
                 <div class="mb-3">
                     <label class="form-label fw-bold">Reason <span class="text-danger">*</span></label>
                     <textarea name="reason" class="form-control" rows="4" required
-                              placeholder="Enter the reason for this <?= $status === 'PAUSED' ? 'resume' : 'pause' ?> action..."></textarea>
+                              placeholder="Enter the reason for this <?= $current === 'PAUSED' ? 'resume' : 'pause' ?> action..."></textarea>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" class="btn <?= $status === 'PAUSED' ? 'btn-success' : 'btn-warning' ?>">
-                    <i class="bi <?= $status === 'PAUSED' ? 'bi-play-circle' : 'bi-pause-circle' ?> me-1"></i><?= $status === 'PAUSED' ? 'Confirm Resume' : 'Confirm Pause' ?>
+                <button type="submit" class="btn <?= $current === 'PAUSED' ? 'btn-success' : 'btn-warning' ?>">
+                    <i class="bi <?= $current === 'PAUSED' ? 'bi-play-circle' : 'bi-pause-circle' ?> me-1"></i><?= $current === 'PAUSED' ? 'Confirm Resume' : 'Confirm Pause' ?>
                 </button>
             </div>
         </form>

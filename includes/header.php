@@ -137,7 +137,26 @@ $__prmsExportEnabled = !preg_match('#^/(auth|uploads|lib|vendor)/#', $_SERVER['S
 </div>
 <script>
 window.prmsExportPdf = function () {
-  window.print();
+  const main = document.querySelector('main') || document.body;
+  const title = (document.querySelector('main h1, main h2, main h3, main h4')?.innerText || document.title || 'Export').trim();
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/reports/export_page_pdf.php';
+  form.target = '_blank';
+  form.style.display = 'none';
+  const titleInput = document.createElement('input');
+  titleInput.type = 'hidden';
+  titleInput.name = 'title';
+  titleInput.value = title;
+  const htmlInput = document.createElement('input');
+  htmlInput.type = 'hidden';
+  htmlInput.name = 'html';
+  htmlInput.value = main.innerHTML;
+  form.appendChild(titleInput);
+  form.appendChild(htmlInput);
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
 };
 window.prmsExportExcel = function () {
   const tables = Array.from(document.querySelectorAll('main table'));
