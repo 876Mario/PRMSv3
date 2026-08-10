@@ -2,7 +2,7 @@
 /**
  * Inventory Item Search API
  * Returns searchable inventory items with asset and item details
- * Supports searching by item_code, item_name, asset_code, asset description
+ * Supports searching by item_code, item_description, item_name, and asset_code
  * Excludes items with BOS status
  */
 
@@ -34,26 +34,27 @@ try {
             i.item_code,
             i.item_name,
             i.description,
+            COALESCE(NULLIF(TRIM(i.description), ''), i.item_name) AS item_description,
             ad.asset_code,
             ad.asset_status,
             COALESCE(ad.asset_code, '') AS display_code,
             CASE 
-                WHEN ad.asset_code LIKE ? THEN 1
-                WHEN i.item_code LIKE ? THEN 2
-                WHEN ad.asset_code LIKE ? THEN 3
-                WHEN i.item_code LIKE ? THEN 4
-                WHEN i.item_name LIKE ? THEN 5
-                WHEN i.description LIKE ? THEN 6
+                WHEN LOWER(TRIM(COALESCE(ad.asset_code, ''))) LIKE LOWER(?) THEN 1
+                WHEN LOWER(TRIM(COALESCE(i.item_code, ''))) LIKE LOWER(?) THEN 2
+                WHEN LOWER(TRIM(COALESCE(ad.asset_code, ''))) LIKE LOWER(?) THEN 3
+                WHEN LOWER(TRIM(COALESCE(i.item_code, ''))) LIKE LOWER(?) THEN 4
+                WHEN LOWER(COALESCE(NULLIF(TRIM(i.description), ''), i.item_name, '')) LIKE LOWER(?) THEN 5
+                WHEN LOWER(TRIM(COALESCE(i.item_name, ''))) LIKE LOWER(?) THEN 6
                 ELSE 7
             END AS match_priority
         FROM inv_items i
         LEFT JOIN inv_asset_details ad ON i.item_id = ad.item_id
         WHERE (
-            i.item_code LIKE ? OR
-            i.item_name LIKE ? OR
-            i.description LIKE ? OR
-            ad.asset_code LIKE ? OR
-            COALESCE(ad.asset_status, '') LIKE ?
+            LOWER(TRIM(COALESCE(i.item_code, ''))) LIKE LOWER(?) OR
+            LOWER(COALESCE(NULLIF(TRIM(i.description), ''), i.item_name, '')) LIKE LOWER(?) OR
+            LOWER(TRIM(COALESCE(i.item_name, ''))) LIKE LOWER(?) OR
+            LOWER(TRIM(COALESCE(ad.asset_code, ''))) LIKE LOWER(?) OR
+            LOWER(TRIM(COALESCE(ad.asset_status, ''))) LIKE LOWER(?)
         )
         AND i.item_status = 'ACTIVE'
         AND (ad.asset_status IS NULL OR ad.asset_status != 'BOS')
@@ -66,11 +67,11 @@ try {
         $searchPattern,      // item_code exact prefix
         $wildPattern,        // asset_code contains
         $wildPattern,        // item_code contains
+        $wildPattern,        // item_description contains
         $wildPattern,        // item_name contains
-        $wildPattern,        // description contains
         $wildPattern,        // item_code search
+        $wildPattern,        // item_description search
         $wildPattern,        // item_name search
-        $wildPattern,        // description search
         $wildPattern,        // asset_code search
         $wildPattern,        // asset_status search
         $limit
@@ -99,6 +100,7 @@ try {
             'item_id' => $itemId,
             'item_code' => $row['item_code'],
             'item_name' => $row['item_name'],
+            'item_description' => $row['item_description'],
             'asset_code' => $row['asset_code'],
             'description' => $row['description'],
             'asset_status' => $row['asset_status']
