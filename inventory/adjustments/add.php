@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $adjNumber = InventoryService::generateDocNumber($pdo, 'ADJ', 'inv_adjustments', 'adjustment_number');
 
         $pdo->prepare("INSERT INTO inv_adjustments
-            (adjustment_number, adjustment_type, location_id, reason_code, reason_detail, notes,
+            (adjustment_number, adjustment_type, location_id, reason_code, reason_detail, investigation_notes,
              requested_by, status, created_at)
             VALUES (?,?,?,?,?,?,?,?,NOW())")
             ->execute([$adjNumber, $adjType, $locationId, $reasonCode, $description, $notes,
