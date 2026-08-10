@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && has_permission('approve_adjustment'
             }
             $reason = trim($_POST['rejection_reason'] ?? '');
             if (empty($reason)) throw new Exception("Rejection reason is required.");
-            $pdo->prepare("UPDATE inv_adjustments SET status = 'REJECTED', notes = CONCAT(IFNULL(notes,''), '\nRejected: ', ?) WHERE adjustment_id = ?")
+            $pdo->prepare("UPDATE inv_adjustments SET status = 'REJECTED', investigation_notes = CONCAT(IFNULL(investigation_notes,''), '\nRejected: ', ?) WHERE adjustment_id = ?")
                 ->execute([$reason, $adjId]);
             logInventoryAudit($pdo, 'inv_adjustments', $adjId, 'REJECTED', "Rejected: $reason");
 
@@ -141,8 +141,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <?php if ($adj['reason_detail']): ?>
                     <div class="col-12"><strong>Description:</strong> <?= htmlspecialchars($adj['reason_detail']) ?></div>
                     <?php endif; ?>
-                    <?php if ($adj['notes']): ?>
-                    <div class="col-12"><strong>Notes:</strong> <?= nl2br(htmlspecialchars($adj['notes'])) ?></div>
+                    <?php if ($adj['investigation_notes']): ?>
+                    <div class="col-12"><strong>Notes:</strong> <?= nl2br(htmlspecialchars($adj['investigation_notes'])) ?></div>
                     <?php endif; ?>
                 </div>
             </div>
