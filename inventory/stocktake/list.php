@@ -3,13 +3,19 @@ $REQUIRE_PERMISSION = 'conduct_stock_count';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once __DIR__ . '/../check_setup.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/InventoryTransactionSearch.php';
 
 $search = trim($_GET['search'] ?? '');
 $status = $_GET['status'] ?? '';
 
 $where = "1=1";
 $params = [];
-if ($search) { $where .= " AND (sc.count_number LIKE ? OR u.full_name LIKE ?)"; $s = "%$search%"; $params = array_merge($params, [$s, $s]); }
+if ($search !== '') {
+    $itemSearch = buildInventoryItemSearchExistsClause('sc', 'count_id', 'inv_stock_count_items', 'count_id');
+    $where .= " AND (sc.count_number LIKE ? OR u.full_name LIKE ? OR $itemSearch)";
+    $s = inventoryTransactionSearchPattern($search);
+    $params = array_merge($params, [$s, $s, $s, $s, $s]);
+}
 if ($status) { $where .= " AND sc.status = ?"; $params[] = $status; }
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/pagination.php';
@@ -55,7 +61,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 </div>
 
 <form class="row g-2 mb-3">
-    <div class="col-md-4"><input type="text" name="search" class="form-control" placeholder="Search..." value="<?= htmlspecialchars($search) ?>"></div>
+    <div class="col-md-4"><input type="text" name="search" class="form-control" placeholder="Search count#, person, item code or description..." value="<?= htmlspecialchars($search) ?>"></div>
     <div class="col-md-3">
         <select name="status" class="form-select">
             <option value="">All Status</option>
