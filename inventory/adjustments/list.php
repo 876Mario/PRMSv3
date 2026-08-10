@@ -11,7 +11,7 @@ $type = $_GET['type'] ?? '';
 
 $where = "1=1";
 $params = [];
-if ($search) {
+if ($search !== '') {
     $itemSearch = buildInventoryItemSearchExistsClause('a', 'adjustment_id', 'inv_adjustment_items', 'adjustment_id');
     $where .= " AND (a.adjustment_number LIKE ? OR u.full_name LIKE ? OR $itemSearch)";
     $s = inventoryTransactionSearchPattern($search);

@@ -13,7 +13,7 @@ $dateTo = $_GET['date_to'] ?? '';
 $where = "1=1";
 $params = [];
 
-if ($search) {
+if ($search !== '') {
     $itemSearch = buildInventoryItemSearchExistsClause('g', 'grn_id', 'inv_grn_items', 'grn_id');
     $where .= " AND (g.grn_number LIKE ? OR g.po_reference LIKE ? OR u.full_name LIKE ? OR g.supplier_name LIKE ? OR $itemSearch)";
     $s = inventoryTransactionSearchPattern($search);

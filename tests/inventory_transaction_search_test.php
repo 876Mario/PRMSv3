@@ -17,7 +17,7 @@ function searchTransfers(PDO $pdo, string $search, string $status = ''): array
     $where = '1=1';
     $params = [];
 
-    if ($search) {
+    if ($search !== '') {
         $itemSearch = buildInventoryItemSearchExistsClause('t', 'transfer_id', 'inv_transfer_items', 'transfer_id');
         $where .= " AND (t.transfer_number LIKE ? OR u.full_name LIKE ? OR $itemSearch)";
         $s = inventoryTransactionSearchPattern($search);
@@ -75,17 +75,20 @@ $pdo->exec("
     INSERT INTO inv_items (item_id, item_code, item_name, description) VALUES
         (10, 'ABC-123', 'Reagent Kit', 'Sterile Transfer Bottle'),
         (11, 'xyz-789', 'Safety Gloves', 'Powder Free Nitrile Gloves'),
-        (12, 'MIX-456', 'Control Sample', '  Mixed Case Description  ');
+        (12, 'MIX-456', 'Control Sample', '  Mixed Case Description  '),
+        (13, '0', 'Zero Code Item', 'Zero edge case');
     INSERT INTO inv_transfer_items (transfer_item_id, transfer_id, item_id) VALUES
         (100, 1, 10),
         (101, 2, 11),
-        (102, 3, 12);
+        (102, 3, 12),
+        (103, 2, 13);
 ");
 
 assertSameValue(['TR-001'], searchTransfers($pdo, 'ABC-123'), 'Exact item code search should match.');
 assertSameValue(['TR-001'], searchTransfers($pdo, 'BC-1'), 'Partial item code search should match.');
 assertSameValue(['TR-001'], searchTransfers($pdo, 'Sterile Transfer Bottle'), 'Exact item description search should match.');
 assertSameValue(['TR-002'], searchTransfers($pdo, 'nitrile'), 'Partial item description search should match.');
+assertSameValue(['TR-002'], searchTransfers($pdo, '0', 'DRAFT'), 'Zero-like item code search should not be treated as empty.');
 assertSameValue(['TR-003'], searchTransfers($pdo, 'mixed case'), 'Mixed-case and padded description search should match.');
 assertSameValue(['TR-001'], searchTransfers($pdo, 'ABC', 'COMPLETED'), 'Combined search and status filters should match.');
 assertSameValue([], searchTransfers($pdo, 'ABC', 'DRAFT'), 'Combined filters should exclude non-matching statuses.');

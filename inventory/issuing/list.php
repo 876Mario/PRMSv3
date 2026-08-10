@@ -10,7 +10,7 @@ $status = $_GET['status'] ?? '';
 
 $where = "1=1";
 $params = [];
-if ($search) {
+if ($search !== '') {
     $itemSearch = buildInventoryItemSearchExistsClause('si', 'issue_id', 'inv_issue_items', 'issue_id');
     $where .= " AND (si.issue_number LIKE ? OR si.requisition_number LIKE ? OR u.full_name LIKE ? OR r.full_name LIKE ? OR $itemSearch)";
     $s = inventoryTransactionSearchPattern($search);
