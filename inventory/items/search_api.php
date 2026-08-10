@@ -78,7 +78,15 @@ try {
         $wildPattern,        // asset_status search
     ];
 
-    $stmt->execute(array_merge($matchPriorityParams, $filterParams, [$limit]));
+    $params = array_merge($matchPriorityParams, $filterParams);
+    foreach ($params as $index => $value) {
+        $stmt->bindValue($index + 1, $value, PDO::PARAM_STR);
+    }
+    // LIMIT must be bound as an integer: with PDO emulated prepares (the
+    // default), values passed via execute() are quoted as strings, producing
+    // "LIMIT '50'" which is a MySQL syntax error and made every search fail.
+    $stmt->bindValue(count($params) + 1, $limit, PDO::PARAM_INT);
+    $stmt->execute();
 
     $results = [];
     $seenIds = [];
