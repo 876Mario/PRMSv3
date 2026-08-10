@@ -62,20 +62,23 @@ try {
         LIMIT ?
     ");
 
-    $stmt->execute([
+    $matchPriorityParams = [
         $searchPattern,      // asset_code exact prefix
         $searchPattern,      // item_code exact prefix
         $wildPattern,        // asset_code contains
         $wildPattern,        // item_code contains
         $wildPattern,        // item_description contains
         $wildPattern,        // item_name contains
+    ];
+    $filterParams = [
         $wildPattern,        // item_code search
         $wildPattern,        // item_description search
         $wildPattern,        // item_name search
         $wildPattern,        // asset_code search
         $wildPattern,        // asset_status search
-        $limit
-    ]);
+    ];
+
+    $stmt->execute(array_merge($matchPriorityParams, $filterParams, [$limit]));
 
     $results = [];
     $seenIds = [];
