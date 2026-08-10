@@ -67,7 +67,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="col-md-2">
         <select name="status" class="form-select">
             <option value="">All Status</option>
-            <?php foreach (['DRAFT','PENDING_APPROVAL','APPROVED','REJECTED','INVESTIGATION'] as $s): ?>
+            <?php foreach (['DRAFT','PENDING_APPROVAL','APPROVED','REJECTED','UNDER_INVESTIGATION'] as $s): ?>
             <option value="<?= $s ?>" <?= $status === $s ? 'selected' : '' ?>><?= $s ?></option>
             <?php endforeach; ?>
         </select>
@@ -101,7 +101,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         <td><?= htmlspecialchars($r['creator_name']) ?></td>
                         <td><?= $r['line_count'] ?></td>
                         <td>
-                            <?php $sc = match($r['status']) { 'APPROVED' => 'success', 'PENDING_APPROVAL' => 'warning', 'INVESTIGATION' => 'info', 'REJECTED' => 'danger', default => 'secondary' }; ?>
+                            <?php $sc = match($r['status']) { 'APPROVED' => 'success', 'PENDING_APPROVAL' => 'warning', 'UNDER_INVESTIGATION' => 'info', 'REJECTED' => 'danger', 'COMPLETED' => 'primary', default => 'secondary' }; ?>
                             <span class="badge bg-<?= $sc ?>"><?= $r['status'] ?></span>
                         </td>
                         <td class="text-end"><a href="/inventory/adjustments/view.php?id=<?= $r['adjustment_id'] ?>" class="btn btn-sm btn-outline-dark"><i class="bi bi-eye"></i></a></td>

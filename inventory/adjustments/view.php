@@ -37,6 +37,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && has_permission('approve_adjustment'
         $pdo->beginTransaction();
 
         if ($action === 'approve') {
+            if (!in_array($adj['status'], ['PENDING_APPROVAL', 'UNDER_INVESTIGATION'])) {
+                throw new Exception("Adjustment is not in an approvable state.");
+            }
             if ($_SESSION['user_id'] == $adj['requested_by']) {
                 throw new Exception("Cannot approve your own adjustment (segregation of duties).");
             }
@@ -68,6 +71,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && has_permission('approve_adjustment'
             logInventoryAudit($pdo, 'inv_adjustments', $adjId, 'APPROVED', "Stock adjustment approved and applied");
 
         } elseif ($action === 'reject') {
+            if (!in_array($adj['status'], ['PENDING_APPROVAL', 'UNDER_INVESTIGATION'])) {
+                throw new Exception("Adjustment cannot be rejected in its current state.");
+            }
             $reason = trim($_POST['rejection_reason'] ?? '');
             if (empty($reason)) throw new Exception("Rejection reason is required.");
             $pdo->prepare("UPDATE inv_adjustments SET status = 'REJECTED', notes = CONCAT(IFNULL(notes,''), '\nRejected: ', ?) WHERE adjustment_id = ?")
@@ -75,9 +81,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && has_permission('approve_adjustment'
             logInventoryAudit($pdo, 'inv_adjustments', $adjId, 'REJECTED', "Rejected: $reason");
 
         } elseif ($action === 'investigate') {
-            $pdo->prepare("UPDATE inv_adjustments SET status = 'INVESTIGATION' WHERE adjustment_id = ?")
+            if ($adj['status'] !== 'PENDING_APPROVAL') {
+                throw new Exception("Only pending adjustments can be sent for investigation.");
+            }
+            $pdo->prepare("UPDATE inv_adjustments SET status = 'UNDER_INVESTIGATION' WHERE adjustment_id = ?")
                 ->execute([$adjId]);
-            logInventoryAudit($pdo, 'inv_adjustments', $adjId, 'INVESTIGATION', "Sent for investigation");
+            logInventoryAudit($pdo, 'inv_adjustments', $adjId, 'UNDER_INVESTIGATION', "Sent for investigation");
+
+        } elseif ($action === 'resolve_investigation') {
+            if ($adj['status'] !== 'UNDER_INVESTIGATION') {
+                throw new Exception("Only adjustments under investigation can be resolved.");
+            }
+            $pdo->prepare("UPDATE inv_adjustments SET status = 'PENDING_APPROVAL' WHERE adjustment_id = ?")
+                ->execute([$adjId]);
+            logInventoryAudit($pdo, 'inv_adjustments', $adjId, 'PENDING_APPROVAL', "Investigation resolved — returned for approval");
         }
 
         $pdo->commit();
@@ -111,7 +128,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         <span class="badge bg-<?= $adj['adjustment_type'] === 'GAIN' ? 'success' : 'danger' ?>"><?= $adj['adjustment_type'] ?></span>
                     </div>
                     <div class="col-md-3"><strong>Status:</strong>
-                        <?php $sc = match($adj['status']) { 'APPROVED' => 'success', 'PENDING_APPROVAL' => 'warning', 'INVESTIGATION' => 'info', 'REJECTED' => 'danger', default => 'secondary' }; ?>
+                        <?php $sc = match($adj['status']) { 'APPROVED' => 'success', 'PENDING_APPROVAL' => 'warning', 'UNDER_INVESTIGATION' => 'info', 'REJECTED' => 'danger', 'COMPLETED' => 'primary', default => 'secondary' }; ?>
                         <span class="badge bg-<?= $sc ?>"><?= $adj['status'] ?></span>
                     </div>
                     <div class="col-md-3"><strong>Location:</strong> <?= htmlspecialchars($adj['location_code']) ?></div>
@@ -132,14 +149,21 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         </div>
     </div>
     <div class="col-md-4">
-        <?php if ($adj['status'] === 'PENDING_APPROVAL' && has_permission('approve_adjustment')): ?>
+        <?php if (in_array($adj['status'], ['PENDING_APPROVAL', 'UNDER_INVESTIGATION']) && has_permission('approve_adjustment')): ?>
         <form method="POST">
             <button type="submit" name="action" value="approve" class="btn btn-success w-100 btn-lg mb-2">
                 <i class="bi bi-check-circle"></i> Approve & Apply
             </button>
+            <?php if ($adj['status'] === 'PENDING_APPROVAL'): ?>
             <button type="submit" name="action" value="investigate" class="btn btn-info w-100 mb-2">
                 <i class="bi bi-search"></i> Send for Investigation
             </button>
+            <?php endif; ?>
+            <?php if ($adj['status'] === 'UNDER_INVESTIGATION'): ?>
+            <button type="submit" name="action" value="resolve_investigation" class="btn btn-secondary w-100 mb-2">
+                <i class="bi bi-arrow-counterclockwise"></i> Close Investigation &amp; Return for Approval
+            </button>
+            <?php endif; ?>
             <textarea name="rejection_reason" class="form-control mb-2" rows="2" placeholder="Rejection reason..."></textarea>
             <button type="submit" name="action" value="reject" class="btn btn-danger w-100">
                 <i class="bi bi-x-circle"></i> Reject
