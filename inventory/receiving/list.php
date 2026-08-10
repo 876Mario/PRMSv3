@@ -3,6 +3,7 @@ $REQUIRE_PERMISSION = 'receive_goods';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once __DIR__ . '/../check_setup.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/InventoryTransactionSearch.php';
 
 $search = trim($_GET['search'] ?? '');
 $status = $_GET['status'] ?? '';
@@ -13,9 +14,10 @@ $where = "1=1";
 $params = [];
 
 if ($search) {
-    $where .= " AND (g.grn_number LIKE ? OR g.po_reference LIKE ? OR u.full_name LIKE ? OR g.supplier_name LIKE ?)";
-    $s = "%$search%";
-    $params = array_merge($params, [$s, $s, $s, $s]);
+    $itemSearch = buildInventoryItemSearchExistsClause('g', 'grn_id', 'inv_grn_items', 'grn_id');
+    $where .= " AND (g.grn_number LIKE ? OR g.po_reference LIKE ? OR u.full_name LIKE ? OR g.supplier_name LIKE ? OR $itemSearch)";
+    $s = inventoryTransactionSearchPattern($search);
+    $params = array_merge($params, [$s, $s, $s, $s, $s, $s, $s]);
 }
 if ($status) { $where .= " AND g.status = ?"; $params[] = $status; }
 if ($dateFrom) { $where .= " AND g.received_date >= ?"; $params[] = $dateFrom; }
@@ -67,7 +69,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
 <!-- Filters -->
 <form class="row g-2 mb-3">
-    <div class="col-md-3"><input type="text" name="search" class="form-control" placeholder="Search GRN#, PO#, supplier..." value="<?= htmlspecialchars($search) ?>"></div>
+    <div class="col-md-3"><input type="text" name="search" class="form-control" placeholder="Search GRN#, PO#, supplier, item code or description..." value="<?= htmlspecialchars($search) ?>"></div>
     <div class="col-md-2">
         <select name="status" class="form-select">
             <option value="">All Status</option>

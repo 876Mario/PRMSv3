@@ -3,6 +3,7 @@ $REQUIRE_PERMISSION = 'manage_board_of_survey';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once __DIR__ . '/../check_setup.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/InventoryTransactionSearch.php';
 
 /* ── Schema guard ────────────────────────────────────────────────────────── */
 $bosReady = (bool) $pdo->query(
@@ -27,8 +28,12 @@ $where  = ['1=1'];
 $params = [];
 
 if ($search !== '') {
-    $s = "%$search%";
-    $where[]  = "(b.bos_number LIKE ? OR u.full_name LIKE ?)";
+    $s = inventoryTransactionSearchPattern($search);
+    $itemSearch = buildInventoryItemSearchExistsClause('b', 'bos_id', 'inv_bos_items', 'bos_id');
+    $where[]  = "(b.bos_number LIKE ? OR u.full_name LIKE ? OR $itemSearch)";
+    $params[] = $s;
+    $params[] = $s;
+    $params[] = $s;
     $params[] = $s;
     $params[] = $s;
 }
@@ -125,7 +130,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 <form class="row g-2 mb-3">
     <div class="col-md-5">
         <input type="text" name="search" class="form-control"
-               placeholder="Search BOS number or initiator…"
+               placeholder="Search BOS number, initiator, item code or description…"
                value="<?= htmlspecialchars($search) ?>">
     </div>
     <div class="col-md-3">
