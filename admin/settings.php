@@ -103,6 +103,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$arKey, $arVal, 'Asset Register field requirement toggle']);
         }
 
+        // ── Document Control Settings ─────────────────────────────────────────
+        if (isset($_POST['doc_ctrl_form_revision'])) {
+            $dcFormRevision   = trim($_POST['doc_ctrl_form_revision']);
+            $dcEffectiveDate  = !empty($_POST['doc_ctrl_effective_date']) ? $_POST['doc_ctrl_effective_date'] : null;
+            $dcDcrNumber      = trim($_POST['doc_ctrl_dcr_number']);
+
+            $stmt = $pdo->prepare("
+                INSERT INTO doc_ctrl_settings
+                    (id, form_revision, effective_date, dcr_number, updated_by_id, updated_by_name)
+                VALUES
+                    (1, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    form_revision   = VALUES(form_revision),
+                    effective_date  = VALUES(effective_date),
+                    dcr_number      = VALUES(dcr_number),
+                    updated_by_id   = VALUES(updated_by_id),
+                    updated_by_name = VALUES(updated_by_name)
+            ");
+            $stmt->execute([
+                $dcFormRevision,
+                $dcEffectiveDate,
+                $dcDcrNumber,
+                $_SESSION['user_id'] ?? null,
+                $_SESSION['full_name'] ?? null,
+            ]);
+        }
+
         // Log audit
         logAudit(
             $pdo,
@@ -189,6 +216,14 @@ foreach ($arFieldKeys as $arKey) {
     } catch (Exception $e) {
         $arFieldSettings[$arKey] = true;
     }
+}
+
+// Get current Document Control Settings
+try {
+    $stmt = $pdo->query("SELECT * FROM doc_ctrl_settings WHERE id = 1 LIMIT 1");
+    $docCtrl = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) {
+    $docCtrl = [];
 }
 
 // Now include header AFTER form processing and headers are sent
@@ -499,6 +534,65 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                                         <strong>Note:</strong> Disabling a field requirement means assets can be saved without that data.
                                         This may affect asset register completeness and compliance reporting.
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ═══ Document Control Settings ═══ -->
+                        <hr>
+                        <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-text me-2"></i> Document Control Settings</h5>
+                        <div class="mb-4">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body">
+                                    <p class="text-muted small mb-3">
+                                        These values are automatically embedded in every <strong>Print Request for Signing</strong>.
+                                        All three fields must be set before a print request can be generated.
+                                    </p>
+                                    <div class="row g-3">
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold" for="doc_ctrl_form_revision">
+                                                <i class="bi bi-pencil-square me-1"></i> Form Revision
+                                            </label>
+                                            <input type="text" class="form-control" id="doc_ctrl_form_revision"
+                                                   name="doc_ctrl_form_revision" maxlength="100"
+                                                   placeholder="e.g. Rev. 3"
+                                                   value="<?= htmlspecialchars($docCtrl['form_revision'] ?? '') ?>">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold" for="doc_ctrl_effective_date">
+                                                <i class="bi bi-calendar3 me-1"></i> Effective Date
+                                            </label>
+                                            <input type="date" class="form-control" id="doc_ctrl_effective_date"
+                                                   name="doc_ctrl_effective_date"
+                                                   value="<?= htmlspecialchars($docCtrl['effective_date'] ?? '') ?>">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold" for="doc_ctrl_dcr_number">
+                                                <i class="bi bi-hash me-1"></i> DCR Number
+                                            </label>
+                                            <input type="text" class="form-control" id="doc_ctrl_dcr_number"
+                                                   name="doc_ctrl_dcr_number" maxlength="100"
+                                                   placeholder="e.g. DCR-2024-001"
+                                                   value="<?= htmlspecialchars($docCtrl['dcr_number'] ?? '') ?>">
+                                        </div>
+                                    </div>
+                                    <?php if (!empty($docCtrl['updated_at']) && $docCtrl['updated_at'] !== '0000-00-00 00:00:00'): ?>
+                                    <div class="alert alert-secondary mt-3 mb-0 small d-flex align-items-center gap-2">
+                                        <i class="bi bi-clock-history"></i>
+                                        <span>
+                                            Last updated
+                                            <strong><?= htmlspecialchars(date('d M Y, g:i A', strtotime($docCtrl['updated_at']))) ?></strong>
+                                            <?php if (!empty($docCtrl['updated_by_name'])): ?>
+                                                by <strong><?= htmlspecialchars($docCtrl['updated_by_name']) ?></strong>
+                                            <?php endif; ?>
+                                        </span>
+                                    </div>
+                                    <?php else: ?>
+                                    <div class="alert alert-warning mt-3 mb-0 small">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>
+                                        <strong>Not yet configured.</strong> Print requests for signing cannot be generated until all three fields are saved.
+                                    </div>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>

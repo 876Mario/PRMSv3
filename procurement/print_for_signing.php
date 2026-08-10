@@ -53,6 +53,63 @@ if (!$r) {
     exit('Request not found');
 }
 
+// ── Document Control Settings ────────────────────────────────────────────────
+// If the request already has a stored snapshot, use it (historical integrity).
+// Otherwise fetch the current admin settings, validate them, and persist a snapshot.
+$docCtrlFormRevision  = $r['doc_ctrl_form_revision']  ?? null;
+$docCtrlEffectiveDate = $r['doc_ctrl_effective_date']  ?? null;
+$docCtrlDcrNumber     = $r['doc_ctrl_dcr_number']      ?? null;
+
+if (empty($docCtrlFormRevision) && empty($docCtrlEffectiveDate) && empty($docCtrlDcrNumber)) {
+    // No snapshot yet – fetch current settings
+    try {
+        $dcStmt = $pdo->query("SELECT * FROM doc_ctrl_settings WHERE id = 1 LIMIT 1");
+        $dc = $dcStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    } catch (Exception $e) {
+        $dc = [];
+    }
+
+    $missing = [];
+    if (empty($dc['form_revision']))  $missing[] = '<strong>Form Revision</strong>';
+    if (empty($dc['effective_date'])) $missing[] = '<strong>Effective Date</strong>';
+    if (empty($dc['dcr_number']))     $missing[] = '<strong>DCR Number</strong>';
+
+    if (!empty($missing)) {
+        http_response_code(422);
+        exit('Cannot generate Print Request for Signing: the following Document Control field(s) have not been configured by an administrator: '
+            . implode(', ', $missing)
+            . '. Please ask an Administrator to set these values in Admin &rsaquo; Settings &rsaquo; Document Control Settings.');
+    }
+
+    // Persist snapshot so future views of this request show the same values
+    try {
+        $snapStmt = $pdo->prepare("
+            UPDATE procurement_requests
+               SET doc_ctrl_form_revision  = ?,
+                   doc_ctrl_effective_date = ?,
+                   doc_ctrl_dcr_number     = ?
+             WHERE request_id = ?
+        ");
+        $snapStmt->execute([
+            $dc['form_revision'],
+            $dc['effective_date'],
+            $dc['dcr_number'],
+            $request_id,
+        ]);
+    } catch (Exception $e) {
+        // Non-fatal – continue generating the PDF even if snapshot save fails
+    }
+
+    $docCtrlFormRevision  = $dc['form_revision'];
+    $docCtrlEffectiveDate = $dc['effective_date'];
+    $docCtrlDcrNumber     = $dc['dcr_number'];
+}
+
+$docCtrlEffectiveDateFmt = !empty($docCtrlEffectiveDate)
+    ? date('d M Y', strtotime($docCtrlEffectiveDate))
+    : '';
+
+
 // Fetch request items
 try {
     $itemStmt = $pdo->prepare("
@@ -81,6 +138,9 @@ try {
     $procMethod = htmlspecialchars($r['procurement_method'] ?? 'SINGLE_SOURCE');
     $genDate = date('d M Y');
     $genTime = date('g:i A');
+    $dcFormRevisionHtml  = htmlspecialchars($docCtrlFormRevision ?? '');
+    $dcEffectiveDateHtml = htmlspecialchars($docCtrlEffectiveDateFmt);
+    $dcDcrNumberHtml     = htmlspecialchars($docCtrlDcrNumber ?? '');
 } catch (Exception $e) {
     http_response_code(500);
     exit('Error processing request data: ' . htmlspecialchars($e->getMessage()));
@@ -155,6 +215,31 @@ $html = <<<HTML
 <div style="padding:14px 20px 8px;border-bottom:2px solid #0b5e2b;">
   <h2 style="margin:0;font-size:18px;color:#0b5e2b;">PROCUREMENT REQUEST FOR APPROVAL</h2>
   <p style="margin:4px 0 0;font-size:9px;color:#6c757d;">Please print this document, review carefully, sign below, and upload the signed copy.</p>
+</div>
+
+<!-- Document Control Box -->
+<div style="padding:8px 20px;background:#fff8e1;border-bottom:2px solid #c9a227;">
+  <table width="100%" cellspacing="0" cellpadding="0">
+    <tr>
+      <td style="font-size:8px;text-transform:uppercase;color:#7b5e00;font-weight:700;letter-spacing:0.5px;padding-bottom:4px;" colspan="3">
+        Document Control Information
+      </td>
+    </tr>
+    <tr>
+      <td width="33%" style="font-size:10px;padding:3px 8px 3px 0;">
+        <span style="color:#6c757d;font-weight:600;">Form Revision:</span>&nbsp;
+        <strong style="color:#333;">$dcFormRevisionHtml</strong>
+      </td>
+      <td width="33%" style="font-size:10px;padding:3px 8px;">
+        <span style="color:#6c757d;font-weight:600;">Effective Date:</span>&nbsp;
+        <strong style="color:#333;">$dcEffectiveDateHtml</strong>
+      </td>
+      <td width="34%" style="font-size:10px;padding:3px 0 3px 8px;">
+        <span style="color:#6c757d;font-weight:600;">DCR Number:</span>&nbsp;
+        <strong style="color:#333;">$dcDcrNumberHtml</strong>
+      </td>
+    </tr>
+  </table>
 </div>
 
 <!-- Request Information Section -->
