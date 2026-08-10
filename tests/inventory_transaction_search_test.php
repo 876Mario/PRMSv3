@@ -96,4 +96,12 @@ assertSameValue(['TR-001', 'TR-002', 'TR-003'], searchTransfers($pdo, ''), 'Empt
 assertSameValue(['TR-001', 'TR-003'], searchTransfers($pdo, '', 'COMPLETED'), 'Empty search should still allow other filters.');
 assertSameValue(['TR-001', 'TR-003'], searchTransfers($pdo, 'Alice'), 'Existing requester search should still work.');
 
+$invalidIdentifierThrown = false;
+try {
+    buildInventoryItemSearchExistsClause('t;DROP TABLE inv_items', 'transfer_id', 'inv_transfer_items', 'transfer_id');
+} catch (InvalidArgumentException $e) {
+    $invalidIdentifierThrown = true;
+}
+assertSameValue(true, $invalidIdentifierThrown, 'Invalid SQL identifiers should be rejected.');
+
 echo "Inventory transaction search tests passed.\n";
