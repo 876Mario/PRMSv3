@@ -183,6 +183,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $stmt->execute($params);
 
+        // For STANDARD cost valuation, keep inv_stock.unit_cost in sync with standard_cost
+        // so that the total stock value calculation (quantity × unit_cost) is correct.
+        $newStdCost = (float) ($_POST['standard_cost'] ?? 0);
+        if (($_POST['valuation_method'] ?? 'AVERAGE') === 'STANDARD' && $newStdCost > 0) {
+            $pdo->prepare("UPDATE inv_stock SET unit_cost = ? WHERE item_id = ?")
+                ->execute([$newStdCost, $itemId]);
+        }
+
         // Update risk classes
         $pdo->prepare("DELETE FROM inv_item_risk_classes WHERE item_id = ?")->execute([$itemId]);
         if (!empty($_POST['risk_classes'])) {
