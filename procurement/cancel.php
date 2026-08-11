@@ -6,7 +6,7 @@
  * Cancellation requires a mandatory reason, which is stored in the
  * audit trail/history, and relevant stakeholders are notified.
  */
-$REQUIRE_PERMISSION = 'view_requests';
+$REQUIRE_PERMISSION = 'cancel_requests';
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/page_guard.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
