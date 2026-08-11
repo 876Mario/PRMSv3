@@ -5,6 +5,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/pagination.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/workflow.php";
+
+/* Preserve current list URL (with filters/pagination) for post-action return */
+$_SESSION['last_list_url'] = '/procurement/list.php' . (!empty($_SERVER['QUERY_STRING']) ? '?' . $_SERVER['QUERY_STRING'] : '');
 // Handle delete request
 if (
     isset($_POST['delete_request_id']) &&
@@ -92,14 +95,25 @@ if (isset($_SESSION['role_name']) && $_SESSION['role_name'] === 'Requestor') {
     $params[':requestor_id'] = $_SESSION['user_id'];
 }
 
-// Branch heads: restrict to their own branch (HOD sees all)
+// Branch-based visibility
 $currentRole = $_SESSION['role'] ?? $_SESSION['role_name'] ?? '';
-if ($currentRole === 'Director HRM&A') {
-    $where[] = "pr.branch_id = :branch_filter";
-    $params[':branch_filter'] = 5; // HRM&A
-} elseif ($currentRole === 'Deputy Government Chemist') {
+$currentUserId = (int)($_SESSION['user_id'] ?? 0);
+
+// Director HRM&A: monitoring role — sees ALL branches (no branch restriction).
+// Deputy Government Chemist: restricted to their own branch.
+if ($currentRole === 'Deputy Government Chemist') {
     $where[] = "pr.branch_id = :branch_filter";
     $params[':branch_filter'] = 6; // Analytical & Advisory
+}
+
+// Draft-visibility server-side enforcement:
+// Only the creator, oversight roles, or monitoring roles may see DRAFT requests.
+// All other roles see only non-draft requests.
+$draftViewerRoles = ['HOD', 'Branch Head', 'Director HRM&A', 'Admin', 'SuperAdmin'];
+if (!in_array($currentRole, $draftViewerRoles, true)) {
+    // Non-oversight roles: exclude DRAFT unless they are the creator
+    $where[] = "(pr.status != 'DRAFT' OR pr.created_by = :draft_owner)";
+    $params[':draft_owner'] = $currentUserId;
 }
 
 /* REQUEST STATUS FILTER (CORRECT) */

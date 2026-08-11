@@ -112,7 +112,7 @@ try {
     $pdo->commit();
 
     $_SESSION['success'] = "Procurement request declined and requestor notified.";
-    header("Location: /procurement/view.php?id=" . $id);
+    header("Location: /procurement/list.php");
     exit;
 
 } catch (Exception $e) {

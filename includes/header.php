@@ -120,6 +120,132 @@ if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
         <span class="topbar-user-role"><?= htmlspecialchars($_SESSION['role_name'] ?? '') ?></span>
       </div>
     </div>
+    <!-- Notification Bell -->
+    <div id="prms-notif-bell" style="position:relative; margin-right:0.25rem;">
+      <button id="prms-notif-btn"
+              onclick="prmsToggleNotifDropdown()"
+              style="background:none; border:none; cursor:pointer; color:#ccc; font-size:1.25rem; padding:0.25rem 0.5rem; position:relative;"
+              title="Notifications"
+              aria-label="Notifications">
+        <i class="bi bi-bell-fill"></i>
+        <span id="prms-notif-badge"
+              style="display:none; position:absolute; top:-4px; right:-4px; background:#e74c3c; color:#fff; font-size:0.6rem; font-weight:700; border-radius:50%; min-width:16px; height:16px; line-height:16px; text-align:center; padding:0 3px;">0</span>
+      </button>
+      <div id="prms-notif-dropdown"
+           style="display:none; position:absolute; right:0; top:calc(100% + 6px); width:360px; background:#fff; border:1px solid #e0e0e0; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); z-index:9999; overflow:hidden;">
+        <div style="padding:0.75rem 1rem; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between;">
+          <span style="font-weight:700; font-size:0.9rem; color:#333;">Notifications</span>
+          <button onclick="prmsMarkAllRead()" style="background:none; border:none; cursor:pointer; font-size:0.75rem; color:#667eea; font-weight:600;">Mark all read</button>
+        </div>
+        <div id="prms-notif-list" style="max-height:380px; overflow-y:auto;"></div>
+        <div style="padding:0.6rem 1rem; border-top:1px solid #eee; text-align:center;">
+          <small style="color:#999; font-size:0.75rem;">Showing latest 20 notifications</small>
+        </div>
+      </div>
+    </div>
+    <script>
+    (function () {
+      var notifOpen = false;
+      window.prmsToggleNotifDropdown = function () {
+        var dd = document.getElementById('prms-notif-dropdown');
+        notifOpen = !notifOpen;
+        dd.style.display = notifOpen ? 'block' : 'none';
+        if (notifOpen) { prmsLoadNotifications(); }
+      };
+      document.addEventListener('click', function (e) {
+        var bell = document.getElementById('prms-notif-bell');
+        if (bell && !bell.contains(e.target)) {
+          document.getElementById('prms-notif-dropdown').style.display = 'none';
+          notifOpen = false;
+        }
+      });
+
+      function prmsLoadNotifications() {
+        fetch('/api/notifications.php?action=list&limit=20')
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            var list = document.getElementById('prms-notif-list');
+            var items = data.notifications || [];
+            if (!items.length) {
+              list.innerHTML = '<div style="padding:2rem; text-align:center; color:#aaa; font-size:0.85rem;"><i class="bi bi-check2-circle" style="font-size:1.5rem; color:#43e97b; display:block; margin-bottom:0.5rem;"></i>All caught up!</div>';
+              return;
+            }
+            list.innerHTML = items.map(function (n) {
+              var icon = prmsNotifIcon(n.type);
+              var unreadStyle = n.is_read == '0' ? 'background:#f0f4ff;' : '';
+              var age = prmsAge(n.created_at);
+              return '<a href="' + (n.action_url || '#') + '" onclick="prmsMarkRead(' + n.id + ', this)" ' +
+                'style="display:block; padding:0.75rem 1rem; border-bottom:1px solid #f0f0f0; text-decoration:none; color:inherit; ' + unreadStyle + '">' +
+                '<div style="display:flex; align-items:flex-start; gap:0.6rem;">' +
+                '<span style="font-size:1.1rem; flex-shrink:0;">' + icon + '</span>' +
+                '<div style="flex:1; min-width:0;">' +
+                '<div style="font-size:0.82rem; font-weight:' + (n.is_read == '0' ? '700' : '400') + '; color:#333; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + prmsEsc(n.title) + '</div>' +
+                (n.body ? '<div style="font-size:0.75rem; color:#666; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + prmsEsc(n.body) + '</div>' : '') +
+                '<div style="font-size:0.7rem; color:#aaa; margin-top:3px;">' + age + '</div>' +
+                '</div>' +
+                (n.is_read == '0' ? '<span style="width:8px; height:8px; background:#667eea; border-radius:50%; flex-shrink:0; margin-top:4px;"></span>' : '') +
+                '</div></a>';
+            }).join('');
+          })
+          .catch(function () {});
+      }
+
+      function prmsNotifIcon(type) {
+        var icons = {
+          approval_needed:   '🔔',
+          return_correction: '↩️',
+          clarification:     '❓',
+          rejection:         '❌',
+          cancellation:      '🚫',
+          draft_ready:       '📝',
+          submission:        '✅'
+        };
+        return icons[type] || '🔔';
+      }
+
+      function prmsAge(dt) {
+        var d = new Date(dt.replace(' ', 'T'));
+        var diff = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (diff < 60)   return diff + 's ago';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+        return Math.floor(diff / 86400) + 'd ago';
+      }
+
+      function prmsEsc(s) {
+        var d = document.createElement('div');
+        d.textContent = s || '';
+        return d.innerHTML;
+      }
+
+      window.prmsMarkRead = function (id, el) {
+        fetch('/api/notifications.php?action=mark_read&id=' + id, { method: 'POST' })
+          .then(function () { prmsRefreshBadge(); });
+      };
+
+      window.prmsMarkAllRead = function () {
+        fetch('/api/notifications.php?action=mark_all_read', { method: 'POST' })
+          .then(function () { prmsRefreshBadge(); prmsLoadNotifications(); });
+      };
+
+      function prmsRefreshBadge() {
+        fetch('/api/notifications.php?action=count')
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            var badge = document.getElementById('prms-notif-badge');
+            if (!badge) return;
+            var count = d.unread || 0;
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.style.display = count > 0 ? 'inline-block' : 'none';
+          })
+          .catch(function () {});
+      }
+
+      // Initial badge load + poll every 60 s
+      prmsRefreshBadge();
+      setInterval(prmsRefreshBadge, 60000);
+    })();
+    </script>
     <a href="/auth/logout.php" class="topbar-logout-btn" title="Sign out">
       <i class="bi bi-box-arrow-right"></i>
     </a>

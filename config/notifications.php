@@ -8,6 +8,11 @@ require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/app.php';
 
+/* Load in-app notification service (always available, independent of email toggle) */
+if (!class_exists('NotificationService')) {
+    require_once __DIR__ . '/../services/NotificationService.php';
+}
+
 /**
  * HTML-escape a value for safe insertion into email templates.
  */
@@ -526,6 +531,19 @@ HTML;
         error_log("NOTIFY: Sending email to $approverEmail with subject: $subject");
         $result = sendMail($approverEmail, $subject, $html);
         error_log("NOTIFY: Email send result: " . ($result ? "SUCCESS" : "FAILED"));
+
+        /* In-app notification for approver */
+        NotificationService::createNotification($approverId, NotificationService::TYPE_APPROVAL_NEEDED, [
+            'title'          => "Approval Required: {$request['request_number']}",
+            'body'           => "Your approval is needed at stage: {$stageLabel}. Requestor: " . ($request['full_name'] ?? 'N/A'),
+            'request_id'     => $requestId,
+            'request_ref'    => $request['request_number'],
+            'action_url'     => "/procurement/approve.php?id={$requestId}",
+            'stage'          => $stage,
+            'requestor_name' => $request['full_name'] ?? null,
+            'priority'       => 'high',
+        ]);
+
         return $result;
 
     } catch (Exception $e) {
@@ -739,6 +757,19 @@ HTML;
         foreach ($users as $user) {
             if (!empty($user['email'])) {
                 $sent = sendMail($user['email'], $subject, $html) || $sent;
+            }
+            /* In-app notification for next approver */
+            if (!empty($user['user_id'])) {
+                NotificationService::createNotification((int)$user['user_id'], NotificationService::TYPE_APPROVAL_NEEDED, [
+                    'title'          => "Action Required: {$request['request_number']}",
+                    'body'           => "Stage {$completedStage} completed. Your approval ({$stageLabel}) is now needed.",
+                    'request_id'     => $requestId,
+                    'request_ref'    => $request['request_number'],
+                    'action_url'     => "/procurement/approve.php?id={$requestId}",
+                    'stage'          => $nextApproval['role'],
+                    'requestor_name' => $request['requestor_name'] ?? null,
+                    'priority'       => 'high',
+                ]);
             }
         }
         return $sent;
@@ -1404,17 +1435,17 @@ function notifyRequestDeclined(int $requestId, int $requestorId, string $decline
 </html>
 HTML;
 
+        /* In-app notification for requestor */
+        NotificationService::createNotification($requestorId, NotificationService::TYPE_REJECTION, [
+            'title'          => "Request Declined: {$request['request_number']}",
+            'body'           => "Reason: {$declineReason}",
+            'request_id'     => $requestId,
+            'request_ref'    => $request['request_number'],
+            'action_url'     => "/procurement/view.php?id={$requestId}",
+            'requestor_name' => $request['requestor_name'] ?? null,
+        ]);
+
         return sendMail($email, $subject, $html);
-
-    } catch (Exception $e) {
-        error_log("Notify request declined error: {$e->getMessage()}");
-        return false;
-    }
-}
-
-/**
- * Notify new user about their account creation and provide login information
- */
 function notifyNewUser(int $userId, string $email, string $fullName, string $roleName): bool {
     global $pdo;
 
@@ -2649,15 +2680,22 @@ function notifyRequestorSubmissionConfirmed(int $requestId): bool {
 </div></body></html>
 HTML;
 
-        return sendMail($request['email'], $subject, $html);
-    } catch (Exception $e) {
-        error_log("notifyRequestorSubmissionConfirmed error: {$e->getMessage()}");
-        return false;
-    }
-}
+        /* In-app submission confirmation for requestor */
+        $requestorId = (int)($pdo->query(
+            "SELECT created_by FROM procurement_requests WHERE request_id = {$requestId} LIMIT 1"
+        )->fetchColumn() ?: 0);
+        if ($requestorId > 0) {
+            NotificationService::createNotification($requestorId, NotificationService::TYPE_SUBMISSION, [
+                'title'       => "Request Submitted: {$request['request_number']}",
+                'body'        => "Your {$requestTypeLabel} request has been submitted and is pending approval.",
+                'request_id'  => $requestId,
+                'request_ref' => $request['request_number'],
+                'action_url'  => $viewUrl,
+                'stage'       => 'SUBMITTED',
+            ]);
+        }
 
-/**
- * Check if RFQ auto-email distribution is enabled
+        return sendMail($request['email'], $subject, $html);
  * Configurable by Procurement/administrators via Admin → Settings
  */
 function rfqAutoEmailEnabled(): bool {
@@ -2687,6 +2725,7 @@ function notifyRequestCancelled(int $requestId, string $cancelReason, string $pr
     try {
         $stmt = $pdo->prepare("
             SELECT pr.request_number, pr.estimated_value, pr.currency, pr.request_type, pr.description,
+                   pr.created_by AS requestor_id,
                    u.full_name as requestor_name, u.email as requestor_email,
                    c.full_name as cancelled_by_name, b.branch_name
             FROM procurement_requests pr
@@ -2767,6 +2806,18 @@ HTML;
         // Requestor
         if (!empty($request['requestor_email'])) {
             $sent = sendMail($request['requestor_email'], $subject, $html) || $sent;
+        }
+
+        // In-app notification for requestor
+        if (!empty($request['requestor_id'])) {
+            NotificationService::createNotification((int)$request['requestor_id'], NotificationService::TYPE_CANCELLATION, [
+                'title'       => "Request Cancelled: {$request['request_number']}",
+                'body'        => "Reason: {$cancelReason}",
+                'request_id'  => $requestId,
+                'request_ref' => $request['request_number'],
+                'action_url'  => "/procurement/view.php?id={$requestId}",
+                'stage'       => $previousStatus,
+            ]);
         }
 
         // Procurement officers and branch heads (HOD)

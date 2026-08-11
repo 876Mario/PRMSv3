@@ -286,7 +286,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         modalPop(
             "Request Rejected",
             "Procurement request has been declined.",
-            "/procurement/view.php?id=" . $id,
+            "/procurement/list.php",
             "warning"
         );
         exit;
