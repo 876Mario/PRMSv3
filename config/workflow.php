@@ -1248,4 +1248,67 @@ function applyNonPoWorkflow(PDO $pdo, int $requestId): void {
     );
 }
 
+// =============================================================================
+// Draft-visibility helpers
+// =============================================================================
+
+/**
+ * Roles that may see ALL draft requests regardless of who created them.
+ * Monitoring roles (Director HRM&A) are included here so they can view
+ * organisation-wide drafts without being able to act on them.
+ */
+function draftViewerRoles(): array {
+    return ['HOD', 'Branch Head', 'Director HRM&A', 'Admin', 'SuperAdmin'];
+}
+
+/**
+ * Return true if the currently authenticated user is allowed to view a
+ * specific request that is still in DRAFT status.
+ *
+ * Access rules:
+ *  1. The officer who created the draft (own draft).
+ *  2. Designated oversight roles: HOD, Branch Head, Director HRM&A,
+ *     Admin, SuperAdmin.
+ * All other users (Procurement Officers, Finance Officers, etc.) are denied.
+ *
+ * @param array $request  Row from procurement_requests (must include 'status' and 'created_by').
+ * @return bool
+ */
+function canViewDraft(array $request): bool {
+    if (strtoupper($request['status'] ?? '') !== 'DRAFT') {
+        // Not a draft — visibility is governed by other rules.
+        return true;
+    }
+
+    $userRole = $_SESSION['role_name'] ?? '';
+    $userId   = (int)($_SESSION['user_id'] ?? 0);
+
+    // Rule 1 – own draft
+    if ($userId > 0 && (int)$request['created_by'] === $userId) {
+        return true;
+    }
+
+    // Rule 2 – oversight / monitoring roles
+    if (in_array($userRole, draftViewerRoles(), true)) {
+        return true;
+    }
+
+    return false;
+}
+
+// =============================================================================
+// Monitoring-role helper
+// =============================================================================
+
+/**
+ * Return true when the given role is a read-only monitoring role.
+ *
+ * Monitoring roles can VIEW all requests (including those from other units)
+ * but must NOT be granted edit, approve, cancel, or action capabilities
+ * solely because of this status.
+ */
+function isMonitoringRole(string $role): bool {
+    return in_array($role, ['Director HRM&A'], true);
+}
+
 ?>

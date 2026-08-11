@@ -49,7 +49,7 @@ $requestStmt = $pdo->prepare("
     WHERE ra.entity_type = 'REQUEST'
       AND ra.role = ?
       AND ra.status = 'pending'
-      AND UPPER(pr.status) <> 'PAUSED'
+      AND UPPER(pr.status) NOT IN ('DRAFT','CANCELLED','PAUSED','DECLINED','COMPLETED','AWARDED')
     ORDER BY ra.created_at ASC
 ");
 $requestStmt->execute([$userRole]);

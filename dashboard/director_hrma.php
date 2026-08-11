@@ -25,7 +25,7 @@ $stmt = $pdo->prepare("
     LEFT JOIN branches b ON pr.branch_id = b.branch_id
     LEFT JOIN request_approvals ra ON pr.request_id = ra.request_id AND ra.status = 'pending'
     WHERE UPPER(pr.status) = 'SUBMITTED'
-    AND b.branch_id = 5  /* HRM&A Branch */
+    AND b.branch_id = 5  /* HRM&A Branch — Director HRM&A is the designated approver */
     AND ra.role = 'Director HRM&A'
     AND ra.status = 'pending'
     ORDER BY pr.created_at ASC
@@ -92,6 +92,75 @@ $branchPending = count($branchRequests);
 
         <!-- Pending Actions Widget -->
         <div style="display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+            <?php
+            /* ─── Organisation-wide monitoring panel (read-only) ─── */
+            $monitorStmt = $pdo->prepare("
+                SELECT
+                    pr.request_id,
+                    pr.request_number,
+                    pr.request_type,
+                    pr.status,
+                    pr.estimated_value,
+                    pr.currency,
+                    pr.created_at,
+                    b.branch_name,
+                    u.full_name AS requestor_name
+                FROM procurement_requests pr
+                LEFT JOIN branches b ON pr.branch_id = b.branch_id
+                LEFT JOIN users   u ON pr.created_by = u.user_id
+                WHERE UPPER(pr.status) NOT IN ('COMPLETED','CANCELLED','DECLINED')
+                ORDER BY pr.created_at DESC
+                LIMIT 50
+            ");
+            $monitorStmt->execute();
+            $monitorRows = $monitorStmt->fetchAll(PDO::FETCH_ASSOC);
+            ?>
+            <?php if (!empty($monitorRows)): ?>
+            <div style="background: white; border-radius: 12px; border: 1px solid #e0e0e0; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 2px solid #e0e0e0;">
+                    <h6 style="margin: 0; font-size: 1rem; font-weight: 700; color: #333;">
+                        <i class="bi bi-eye"></i> Organisation-wide Request Monitoring
+                        <span style="background: #6c757d; color: white; padding: 0.25rem 0.6rem; border-radius: 20px; font-size: 0.75rem; margin-left: 0.5rem;"><?= count($monitorRows) ?></span>
+                        <small style="font-weight:400; color:#999; margin-left:0.5rem; font-size:0.75rem;">(Read-only — monitoring access only)</small>
+                    </h6>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+                        <thead style="background: #f5f5f5;">
+                            <tr>
+                                <th style="padding: 0.6rem 0.9rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Ref #</th>
+                                <th style="padding: 0.6rem 0.9rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Category</th>
+                                <th style="padding: 0.6rem 0.9rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Requestor</th>
+                                <th style="padding: 0.6rem 0.9rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Unit</th>
+                                <th style="padding: 0.6rem 0.9rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Stage</th>
+                                <th style="padding: 0.6rem 0.9rem; text-align: right; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Value</th>
+                                <th style="padding: 0.6rem 0.9rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Date</th>
+                                <th style="padding: 0.6rem 0.9rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">View</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($monitorRows as $mr): ?>
+                            <tr style="border-bottom: 1px solid #f0f0f0;">
+                                <td style="padding: 0.6rem 0.9rem; font-weight: 600; color: #333;"><?= htmlspecialchars($mr['request_number']) ?></td>
+                                <td style="padding: 0.6rem 0.9rem; color: #666;"><?= htmlspecialchars($mr['request_type']) ?></td>
+                                <td style="padding: 0.6rem 0.9rem; color: #666;"><?= htmlspecialchars($mr['requestor_name'] ?? 'N/A') ?></td>
+                                <td style="padding: 0.6rem 0.9rem; color: #666;"><?= htmlspecialchars($mr['branch_name'] ?? 'N/A') ?></td>
+                                <td style="padding: 0.6rem 0.9rem;"><?= statusBadge($mr['status']) ?></td>
+                                <td style="padding: 0.6rem 0.9rem; text-align: right; color: #333;"><?= htmlspecialchars(normalizeCurrency($mr['currency'] ?? 'JMD')) ?> <?= number_format((float)$mr['estimated_value'], 2) ?></td>
+                                <td style="padding: 0.6rem 0.9rem; text-align: center; color: #999; font-size: 0.8rem;"><?= date('d M Y', strtotime($mr['created_at'])) ?></td>
+                                <td style="padding: 0.6rem 0.9rem; text-align: center;">
+                                    <a href="/procurement/view.php?id=<?= $mr['request_id'] ?>"
+                                       style="background: #6c757d; color: white; padding: 0.3rem 0.65rem; border-radius: 6px; text-decoration: none; font-size: 0.75rem; font-weight: 600;">
+                                       View
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <?php endif; ?>
             <?php include $_SERVER['DOCUMENT_ROOT'].'/dashboard/widgets/pending_actions.php'; ?>
         </div>
 

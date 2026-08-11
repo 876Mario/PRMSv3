@@ -113,7 +113,7 @@ try {
     notifyRequestCancelled((int)$id, $reason, $previousStatus);
 
     $_SESSION['success'] = "Request cancelled and stakeholders notified.";
-    header("Location: /procurement/view.php?id=" . $id);
+    header("Location: /procurement/list.php");
     exit;
 
 } catch (Exception $e) {

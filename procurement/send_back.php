@@ -103,9 +103,24 @@ try {
 
     $pdo->commit();
 
+    /* In-app notification to requestor */
+    require_once $_SERVER['DOCUMENT_ROOT'].'/services/NotificationService.php';
+    NotificationService::createNotification((int)$request['created_by'], \NotificationService::TYPE_RETURN_CORRECTION, [
+        'title'       => "Request Returned for Edit: {$request['request_number']}",
+        'body'        => "Returned by {$currentRole}. Reason: " . mb_substr($reason, 0, 200),
+        'request_id'  => $id,
+        'request_ref' => $request['request_number'],
+        'action_url'  => "/procurement/edit.php?id={$id}",
+        'stage'       => $currentStatus,
+    ]);
+
+    // Redirect back to wherever the user came from (list or dashboard)
+    $returnUrl = $_SESSION['last_list_url'] ?? '/procurement/list.php';
+    unset($_SESSION['last_list_url']);
+
     pop(
         'Request sent back for editing.',
-        '/procurement/edit.php?id=' . $id,
+        $returnUrl,
         1500,
         'success'
     );
