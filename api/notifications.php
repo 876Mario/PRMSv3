@@ -12,7 +12,26 @@
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/auth.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
-require_once $_SERVER['DOCUMENT_ROOT'] . '/services/NotificationService.php';
+
+// Load NotificationService with fallback for missing file
+if (!class_exists('NotificationService')) {
+    $notificationServicePath = $_SERVER['DOCUMENT_ROOT'] . '/services/NotificationService.php';
+    if (file_exists($notificationServicePath)) {
+        require_once $notificationServicePath;
+    } else {
+        // Create stub class to prevent fatal errors
+        class NotificationService {
+            public static function getUnread(int $userId): array { return []; }
+            public static function getAll(int $userId, int $limit = 50): array { return []; }
+            public static function countUnread(int $userId): int { return 0; }
+            public static function createNotification(int $userId, string $type, array $data): bool { return false; }
+            public static function markAsRead(int $notificationId): bool { return false; }
+            public static function markAllAsRead(int $userId): bool { return false; }
+            public static function deleteNotification(int $notificationId): bool { return false; }
+        }
+        error_log("Warning: NotificationService.php not found at {$notificationServicePath}. Using stub class.");
+    }
+}
 
 header('Content-Type: application/json; charset=utf-8');
 

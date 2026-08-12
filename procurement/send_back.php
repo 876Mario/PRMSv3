@@ -104,15 +104,40 @@ try {
     $pdo->commit();
 
     /* In-app notification to requestor */
-    require_once $_SERVER['DOCUMENT_ROOT'].'/services/NotificationService.php';
-    NotificationService::createNotification((int)$request['created_by'], \NotificationService::TYPE_RETURN_CORRECTION, [
-        'title'       => "Request Returned for Edit: {$request['request_number']}",
-        'body'        => "Returned by {$currentRole}. Reason: " . mb_substr($reason, 0, 200),
-        'request_id'  => $id,
-        'request_ref' => $request['request_number'],
-        'action_url'  => "/procurement/edit.php?id={$id}",
-        'stage'       => $currentStatus,
-    ]);
+    if (!class_exists('NotificationService')) {
+        $notificationServicePath = $_SERVER['DOCUMENT_ROOT'].'/services/NotificationService.php';
+        if (file_exists($notificationServicePath)) {
+            require_once $notificationServicePath;
+        } else {
+            // Create stub class to prevent fatal errors
+            class NotificationService {
+                const TYPE_APPROVAL_NEEDED  = 'approval_needed';
+                const TYPE_RETURN_CORRECTION= 'return_correction';
+                const TYPE_CLARIFICATION    = 'clarification';
+                const TYPE_REJECTION        = 'rejection';
+                const TYPE_CANCELLATION     = 'cancellation';
+                const TYPE_DRAFT_READY      = 'draft_ready';
+                const TYPE_SUBMISSION       = 'submission';
+                public static function createNotification(int $userId, string $type, array $data): bool { return false; }
+                public static function getUnreadCount(int $userId): int { return 0; }
+                public static function getNotifications(int $userId, int $limit = 10): array { return []; }
+                public static function markAsRead(int $notificationId): bool { return false; }
+                public static function deleteNotification(int $notificationId): bool { return false; }
+            }
+            error_log("Warning: NotificationService.php not found at {$notificationServicePath}. Using stub class.");
+        }
+    }
+    
+    if (class_exists('NotificationService')) {
+        NotificationService::createNotification((int)$request['created_by'], \NotificationService::TYPE_RETURN_CORRECTION, [
+            'title'       => "Request Returned for Edit: {$request['request_number']}",
+            'body'        => "Returned by {$currentRole}. Reason: " . mb_substr($reason, 0, 200),
+            'request_id'  => $id,
+            'request_ref' => $request['request_number'],
+            'action_url'  => "/procurement/edit.php?id={$id}",
+            'stage'       => $currentStatus,
+        ]);
+    }
 
     // Redirect back to wherever the user came from (list or dashboard)
     $returnUrl = $_SESSION['last_list_url'] ?? '/procurement/list.php';
