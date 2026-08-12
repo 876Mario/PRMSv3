@@ -60,6 +60,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception("Item Code '$newCode' is already in use. Please choose a different code.");
         }
 
+        /* Validate initial quantity and location */
+        $initialQty = max(0, (float) ($_POST['initial_quantity'] ?? 1));
+        if ($initialQty == 0) {
+            throw new Exception("Initial quantity must be greater than 0.");
+        }
+        
+        $initialLocId = (int) ($_POST['initial_location_id'] ?? 0);
+        $validLocationId = false;
+        foreach ($locations as $loc) {
+            if ($loc['location_id'] == $initialLocId) {
+                $validLocationId = true;
+                break;
+            }
+        }
+        if (!$validLocationId) {
+            throw new Exception("Invalid location selected.");
+        }
+
         /* Copy inv_items record */
         $ins = $pdo->prepare("
             INSERT INTO inv_items (
@@ -197,23 +215,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        /* Create initial stock record with quantity = 1 */
-        $initialQty = max(0, (float) ($_POST['initial_quantity'] ?? 1));
-        $initialLocId = (int) ($_POST['initial_location_id'] ?? $defaultLocationId);
-        if ($initialQty > 0 && $initialLocId > 0) {
-            $stockId = increaseStock($pdo, $newItemId, $initialLocId, $initialQty, ['unit_cost' => (float)($_POST['standard_cost'] ?? $source['standard_cost'] ?? 0)]);
-            recordStockTransaction($pdo, [
-                'transaction_type' => 'RECEIPT',
-                'item_id'          => $newItemId,
-                'stock_id'         => $stockId,
-                'location_id'      => $initialLocId,
-                'quantity'         => $initialQty,
-                'unit_cost'        => (float) ($_POST['standard_cost'] ?? $source['standard_cost'] ?? 0),
-                'notes'            => 'Initial stock set on item duplication from item #' . $sourceId,
-            ]);
-            logInventoryAudit($pdo, 'inv_stock', $newItemId, 'OPENING_BALANCE',
-                "Initial stock of $initialQty set at location ID $initialLocId for duplicated item from #$sourceId");
-        }
+        /* Create initial stock record with user-specified quantity (defaults to 1) */
+        $stockId = increaseStock($pdo, $newItemId, $initialLocId, $initialQty, ['unit_cost' => (float)($_POST['standard_cost'] ?? $source['standard_cost'] ?? 0)]);
+        recordStockTransaction($pdo, [
+            'transaction_type' => 'RECEIPT',
+            'item_id'          => $newItemId,
+            'stock_id'         => $stockId,
+            'location_id'      => $initialLocId,
+            'quantity'         => $initialQty,
+            'unit_cost'        => (float) ($_POST['standard_cost'] ?? $source['standard_cost'] ?? 0),
+            'notes'            => 'Initial stock set on item duplication from item #' . $sourceId,
+        ]);
+        logInventoryAudit($pdo, 'inv_stock', $newItemId, 'OPENING_BALANCE',
+            "Initial stock of $initialQty set at location ID $initialLocId for duplicated item from #$sourceId");
 
         logInventoryAudit($pdo, 'inv_items', $newItemId, 'CREATE',
             "Item duplicated from #{$sourceId} ({$source['item_code']}): new code $newCode - $newName");
@@ -311,9 +325,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Initial Quantity <span class="text-danger">*</span></label>
-                    <input type="number" name="initial_quantity" class="form-control" required step="0.01" min="0" 
+                    <input type="number" name="initial_quantity" class="form-control" required step="0.01" min="0.01" 
                            value="<?= htmlspecialchars($_POST['initial_quantity'] ?? '1') ?>">
-                    <small class="text-muted">Defaults to 1 if not specified</small>
+                    <small class="text-muted">Must be greater than 0. Defaults to 1.</small>
                 </div>
             </div>
 
