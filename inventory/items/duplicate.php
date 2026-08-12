@@ -302,7 +302,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <select name="initial_location_id" class="form-select" required>
                         <option value="">-- Select Location --</option>
                         <?php foreach ($locations as $loc): ?>
-                        <option value="<?= $loc['location_id'] ?>" <?= ($loc['location_id'] == $_POST['initial_location_id'] ?? $defaultLocationId) ? 'selected' : '' ?>>
+                        <option value="<?= $loc['location_id'] ?>" <?= $loc['location_id'] == ($_POST['initial_location_id'] ?? $defaultLocationId) ? 'selected' : '' ?>>
                             <?= htmlspecialchars($loc['location_code']) ?> — <?= htmlspecialchars($loc['display_name']) ?>
                         </option>
                         <?php endforeach; ?>
