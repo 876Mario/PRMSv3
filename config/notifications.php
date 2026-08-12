@@ -1446,6 +1446,13 @@ HTML;
         ]);
 
         return sendMail($email, $subject, $html);
+
+    } catch (Exception $e) {
+        error_log("Notify request declined error: {$e->getMessage()}");
+        return false;
+    }
+}
+
 function notifyNewUser(int $userId, string $email, string $fullName, string $roleName): bool {
     global $pdo;
 
@@ -2696,8 +2703,16 @@ HTML;
         }
 
         return sendMail($request['email'], $subject, $html);
- * Configurable by Procurement/administrators via Admin → Settings
- */
+
+    } catch (Exception $e) {
+        error_log("Notify request submitted error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+    /**
+     * Configurable by Procurement/administrators via Admin → Settings
+     */
 function rfqAutoEmailEnabled(): bool {
     global $pdo;
     try {
