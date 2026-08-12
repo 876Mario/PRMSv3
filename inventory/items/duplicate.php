@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = "No active locations are available. Cannot duplicate item without location.";
     } else {
         try {
-        $pdo->beginTransaction();
+            $pdo->beginTransaction();
 
         $newCode = trim($_POST['new_item_code'] ?? '');
         if ($newCode === '') $newCode = generateItemCode($pdo);
@@ -84,6 +84,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if (!$validLocationId) {
             throw new Exception("Invalid location selected.");
+        }
+
+        /* Validate and prepare unit cost */
+        $unitCost = (float) ($_POST['standard_cost'] ?? $source['standard_cost'] ?? 0);
+        if ($unitCost < 0) {
+            throw new Exception("Unit cost cannot be negative.");
         }
 
         /* Copy inv_items record */
@@ -224,14 +230,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         /* Create initial stock record with user-specified quantity (defaults to 1) */
-        $stockId = increaseStock($pdo, $newItemId, $initialLocId, $initialQty, ['unit_cost' => (float)($_POST['standard_cost'] ?? $source['standard_cost'] ?? 0)]);
+        $stockId = increaseStock($pdo, $newItemId, $initialLocId, $initialQty, ['unit_cost' => $unitCost]);
         recordStockTransaction($pdo, [
             'transaction_type' => 'RECEIPT',
             'item_id'          => $newItemId,
             'stock_id'         => $stockId,
             'location_id'      => $initialLocId,
             'quantity'         => $initialQty,
-            'unit_cost'        => (float) ($_POST['standard_cost'] ?? $source['standard_cost'] ?? 0),
+            'unit_cost'        => $unitCost,
             'notes'            => 'Initial stock set on item duplication from item #' . $sourceId,
         ]);
         logInventoryAudit($pdo, 'inv_stock', $newItemId, 'OPENING_BALANCE',
@@ -243,13 +249,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->commit();
         pop("Item duplicated successfully as '$newCode — $newName'.", "/inventory/items/edit.php?id=$newItemId", 1800, 'success');
         exit;
-    } catch (Exception $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        $error = extractDbMessage($e);
-    }
+        } catch (Exception $e) {
+           if ($pdo->inTransaction()) $pdo->rollBack();
+           $error = extractDbMessage($e);
+        }
     }
 }
-
 /* Suggested new code: append _2, _3, etc. checking all at once */
 $suggestedCode = $source['item_code'];
 $likePattern   = $source['item_code'] . '_%';
@@ -325,7 +330,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <select name="initial_location_id" class="form-select" required>
                         <option value="">-- Select Location --</option>
                         <?php foreach ($locations as $loc): ?>
-                        <option value="<?= $loc['location_id'] ?>" <?= $loc['location_id'] == ($_POST['initial_location_id'] ?? $defaultLocationId) ? 'selected' : '' ?>>
+                        <option value="<?= (int)$loc['location_id'] ?>" <?= $loc['location_id'] == ($_POST['initial_location_id'] ?? $defaultLocationId) ? 'selected' : '' ?>>
                             <?= htmlspecialchars($loc['location_code']) ?> — <?= htmlspecialchars($loc['display_name']) ?>
                         </option>
                         <?php endforeach; ?>
