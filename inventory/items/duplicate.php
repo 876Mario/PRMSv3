@@ -38,10 +38,26 @@ if ($assetDetailsTableExists && $isAssetDomain) {
 /* Source risk class IDs */
 $sourceRiskIds = array_column(getItemRiskClasses($pdo, $sourceId), 'risk_class_id');
 
+/* Get active locations for initial stock setup */
+try {
+    $locations = $pdo->query("SELECT location_id, location_code, COALESCE(site_name, site_campus, '') AS display_name FROM inv_locations WHERE is_active=1 ORDER BY location_code")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $ex) {
+    $locations = [];
+    error_log("Failed to retrieve locations: " . $ex->getMessage());
+}
+$defaultLocationId = !empty($locations) ? $locations[0]['location_id'] : 0;
+
+if (empty($locations)) {
+    $error = "No active locations are available. Please contact an administrator to set up inventory locations.";
+}
+
 /* Handle POST — create the duplicate */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    try {
-        $pdo->beginTransaction();
+    if (empty($locations)) {
+        $error = "No active locations are available. Cannot duplicate item without location.";
+    } else {
+        try {
+            $pdo->beginTransaction();
 
         $newCode = trim($_POST['new_item_code'] ?? '');
         if ($newCode === '') $newCode = generateItemCode($pdo);
@@ -54,6 +70,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $dupChk->execute([$newCode]);
         if ($dupChk->fetchColumn() > 0) {
             throw new Exception("Item Code '$newCode' is already in use. Please choose a different code.");
+        }
+
+        /* Validate initial quantity and location */
+        $rawQty = $_POST['initial_quantity'] ?? '1';
+        if (!is_numeric($rawQty)) {
+            throw new Exception("Initial quantity must be a valid number.");
+        }
+        $initialQty = (float) $rawQty;
+        if ($initialQty <= 0) {
+            throw new Exception("Initial quantity must be greater than 0.");
+        }
+        
+        $initialLocId = (int) ($_POST['initial_location_id'] ?? 0);
+        $validLocationId = false;
+        foreach ($locations as $loc) {
+            if ($loc['location_id'] == $initialLocId) {
+                $validLocationId = true;
+                break;
+            }
+        }
+        if (!$validLocationId) {
+            throw new Exception("Invalid location selected.");
+        }
+
+        /* Validate and prepare unit cost */
+        $unitCost = (float) ($_POST['standard_cost'] ?? $source['standard_cost'] ?? 0);
+        if ($unitCost < 0) {
+            throw new Exception("Unit cost cannot be negative.");
         }
 
         /* Copy inv_items record */
@@ -193,18 +237,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        /* Create initial stock record with user-specified quantity (defaults to 1) */
+        $stockId = increaseStock($pdo, $newItemId, $initialLocId, $initialQty, ['unit_cost' => $unitCost]);
+        recordStockTransaction($pdo, [
+            'transaction_type' => 'RECEIPT',
+            'item_id'          => $newItemId,
+            'stock_id'         => $stockId,
+            'location_id'      => $initialLocId,
+            'quantity'         => $initialQty,
+            'unit_cost'        => $unitCost,
+            'notes'            => 'Initial stock set on item duplication from item #' . $sourceId,
+        ]);
+
+        /* Get location code for audit log */
+        $locationCode = '';
+        foreach ($locations as $loc) {
+            if ($loc['location_id'] == $initialLocId) {
+                $locationCode = $loc['location_code'];
+                break;
+            }
+        }
+
+        /* Log item creation first (chronologically first event) */
         logInventoryAudit($pdo, 'inv_items', $newItemId, 'CREATE',
-            "Item duplicated from #{$sourceId} ({$source['item_code']}): new code $newCode - $newName");
+           "Item duplicated from #{$sourceId} ({$source['item_code']}): new code $newCode - $newName");
+        
+        /* Then log stock creation */
+        logInventoryAudit($pdo, 'inv_stock', $newItemId, 'OPENING_BALANCE',
+           "Initial stock of $initialQty set at location {$locationCode} for duplicated item from #$sourceId");
 
         $pdo->commit();
         pop("Item duplicated successfully as '$newCode — $newName'.", "/inventory/items/edit.php?id=$newItemId", 1800, 'success');
         exit;
-    } catch (Exception $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        $error = extractDbMessage($e);
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $error = extractDbMessage($e);
+        }
     }
 }
-
 /* Suggested new code: append _2, _3, etc. checking all at once */
 $suggestedCode = $source['item_code'];
 $likePattern   = $source['item_code'] . '_%';
@@ -273,17 +343,39 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                 </div>
             </div>
 
+            <hr class="my-3">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Initial Location <span class="text-danger">*</span></label>
+                    <select name="initial_location_id" class="form-select" required>
+                        <option value="">-- Select Location --</option>
+                        <?php foreach ($locations as $loc): ?>
+                        <option value="<?= (int)$loc['location_id'] ?>" <?= $loc['location_id'] == ($_POST['initial_location_id'] ?? $defaultLocationId) ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($loc['location_code']) ?> — <?= htmlspecialchars($loc['display_name']) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small class="text-muted">Where to store the initial quantity</small>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Initial Quantity <span class="text-danger">*</span></label>
+                    <input type="number" name="initial_quantity" class="form-control" required step="0.01" min="0.01" 
+                           value="<?= htmlspecialchars($_POST['initial_quantity'] ?? '1') ?>">
+                    <small class="text-muted">Must be greater than 0. Defaults to 1.</small>
+                </div>
+            </div>
+
             <?php if ($isAssetDomain && !empty($sourceAssetDetail)): ?>
             <hr class="my-3">
             <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="copy_asset_details" id="copyAssetDetails"
-                       <?= isset($_POST['copy_asset_details']) ? 'checked' : '' ?>>
-                <label class="form-check-label" for="copyAssetDetails">
-                    Copy Asset Register details (custodian, location, warranty, etc.)
-                </label>
+               <input class="form-check-input" type="checkbox" name="copy_asset_details" id="copyAssetDetails"
+                      <?= isset($_POST['copy_asset_details']) ? 'checked' : '' ?>>
+               <label class="form-check-label" for="copyAssetDetails">
+                   Copy Asset Register details (custodian, location, warranty, etc.)
+               </label>
             </div>
             <small class="text-muted d-block mt-1">
-                The Inventory Number will be <strong>cleared</strong> on the duplicate — you must assign a new unique number after saving.
+               The Inventory Number will be <strong>cleared</strong> on the duplicate — you must assign a new unique number after saving.
             </small>
             <?php endif; ?>
 
