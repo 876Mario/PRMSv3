@@ -39,7 +39,12 @@ if ($assetDetailsTableExists && $isAssetDomain) {
 $sourceRiskIds = array_column(getItemRiskClasses($pdo, $sourceId), 'risk_class_id');
 
 /* Get active locations for initial stock setup */
-$locations = $pdo->query("SELECT location_id, location_code, COALESCE(site_name, site_campus, '') AS display_name FROM inv_locations WHERE is_active=1 ORDER BY location_code")->fetchAll(PDO::FETCH_ASSOC);
+try {
+    $locations = $pdo->query("SELECT location_id, location_code, COALESCE(site_name, site_campus, '') AS display_name FROM inv_locations WHERE is_active=1 ORDER BY location_code")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $ex) {
+    $locations = [];
+    error_log("Failed to retrieve locations: " . $ex->getMessage());
+}
 $defaultLocationId = !empty($locations) ? $locations[0]['location_id'] : 0;
 
 if (empty($locations)) {
@@ -69,6 +74,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         /* Validate initial quantity and location */
         $rawQty = $_POST['initial_quantity'] ?? '1';
+        if (!is_numeric($rawQty)) {
+            throw new Exception("Initial quantity must be a valid number.");
+        }
         $initialQty = (float) $rawQty;
         if ($initialQty <= 0) {
             throw new Exception("Initial quantity must be greater than 0.");
@@ -240,18 +248,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'unit_cost'        => $unitCost,
             'notes'            => 'Initial stock set on item duplication from item #' . $sourceId,
         ]);
-        logInventoryAudit($pdo, 'inv_stock', $newItemId, 'OPENING_BALANCE',
-            "Initial stock of $initialQty set at location ID $initialLocId for duplicated item from #$sourceId");
 
+        /* Log item creation first (chronologically first event) */
         logInventoryAudit($pdo, 'inv_items', $newItemId, 'CREATE',
-            "Item duplicated from #{$sourceId} ({$source['item_code']}): new code $newCode - $newName");
+           "Item duplicated from #{$sourceId} ({$source['item_code']}): new code $newCode - $newName");
+        
+        /* Then log stock creation */
+        logInventoryAudit($pdo, 'inv_stock', $newItemId, 'OPENING_BALANCE',
+           "Initial stock of $initialQty set at location ID $initialLocId for duplicated item from #$sourceId");
 
         $pdo->commit();
         pop("Item duplicated successfully as '$newCode — $newName'.", "/inventory/items/edit.php?id=$newItemId", 1800, 'success');
         exit;
         } catch (Exception $e) {
-           if ($pdo->inTransaction()) $pdo->rollBack();
-           $error = extractDbMessage($e);
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $error = extractDbMessage($e);
         }
     }
 }
