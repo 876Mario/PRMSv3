@@ -38,6 +38,10 @@ if ($assetDetailsTableExists && $isAssetDomain) {
 /* Source risk class IDs */
 $sourceRiskIds = array_column(getItemRiskClasses($pdo, $sourceId), 'risk_class_id');
 
+/* Get active locations for initial stock setup */
+$locations = $pdo->query("SELECT location_id, location_code, COALESCE(site_name, site_campus, '') AS display_name FROM inv_locations WHERE is_active=1 ORDER BY location_code")->fetchAll(PDO::FETCH_ASSOC);
+$defaultLocationId = !empty($locations) ? $locations[0]['location_id'] : 0;
+
 /* Handle POST — create the duplicate */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -193,6 +197,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        /* Create initial stock record with quantity = 1 */
+        $initialQty = max(0, (float) ($_POST['initial_quantity'] ?? 1));
+        $initialLocId = (int) ($_POST['initial_location_id'] ?? $defaultLocationId);
+        if ($initialQty > 0 && $initialLocId > 0) {
+            $stockId = increaseStock($pdo, $newItemId, $initialLocId, $initialQty, ['unit_cost' => (float)($_POST['standard_cost'] ?? $source['standard_cost'] ?? 0)]);
+            recordStockTransaction($pdo, [
+                'transaction_type' => 'RECEIPT',
+                'item_id'          => $newItemId,
+                'stock_id'         => $stockId,
+                'location_id'      => $initialLocId,
+                'quantity'         => $initialQty,
+                'unit_cost'        => (float) ($_POST['standard_cost'] ?? $source['standard_cost'] ?? 0),
+                'notes'            => 'Initial stock set on item duplication from item #' . $sourceId,
+            ]);
+            logInventoryAudit($pdo, 'inv_stock', $newItemId, 'OPENING_BALANCE',
+                "Initial stock of $initialQty set at location ID $initialLocId for duplicated item from #$sourceId");
+        }
+
         logInventoryAudit($pdo, 'inv_items', $newItemId, 'CREATE',
             "Item duplicated from #{$sourceId} ({$source['item_code']}): new code $newCode - $newName");
 
@@ -273,17 +295,39 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                 </div>
             </div>
 
+            <hr class="my-3">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Initial Location <span class="text-danger">*</span></label>
+                    <select name="initial_location_id" class="form-select" required>
+                        <option value="">-- Select Location --</option>
+                        <?php foreach ($locations as $loc): ?>
+                        <option value="<?= $loc['location_id'] ?>" <?= ($loc['location_id'] == $_POST['initial_location_id'] ?? $defaultLocationId) ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($loc['location_code']) ?> — <?= htmlspecialchars($loc['display_name']) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small class="text-muted">Where to store the initial quantity</small>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Initial Quantity <span class="text-danger">*</span></label>
+                    <input type="number" name="initial_quantity" class="form-control" required step="0.01" min="0" 
+                           value="<?= htmlspecialchars($_POST['initial_quantity'] ?? '1') ?>">
+                    <small class="text-muted">Defaults to 1 if not specified</small>
+                </div>
+            </div>
+
             <?php if ($isAssetDomain && !empty($sourceAssetDetail)): ?>
             <hr class="my-3">
             <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" name="copy_asset_details" id="copyAssetDetails"
-                       <?= isset($_POST['copy_asset_details']) ? 'checked' : '' ?>>
-                <label class="form-check-label" for="copyAssetDetails">
-                    Copy Asset Register details (custodian, location, warranty, etc.)
-                </label>
+               <input class="form-check-input" type="checkbox" name="copy_asset_details" id="copyAssetDetails"
+                      <?= isset($_POST['copy_asset_details']) ? 'checked' : '' ?>>
+               <label class="form-check-label" for="copyAssetDetails">
+                   Copy Asset Register details (custodian, location, warranty, etc.)
+               </label>
             </div>
             <small class="text-muted d-block mt-1">
-                The Inventory Number will be <strong>cleared</strong> on the duplicate — you must assign a new unique number after saving.
+               The Inventory Number will be <strong>cleared</strong> on the duplicate — you must assign a new unique number after saving.
             </small>
             <?php endif; ?>
 
