@@ -19,7 +19,24 @@ require_once __DIR__ . '/../config/app.php';
 require_once __DIR__ . '/../config/workflow.php';
 
 if (!class_exists('NotificationService')) {
-    require_once __DIR__ . '/../services/NotificationService.php';
+    $notificationServicePath = __DIR__ . '/../services/NotificationService.php';
+    if (file_exists($notificationServicePath)) {
+        require_once $notificationServicePath;
+    } else {
+        // Create stub class to prevent fatal errors
+        class NotificationService {
+            public static function createNotification(int $userId, string $type, array $data): bool { return false; }
+            public static function getUnreadCount(int $userId): int { return 0; }
+            public static function getNotifications(int $userId, int $limit = 10): array { return []; }
+            public static function markAsRead(int $notificationId): bool { return false; }
+            public static function deleteNotification(int $notificationId): bool { return false; }
+            public static function getUnread(int $userId): array { return []; }
+            public static function getAll(int $userId, int $limit = 50): array { return []; }
+            public static function countUnread(int $userId): int { return 0; }
+            public static function markAllAsRead(int $userId): bool { return false; }
+        }
+        error_log("Warning: NotificationService.php not found at {$notificationServicePath}. Using stub class.");
+    }
 }
 
 /* ─── Helper: fetch config values ─────────────────────────────────────── */

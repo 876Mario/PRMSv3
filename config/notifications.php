@@ -10,7 +10,31 @@ require_once __DIR__ . '/app.php';
 
 /* Load in-app notification service (always available, independent of email toggle) */
 if (!class_exists('NotificationService')) {
-    require_once __DIR__ . '/../services/NotificationService.php';
+    $notificationServicePath = __DIR__ . '/../services/NotificationService.php';
+    if (file_exists($notificationServicePath)) {
+        require_once $notificationServicePath;
+    } else {
+        // If NotificationService.php is missing, create a stub class
+        // to prevent fatal errors downstream
+        class NotificationService {
+            public static function createNotification(int $userId, string $type, array $data): bool {
+                return false; // Silent failure for missing service
+            }
+            public static function getUnreadCount(int $userId): int {
+                return 0;
+            }
+            public static function getNotifications(int $userId, int $limit = 10): array {
+                return [];
+            }
+            public static function markAsRead(int $notificationId): bool {
+                return false;
+            }
+            public static function deleteNotification(int $notificationId): bool {
+                return false;
+            }
+        }
+        error_log("Warning: NotificationService.php not found at {$notificationServicePath}. Using stub class.");
+    }
 }
 
 /**
