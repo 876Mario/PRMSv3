@@ -42,9 +42,16 @@ $sourceRiskIds = array_column(getItemRiskClasses($pdo, $sourceId), 'risk_class_i
 $locations = $pdo->query("SELECT location_id, location_code, COALESCE(site_name, site_campus, '') AS display_name FROM inv_locations WHERE is_active=1 ORDER BY location_code")->fetchAll(PDO::FETCH_ASSOC);
 $defaultLocationId = !empty($locations) ? $locations[0]['location_id'] : 0;
 
+if (empty($locations)) {
+    $error = "No active locations are available. Please contact an administrator to set up inventory locations.";
+}
+
 /* Handle POST — create the duplicate */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    try {
+    if (empty($locations)) {
+        $error = "No active locations are available. Cannot duplicate item without location.";
+    } else {
+        try {
         $pdo->beginTransaction();
 
         $newCode = trim($_POST['new_item_code'] ?? '');
@@ -61,8 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         /* Validate initial quantity and location */
-        $initialQty = max(0, (float) ($_POST['initial_quantity'] ?? 1));
-        if ($initialQty == 0) {
+        $rawQty = $_POST['initial_quantity'] ?? '1';
+        $initialQty = (float) $rawQty;
+        if ($initialQty <= 0) {
             throw new Exception("Initial quantity must be greater than 0.");
         }
         
@@ -238,6 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         $error = extractDbMessage($e);
+    }
     }
 }
 
