@@ -249,13 +249,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'notes'            => 'Initial stock set on item duplication from item #' . $sourceId,
         ]);
 
+        /* Get location code for audit log */
+        $locationCode = '';
+        foreach ($locations as $loc) {
+            if ($loc['location_id'] == $initialLocId) {
+                $locationCode = $loc['location_code'];
+                break;
+            }
+        }
+
         /* Log item creation first (chronologically first event) */
         logInventoryAudit($pdo, 'inv_items', $newItemId, 'CREATE',
            "Item duplicated from #{$sourceId} ({$source['item_code']}): new code $newCode - $newName");
         
         /* Then log stock creation */
         logInventoryAudit($pdo, 'inv_stock', $newItemId, 'OPENING_BALANCE',
-           "Initial stock of $initialQty set at location ID $initialLocId for duplicated item from #$sourceId");
+           "Initial stock of $initialQty set at location {$locationCode} for duplicated item from #$sourceId");
 
         $pdo->commit();
         pop("Item duplicated successfully as '$newCode — $newName'.", "/inventory/items/edit.php?id=$newItemId", 1800, 'success');
