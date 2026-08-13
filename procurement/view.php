@@ -1585,11 +1585,12 @@ $docStmt = $pdo->prepare("
     SELECT rd.*, u.full_name AS uploader_name
     FROM request_documents rd
     LEFT JOIN users u ON rd.uploaded_by = u.user_id
-    WHERE rd.request_id = ?
+    WHERE rd.request_id = ? AND rd.is_deleted = 0
     ORDER BY rd.uploaded_at DESC
 ");
 $docStmt->execute([$request_id]);
 $requestDocuments = $docStmt->fetchAll(PDO::FETCH_ASSOC);
+$canDeleteRequestDocument = hasPermission('procurement_delete_request_document');
 ?>
 <div class="card shadow-sm border-0 mb-4">
     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
@@ -1633,6 +1634,14 @@ $requestDocuments = $docStmt->fetchAll(PDO::FETCH_ASSOC);
                             <a href="<?= htmlspecialchars($doc['document_path']) ?>" target="_blank" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-download"></i>
                             </a>
+                            <?php if ($canDeleteRequestDocument): ?>
+                            <button type="button" class="btn btn-sm btn-outline-danger"
+                                    data-bs-toggle="modal" data-bs-target="#deleteDocumentModal"
+                                    data-document-id="<?= (int)$doc['document_id'] ?>"
+                                    data-document-name="<?= htmlspecialchars($doc['document_name']) ?>">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            <?php endif; ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -1679,6 +1688,49 @@ $requestDocuments = $docStmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 </div>
+
+<?php if ($canDeleteRequestDocument): ?>
+<!-- ═══════════════════════════════════════════════════════
+     DELETE DOCUMENT MODAL
+═══════════════════════════════════════════════════════ -->
+<div class="modal fade" id="deleteDocumentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="POST" action="/procurement/delete_document.php" class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Delete Document</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" name="request_id" value="<?= $request_id ?>">
+                <input type="hidden" name="document_id" id="deleteDocumentId" value="">
+                <p>Are you sure you want to delete <strong id="deleteDocumentName"></strong>?</p>
+                <p class="text-muted small">The file will be retained for audit purposes; this only removes it from the active documents list.</p>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Reason for deletion</label>
+                    <textarea name="reason" class="form-control" rows="3" required
+                              placeholder="Provide a reason for deleting this document..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-danger"><i class="bi bi-trash me-1"></i>Confirm Delete</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var deleteDocumentModal = document.getElementById('deleteDocumentModal');
+    if (deleteDocumentModal) {
+        deleteDocumentModal.addEventListener('show.bs.modal', function (event) {
+            var button = event.relatedTarget;
+            document.getElementById('deleteDocumentId').value = button.getAttribute('data-document-id');
+            document.getElementById('deleteDocumentName').textContent = button.getAttribute('data-document-name');
+        });
+    }
+});
+</script>
+<?php endif; ?>
 
 <!-- ═══════════════════════════════════════════════════════
      QUICK LINKS (TYPE-SPECIFIC)

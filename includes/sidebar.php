@@ -596,6 +596,10 @@ function isCollapsibleActive($urls, $currentPage) {
                href="/audit/list.php">
                 <i class="bi bi-journal-check me-2"></i>Audit Logs
             </a>
+            <a class="nav-link text-white sidebar-link <?= active('/audit/deleted_documents', $currentPage) ?>"
+               href="/audit/deleted_documents.php">
+                <i class="bi bi-trash-fill me-2"></i>Deleted Documents
+            </a>
             <?php endif; ?>
         </li>
         <?php endif; ?>
