@@ -12,13 +12,14 @@ class NotificationService
     // -----------------------------------------------------------------------
     // Allowed notification types (must match ENUM in migration 024)
     // -----------------------------------------------------------------------
-    const TYPE_APPROVAL_NEEDED  = 'approval_needed';
-    const TYPE_RETURN_CORRECTION= 'return_correction';
-    const TYPE_CLARIFICATION    = 'clarification';
-    const TYPE_REJECTION        = 'rejection';
-    const TYPE_CANCELLATION     = 'cancellation';
-    const TYPE_DRAFT_READY      = 'draft_ready';
-    const TYPE_SUBMISSION       = 'submission';
+    const TYPE_APPROVAL_NEEDED     = 'approval_needed';
+    const TYPE_RETURN_CORRECTION   = 'return_correction';
+    const TYPE_CLARIFICATION       = 'clarification';
+    const TYPE_REJECTION           = 'rejection';
+    const TYPE_CANCELLATION        = 'cancellation';
+    const TYPE_DRAFT_READY         = 'draft_ready';
+    const TYPE_SUBMISSION          = 'submission';
+    const TYPE_FINANCE_ACTION      = 'finance_action_required';
 
     // -----------------------------------------------------------------------
     // Write
@@ -57,7 +58,7 @@ class NotificationService
             self::TYPE_APPROVAL_NEEDED, self::TYPE_RETURN_CORRECTION,
             self::TYPE_CLARIFICATION,   self::TYPE_REJECTION,
             self::TYPE_CANCELLATION,    self::TYPE_DRAFT_READY,
-            self::TYPE_SUBMISSION,
+            self::TYPE_SUBMISSION,      self::TYPE_FINANCE_ACTION,
         ];
         if (!in_array($type, $allowedTypes, true)) {
             error_log("NotificationService: unknown type '{$type}'");
