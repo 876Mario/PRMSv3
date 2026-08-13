@@ -59,6 +59,24 @@ if ($disbursement) {
     $reconciliation = null;
 }
 
+/* Fetch reconciliation documents if reconciliation exists */
+$reconciliationDocuments = [];
+if ($reconciliation) {
+    $docStmt = $pdo->prepare("
+        SELECT *
+        FROM petty_cash_reconciliation_documents
+        WHERE reconcile_id = ? AND is_deleted = 0
+        ORDER BY uploaded_date DESC
+    ");
+    try {
+        $docStmt->execute([(int)$reconciliation['reconcile_id']]);
+        $reconciliationDocuments = $docStmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        // Table may not exist yet
+        $reconciliationDocuments = [];
+    }
+}
+
 require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 
 // Calculate deadline status
@@ -178,9 +196,9 @@ if ($disbursement) {
           </div>
           <div class="card-body">
             <?php if ($reconciliation): ?>
-              <div class="alert alert-info">
-                <strong>Submitted on:</strong> <?= date('M d, Y g:i A', strtotime($reconciliation['submission_date'])) ?><br>
-                <strong>Status:</strong> <?= htmlspecialchars($reconciliation['status']) ?>
+              <div class="alert alert-<?= $reconciliation['status'] === 'VERIFIED' || $reconciliation['status'] === 'APPROVED' ? 'success' : ($reconciliation['status'] === 'DISCREPANCY' ? 'danger' : 'info') ?>">
+                <strong>Status:</strong> <?= htmlspecialchars(strtoupper(str_replace('_', ' ', $reconciliation['status']))) ?><br>
+                <strong>Submitted on:</strong> <?= date('M d, Y g:i A', strtotime($reconciliation['submission_date'])) ?>
               </div>
               <div class="row g-3">
                 <div class="col-md-6">
@@ -211,7 +229,9 @@ if ($disbursement) {
                 <?php endif; ?>
                 <div class="col-12">
                   <small class="text-muted d-block">Notes</small>
-                  <p class="mb-0"><?= htmlspecialchars($reconciliation['reconciliation_notes'] ?? '') ?></p>
+                  <div class="p-2 bg-light rounded" style="max-height: 200px; overflow-y: auto;">
+                    <p class="mb-0 text-break"><?= nl2br(htmlspecialchars($reconciliation['reconciliation_notes'] ?? '')) ?></p>
+                  </div>
                 </div>
               </div>
             <?php else: ?>
@@ -221,6 +241,101 @@ if ($disbursement) {
             <?php endif; ?>
           </div>
         </div>
+
+        <!-- Supporting Documents -->
+        <?php if ($reconciliation): ?>
+          <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+              <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">📎 Supporting Documents</h5>
+                <?php if (in_array($_SESSION['role_name'] ?? '', ['Finance Officer', 'Admin', 'SuperAdmin'])): ?>
+                  <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#uploadDocumentModal">
+                    <i class="bi bi-cloud-upload me-1"></i>Upload Document
+                  </button>
+                <?php endif; ?>
+              </div>
+            </div>
+            <div class="card-body">
+              <?php if (count($reconciliationDocuments) > 0): ?>
+                <div class="table-responsive">
+                  <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Type</th>
+                        <th>File Name</th>
+                        <th>Uploaded By</th>
+                        <th>Uploaded Date</th>
+                        <th>Notes</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <?php foreach ($reconciliationDocuments as $doc): ?>
+                        <tr>
+                          <td>
+                            <span class="badge bg-info">
+                              <?= htmlspecialchars(str_replace('_', ' ', ucfirst(strtolower($doc['document_type'])))) ?>
+                            </span>
+                          </td>
+                          <td><?= htmlspecialchars($doc['original_file_name']) ?></td>
+                          <td>
+                            <?php 
+                            $docUploadStmt = $pdo->prepare("SELECT full_name FROM users WHERE user_id = ?");
+                            $docUploadStmt->execute([(int)$doc['uploaded_by']]);
+                            $uploader = $docUploadStmt->fetch(PDO::FETCH_ASSOC);
+                            echo htmlspecialchars($uploader['full_name'] ?? 'Unknown');
+                            ?>
+                          </td>
+                          <td><?= date('M d, Y g:i A', strtotime($doc['uploaded_date'])) ?></td>
+                          <td><?= htmlspecialchars(substr($doc['document_notes'] ?? '', 0, 50)) ?></td>
+                          <td>
+                            <a href="<?= htmlspecialchars($doc['file_path']) ?>" class="btn btn-xs btn-outline-primary" download>
+                              <i class="bi bi-download"></i> Download
+                            </a>
+                          </td>
+                        </tr>
+                      <?php endforeach; ?>
+                    </tbody>
+                  </table>
+                </div>
+              <?php else: ?>
+                <p class="text-muted mb-0">No supporting documents uploaded yet.</p>
+              <?php endif; ?>
+            </div>
+          </div>
+        <?php endif; ?>
+
+        <!-- Discrepancy Review Actions (Finance Only) -->
+        <?php if ($reconciliation && $request['status'] === 'RECONCILIATION_DISCREPANCY' && in_array($_SESSION['role_name'] ?? '', ['Finance Officer', 'Admin', 'SuperAdmin'])): ?>
+          <div class="card shadow-sm mb-4 border-danger">
+            <div class="card-header bg-danger bg-opacity-10">
+              <h5 class="mb-0 text-danger"><i class="bi bi-exclamation-circle me-2"></i>Discrepancy Review</h5>
+            </div>
+            <div class="card-body">
+              <p class="text-muted">A discrepancy has been found in this reconciliation. After the requestor provides corrections, review and approve.</p>
+              <div class="btn-group w-100" role="group">
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#resolveDiscrepancyModal">
+                  <i class="bi bi-check-lg me-1"></i>Corrections Received - Approve
+                </button>
+                <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#reopenDiscrepancyModal">
+                  <i class="bi bi-arrow-counterclockwise me-1"></i>Reopen for More Corrections
+                </button>
+              </div>
+            </div>
+          </div>
+        <?php elseif ($reconciliation && $request['status'] === 'REVIEWED' && in_array($_SESSION['role_name'] ?? '', ['Finance Officer', 'Admin', 'SuperAdmin'])): ?>
+          <div class="card shadow-sm mb-4 border-warning">
+            <div class="card-header bg-warning bg-opacity-10">
+              <h5 class="mb-0 text-warning"><i class="bi bi-clock-history me-2"></i>Final Review</h5>
+            </div>
+            <div class="card-body">
+              <p class="text-muted">Corrections have been reviewed. Click below to finalize and complete the reconciliation.</p>
+              <button type="button" class="btn btn-success btn-lg w-100" data-bs-toggle="modal" data-bs-target="#finalizeReconciliationModal">
+                <i class="bi bi-check2-circle me-1"></i>Finalize & Complete Reconciliation
+              </button>
+            </div>
+          </div>
+        <?php endif; ?>
       <?php endif; ?>
 
     </div>
@@ -474,6 +589,157 @@ if ($disbursement) {
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
           <button type="submit" class="btn btn-danger">
             <i class="bi bi-exclamation-circle me-1"></i>Report Discrepancy
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Document Modal -->
+<div class="modal fade" id="uploadDocumentModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-cloud-upload me-2"></i>Upload Supporting Document</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/petty_cash/upload_reconciliation_document.php" enctype="multipart/form-data">
+        <div class="modal-body">
+          <p class="text-muted mb-3">Attach supporting documentation such as receipts, invoices, proof of purchase, or change return documentation.</p>
+          
+          <div class="mb-3">
+            <label for="document_type" class="form-label">Document Type <span class="text-danger">*</span></label>
+            <select class="form-select" id="document_type" name="document_type" required>
+              <option value="OTHER">-- Select Type --</option>
+              <option value="RECEIPT">Receipt</option>
+              <option value="INVOICE">Invoice</option>
+              <option value="PROOF_OF_PURCHASE">Proof of Purchase</option>
+              <option value="CHANGE_RETURN">Change Return Documentation</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </div>
+          
+          <div class="mb-3">
+            <label for="document_file" class="form-label">File <span class="text-danger">*</span></label>
+            <input type="file" class="form-control" id="document_file" name="document_file" required 
+                   accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx">
+            <small class="text-muted">Accepted formats: PDF, images, Word documents, Excel spreadsheets (max 50MB)</small>
+          </div>
+          
+          <div class="mb-3">
+            <label for="document_notes" class="form-label">Notes (optional)</label>
+            <textarea class="form-control" id="document_notes" name="document_notes" rows="2" 
+                      placeholder="E.g., Receipt from ABC Store for office supplies"></textarea>
+          </div>
+          
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-cloud-upload me-1"></i>Upload Document
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Resolve Discrepancy Modal -->
+<div class="modal fade" id="resolveDiscrepancyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-success bg-opacity-10">
+        <h5 class="modal-title text-success"><i class="bi bi-check-lg me-2"></i>Approve Corrections</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/petty_cash/review_discrepancy.php">
+        <div class="modal-body">
+          <p class="text-muted mb-3">The requestor has provided corrections to address the discrepancy. Review and approve to proceed to final reconciliation.</p>
+          
+          <div class="mb-3">
+            <label for="resolution_notes_resolve" class="form-label">Resolution Notes (optional)</label>
+            <textarea class="form-control" id="resolution_notes_resolve" name="resolution_notes" rows="3" 
+                      placeholder="E.g., Corrections verified against new receipts, reconciliation now complete."></textarea>
+          </div>
+          
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="action" value="resolve">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success">
+            <i class="bi bi-check-lg me-1"></i>Approve Corrections
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Reopen Discrepancy Modal -->
+<div class="modal fade" id="reopenDiscrepancyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-warning bg-opacity-10">
+        <h5 class="modal-title text-warning"><i class="bi bi-arrow-counterclockwise me-2"></i>Reopen for More Corrections</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/petty_cash/review_discrepancy.php">
+        <div class="modal-body">
+          <p class="text-muted mb-3">The corrections provided do not fully address the discrepancy. Reopen the review to request additional corrections from the requestor.</p>
+          
+          <div class="mb-3">
+            <label for="resolution_notes_reopen" class="form-label">Additional Issues <span class="text-danger">*</span></label>
+            <textarea class="form-control" id="resolution_notes_reopen" name="resolution_notes" rows="3" required
+                      placeholder="E.g., Still missing receipts for JMD 250, Change amount still doesn't reconcile."></textarea>
+          </div>
+          
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="action" value="reopen">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Reopen Review
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Finalize Reconciliation Modal -->
+<div class="modal fade" id="finalizeReconciliationModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-success">
+        <h5 class="modal-title text-white"><i class="bi bi-check2-circle me-2"></i>Finalize & Complete Reconciliation</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/petty_cash/review_discrepancy.php">
+        <div class="modal-body">
+          <p class="text-muted mb-3">Mark this reconciliation as completed after all corrections have been reviewed and approved.</p>
+          
+          <div class="mb-3">
+            <label for="resolution_notes_finalize" class="form-label">Final Notes (optional)</label>
+            <textarea class="form-control" id="resolution_notes_finalize" name="resolution_notes" rows="3" 
+                      placeholder="E.g., Reconciliation complete, all discrepancies resolved and documented."></textarea>
+          </div>
+          
+          <div class="alert alert-success mb-0">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>This action will mark the petty cash request as COMPLETED.</strong>
+          </div>
+          
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="action" value="resolve">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success btn-lg">
+            <i class="bi bi-check2-circle me-1"></i>Complete Reconciliation
           </button>
         </div>
       </form>
