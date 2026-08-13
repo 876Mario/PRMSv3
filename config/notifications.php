@@ -55,6 +55,14 @@ if (!class_exists('FinanceNotificationService')) {
     }
 }
 
+/* Load EmailNotificationConfigService (centralized admin-configurable email layer) */
+if (!class_exists('EmailNotificationConfigService')) {
+    $emailConfigServicePath = __DIR__ . '/../services/EmailNotificationConfigService.php';
+    if (file_exists($emailConfigServicePath)) {
+        require_once $emailConfigServicePath;
+    }
+}
+
 /**
  * HTML-escape a value for safe insertion into email templates.
  */
@@ -291,7 +299,30 @@ function notifyRequestSubmitted(int $requestId): bool {
 </html>
 HTML;
 
-        return sendMail($approverEmail, $subject, $html);
+        $legacySent = sendMail($approverEmail, $subject, $html);
+
+        /* Additionally dispatch via the centralized, admin-configurable
+           notification layer (dynamic role/user recipients, editable
+           template). This is additive - the legacy direct-approver email
+           above is preserved for backward compatibility. */
+        if (class_exists('EmailNotificationConfigService')) {
+            try {
+                EmailNotificationConfigService::dispatch('REQUEST_SUBMITTED', [
+                    'request_number'      => $request['request_number'],
+                    'request_description' => $request['request_type'],
+                    'requester_name'      => $requestor,
+                    'vendor_name'         => '',
+                    'current_status'      => 'SUBMITTED',
+                    'required_action'     => 'Review and approve this request',
+                    'action_link'         => "{$appUrl}/procurement/view.php?id={$requestId}",
+                    'due_date'            => '',
+                ], $requestId);
+            } catch (Throwable $e) {
+                error_log("EmailNotificationConfigService dispatch(REQUEST_SUBMITTED) error: {$e->getMessage()}");
+            }
+        }
+
+        return $legacySent;
 
     } catch (Exception $e) {
         error_log("Notify request submitted error: {$e->getMessage()}");
@@ -697,7 +728,34 @@ function notifyRequestFinalized(int $requestId, string $finalStatus): bool {
 </html>
 HTML;
 
-        return sendMail($request['email'], $subject, $html);
+        $legacySent = sendMail($request['email'], $subject, $html);
+
+        /* Additionally dispatch via the centralized, admin-configurable
+           notification layer. Terminal/completion statuses map to
+           FINAL_PAYMENT_COMPLETION; approval/decline outcomes map to
+           REQUEST_APPROVED_REJECTED. */
+        if (class_exists('EmailNotificationConfigService')) {
+            try {
+                $eventKey = in_array($finalStatus, ['COMPLETED', 'REIMBURSED'], true)
+                    ? 'FINAL_PAYMENT_COMPLETION'
+                    : 'REQUEST_APPROVED_REJECTED';
+
+                EmailNotificationConfigService::dispatch($eventKey, [
+                    'request_number'      => $request['request_number'],
+                    'request_description' => $request['request_type'] ?? '',
+                    'requester_name'      => $requestorName,
+                    'vendor_name'         => '',
+                    'current_status'      => $statusLabel,
+                    'required_action'     => 'View request details',
+                    'action_link'         => "{$appUrl}/procurement/view.php?id={$requestId}",
+                    'due_date'            => '',
+                ], $requestId);
+            } catch (Throwable $e) {
+                error_log("EmailNotificationConfigService dispatch({$eventKey}) error: {$e->getMessage()}");
+            }
+        }
+
+        return $legacySent;
 
     } catch (Exception $e) {
         error_log("Notify request finalized error: {$e->getMessage()}");
@@ -3152,6 +3210,27 @@ HTML;
                 $sent = sendMail($email, $subject, $html) || $sent;
             }
         }
+
+        /* Additionally dispatch via the centralized, admin-configurable
+           notification layer for the "Missing supporting-document reminder"
+           event, using dynamically-configured role/user recipients. */
+        if (class_exists('EmailNotificationConfigService')) {
+            try {
+                EmailNotificationConfigService::dispatch('MISSING_DOCUMENT_REMINDER', [
+                    'request_number'      => $request['request_number'],
+                    'request_description' => $request['description'] ?? '',
+                    'requester_name'      => '',
+                    'vendor_name'         => '',
+                    'current_status'      => $request['status'] ?? '',
+                    'required_action'     => 'Upload: ' . implode(', ', $missingDocs),
+                    'action_link'         => "{$appUrl}/procurement/view.php?id={$requestId}",
+                    'due_date'            => '',
+                ], $requestId);
+            } catch (Throwable $e) {
+                error_log("EmailNotificationConfigService dispatch(MISSING_DOCUMENT_REMINDER) error: {$e->getMessage()}");
+            }
+        }
+
         return $sent;
 
     } catch (Exception $e) {

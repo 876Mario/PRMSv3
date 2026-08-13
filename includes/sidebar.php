@@ -548,7 +548,7 @@ function isCollapsibleActive($urls, $currentPage) {
         <?php endif; ?>
 
         <!-- ===== ADMINISTRATION SECTION ===== -->
-        <?php if (has_permission('manage_users') || has_permission('manage_roles') || has_permission('view_audit_logs')): ?>
+        <?php if (has_permission('manage_users') || has_permission('manage_roles') || has_permission('view_audit_logs') || has_permission('manage_email_notifications')): ?>
         <li class="nav-item mt-2">
             <div class="sidebar-section-label">ADMIN</div>
 
@@ -588,6 +588,13 @@ function isCollapsibleActive($urls, $currentPage) {
             <a class="nav-link text-white sidebar-link <?= active('/admin/department_locations', $currentPage) ?>"
                href="/admin/department_locations.php">
                 <i class="bi bi-geo-alt me-2"></i>Dept → Locations
+            </a>
+            <?php endif; ?>
+
+            <?php if (has_permission('manage_email_notifications')): ?>
+            <a class="nav-link text-white sidebar-link <?= active('/admin/email_notifications', $currentPage) ?>"
+               href="/admin/email_notifications.php">
+                <i class="bi bi-envelope-gear me-2"></i>Email Notifications
             </a>
             <?php endif; ?>
 
