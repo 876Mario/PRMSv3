@@ -277,12 +277,25 @@ if ($disbursement) {
           <?php endif; ?>
           
           <?php 
-          // Finance approval actions
-          $isFinanceOfficer = ($_SESSION['role_name'] ?? '') === 'Finance Officer';
+          // Role and permission checks
+          $isFinanceOfficer = in_array($_SESSION['role_name'] ?? '', ['Finance Officer', 'Admin', 'SuperAdmin']);
+          $isRequestor = (int)($_SESSION['user_id'] ?? 0) === (int)$request['created_by'];
+          
+          // Finance approval at submission stage
           $canApprove = in_array($request['status'], ['SUBMITTED']) && $isFinanceOfficer;
+          
+          // Finance disbursement at FUNDS_VERIFIED or FINANCE_AUTHORIZED
+          $canDisburse = in_array($request['status'], ['FUNDS_VERIFIED', 'FINANCE_AUTHORIZED']) && $isFinanceOfficer && $disbursement;
+          
+          // Finance verification of reconciliation
+          $canVerifyReconciliation = $request['status'] === 'PENDING_RECONCILIATION' && $isFinanceOfficer && $reconciliation;
+          
+          // Requestor reconciliation submission
           $reconciliationEligibleStatuses = ['FUNDS_VERIFIED', 'FINANCE_AUTHORIZED', 'DISBURSED', 'PENDING_RECONCILIATION'];
+          $canSubmitReconciliation = $disbursement && !$reconciliation && $isRequestor && in_array($request['status'], $reconciliationEligibleStatuses);
           ?>
           
+          <!-- FINANCE OFFICER: Initial Approval -->
           <?php if ($canApprove): ?>
             <div class="alert alert-info py-2 mb-2">
               <small><strong>Action Required:</strong> Verify funds and authorize this petty cash request.</small>
@@ -303,14 +316,44 @@ if ($disbursement) {
             </form>
           <?php endif; ?>
 
-          <?php if (
-            $disbursement
-            && !$reconciliation
-            && (int)($_SESSION['user_id'] ?? 0) === (int)$request['created_by']
-            && in_array($request['status'], $reconciliationEligibleStatuses)
-          ): ?>
-            <a href="/petty_cash/reconcile.php?id=<?= $request_id ?>" class="btn btn-warning btn-sm">
-              <i class="bi bi-receipt me-1"></i>Submit Reconciliation
+          <!-- FINANCE OFFICER: Disbursement -->
+          <?php if ($canDisburse): ?>
+            <div class="alert alert-warning py-2 mb-2">
+              <small><strong>Action Required:</strong> Disburse the authorized petty cash amount.</small>
+            </div>
+            <button type="button" class="btn btn-warning btn-sm w-100" data-bs-toggle="modal" data-bs-target="#disbursalModal">
+              <i class="bi bi-cash-coin"></i> Record Cash Disbursement
+            </button>
+          <?php endif; ?>
+
+          <!-- FINANCE OFFICER: Reconciliation Verification -->
+          <?php if ($canVerifyReconciliation): ?>
+            <div class="alert alert-warning py-2 mb-2">
+              <small><strong>Action Required:</strong> Verify the reconciliation submission.</small>
+            </div>
+            <button type="button" class="btn btn-warning btn-sm w-100 mb-2" data-bs-toggle="modal" data-bs-target="#verifyReconciliationModal">
+              <i class="bi bi-check-lg"></i> Verify Reconciliation
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-sm w-100" data-bs-toggle="modal" data-bs-target="#rejectReconciliationModal">
+              <i class="bi bi-exclamation-circle"></i> Report Discrepancy
+            </button>
+          <?php endif; ?>
+
+          <!-- REQUESTOR: Reconciliation Submission -->
+          <?php if ($canSubmitReconciliation): ?>
+            <a href="/petty_cash/reconcile.php?id=<?= $request_id ?>" class="btn btn-primary btn-sm">
+              <i class="bi bi-receipt me-1"></i> Submit Reconciliation
+            </a>
+          <?php elseif ($disbursement && !$reconciliation && $isRequestor && $request['status'] === 'PENDING_RECONCILIATION'): ?>
+            <div class="alert alert-danger py-2 mb-2">
+              <small><strong>Note:</strong> Waiting for Finance Officer to verify your reconciliation submission.</small>
+            </div>
+          <?php elseif ($disbursement && !$reconciliation && $isRequestor && in_array($request['status'], ['FUNDS_VERIFIED', 'FINANCE_AUTHORIZED', 'DISBURSED'])): ?>
+            <div class="alert alert-warning py-2 mb-2">
+              <small><strong>Action Required:</strong> Submit your reconciliation within 24 hours of disbursement.</small>
+            </div>
+            <a href="/petty_cash/reconcile.php?id=<?= $request_id ?>" class="btn btn-success btn-sm">
+              <i class="bi bi-receipt me-1"></i> Submit Reconciliation
             </a>
           <?php endif; ?>
           
@@ -324,3 +367,116 @@ if ($disbursement) {
 </div>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
+
+<!-- MODALS for Finance Officer Actions -->
+
+<!-- Disbursal Modal -->
+<div class="modal fade" id="disbursalModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>Record Cash Disbursement</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/petty_cash/disburse.php">
+        <div class="modal-body">
+          <p class="text-muted">Record that the authorized petty cash amount has been physically disbursed to the requestor.</p>
+          <div class="mb-3">
+            <label for="disbursal_notes" class="form-label">Disbursal Notes (optional)</label>
+            <textarea class="form-control" id="disbursal_notes" name="disbursal_notes" rows="3" 
+                      placeholder="E.g., Paid in cash by check #123, Handed to John Smith, etc."></textarea>
+          </div>
+          <input type="hidden" name="request_id" value="<?= $request_id ?>">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-check-lg me-1"></i>Confirm Disbursement
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Verify Reconciliation Modal (Approve) -->
+<div class="modal fade" id="verifyReconciliationModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-check-lg me-2"></i>Verify Reconciliation - Approve</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/petty_cash/verify_reconciliation.php">
+        <div class="modal-body">
+          <div class="alert alert-info mb-3">
+            <strong>Reconciliation Summary:</strong>
+            <ul class="mb-0 mt-2">
+              <li><strong>Amount Authorized:</strong> <?= htmlspecialchars(normalizeCurrency($request['currency'] ?? 'JMD')) ?> <?= number_format($disbursement['amount_authorized'], 2) ?></li>
+              <li><strong>Purchase Amount:</strong> <?= htmlspecialchars(normalizeCurrency($request['currency'] ?? 'JMD')) ?> <?= number_format($reconciliation['purchase_amount'], 2) ?></li>
+              <li><strong>Change Returned:</strong> <?= htmlspecialchars(normalizeCurrency($request['currency'] ?? 'JMD')) ?> <?= number_format($reconciliation['change_amount'], 2) ?></li>
+              <li><strong>Reconciliation Status:</strong> <?= ucfirst(strtolower($reconciliation['status'])) ?></li>
+            </ul>
+          </div>
+          <div class="mb-3">
+            <label for="verify_notes" class="form-label">Verification Notes (optional)</label>
+            <textarea class="form-control" id="verify_notes" name="verification_notes" rows="3" 
+                      placeholder="E.g., Reconciliation verified against receipts, all amounts match."></textarea>
+          </div>
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="action" value="approve">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success">
+            <i class="bi bi-check-circle me-1"></i>Approve Reconciliation
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Reject Reconciliation Modal (Report Discrepancy) -->
+<div class="modal fade" id="rejectReconciliationModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-danger bg-opacity-10">
+        <h5 class="modal-title text-danger"><i class="bi bi-exclamation-circle me-2"></i>Report Reconciliation Discrepancy</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/petty_cash/verify_reconciliation.php">
+        <div class="modal-body">
+          <p class="text-muted mb-3">Report a discrepancy found in this reconciliation. The requestor will be notified and given an opportunity to correct the issue.</p>
+          
+          <div class="mb-3">
+            <label for="discrepancy_reason" class="form-label">Discrepancy Reason <span class="text-danger">*</span></label>
+            <textarea class="form-control" id="discrepancy_reason" name="verification_notes" rows="3" required
+                      placeholder="E.g., Missing receipts for JMD 500, Change amount doesn't match, etc."></textarea>
+          </div>
+          
+          <div class="mb-3">
+            <label for="discrepancy_amount" class="form-label">Discrepancy Amount (optional)</label>
+            <input type="number" step="0.01" min="0" class="form-control" id="discrepancy_amount" name="discrepancy_amount" 
+                   placeholder="Enter the amount of the discrepancy if applicable">
+          </div>
+          
+          <div class="mb-3">
+            <label for="required_action" class="form-label">Required Action (What the requestor must do)</label>
+            <textarea class="form-control" id="required_action" name="required_action" rows="2" 
+                      placeholder="E.g., Provide receipts for purchases, Resubmit corrected reconciliation, etc."></textarea>
+          </div>
+          
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="action" value="reject">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-exclamation-circle me-1"></i>Report Discrepancy
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
