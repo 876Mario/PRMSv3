@@ -1311,4 +1311,19 @@ function isMonitoringRole(string $role): bool {
     return in_array($role, ['Director HRM&A'], true);
 }
 
+// =============================================================================
+// Finalized-request helper (used to gate document deletion)
+// =============================================================================
+
+/**
+ * Return true when a request has reached a finalized/completed status.
+ *
+ * Documents already attached to a finalized request may only be deleted by
+ * a user holding the elevated 'procurement_delete_finalized_document'
+ * permission (see procurement/delete_document.php).
+ */
+function isFinalizedRequestStatus(string $status): bool {
+    return in_array(strtoupper($status), ['COMPLETED'], true);
+}
+
 ?>

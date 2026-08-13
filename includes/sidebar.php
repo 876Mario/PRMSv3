@@ -548,7 +548,7 @@ function isCollapsibleActive($urls, $currentPage) {
         <?php endif; ?>
 
         <!-- ===== ADMINISTRATION SECTION ===== -->
-        <?php if (has_permission('manage_users') || has_permission('manage_roles') || has_permission('view_audit_logs')): ?>
+        <?php if (has_permission('manage_users') || has_permission('manage_roles') || has_permission('view_audit_logs') || has_permission('manage_email_notifications')): ?>
         <li class="nav-item mt-2">
             <div class="sidebar-section-label">ADMIN</div>
 
@@ -591,10 +591,21 @@ function isCollapsibleActive($urls, $currentPage) {
             </a>
             <?php endif; ?>
 
+            <?php if (has_permission('manage_email_notifications')): ?>
+            <a class="nav-link text-white sidebar-link <?= active('/admin/email_notifications', $currentPage) ?>"
+               href="/admin/email_notifications.php">
+                <i class="bi bi-envelope-gear me-2"></i>Email Notifications
+            </a>
+            <?php endif; ?>
+
             <?php if (has_permission('view_audit_logs')): ?>
             <a class="nav-link text-white sidebar-link <?= active('/audit', $currentPage) ?>"
                href="/audit/list.php">
                 <i class="bi bi-journal-check me-2"></i>Audit Logs
+            </a>
+            <a class="nav-link text-white sidebar-link <?= active('/audit/deleted_documents', $currentPage) ?>"
+               href="/audit/deleted_documents.php">
+                <i class="bi bi-trash-fill me-2"></i>Deleted Documents
             </a>
             <?php endif; ?>
         </li>
