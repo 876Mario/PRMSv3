@@ -48,7 +48,7 @@ $stmt = $pdo->prepare("
         v.email
     FROM rfq_vendors rv
     JOIN vendors v ON rv.vendor_id = v.vendor_id
-    WHERE rv.rfq_id = ?
+    WHERE rv.rfq_id = ? AND rv.is_deleted = 0
 ");
 
 $stmt->execute([$rfq_id]);
@@ -69,7 +69,7 @@ $quoteStmt = $pdo->prepare("
     FROM rfq_quotes q
     JOIN rfq_vendors rv ON q.rfq_vendor_id = rv.rfq_vendor_id
     JOIN vendors v ON rv.vendor_id = v.vendor_id
-    WHERE rv.rfq_id = ?
+    WHERE rv.rfq_id = ? AND q.is_deleted = 0 AND rv.is_deleted = 0
     ORDER BY q.quote_amount ASC
 ");
 
@@ -398,12 +398,12 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
                                             <i class="bi bi-file-earmark-text me-1"></i>RFQ Letter
                                         </a>
                                         <?php endif; ?>
-                                        <?php if (!$isAwarded && in_array($userRoleName, ['Admin', 'SuperAdmin', 'Procurement Officer'])): ?>
-                                        <a href="/rfq/remove_vendor.php?rfq_id=<?= $rfq_id ?>&vendor_id=<?= $vendor['rfq_vendor_id'] ?>"
+                                        <?php if (!$isAwarded && has_permission('procurement_delete_vendor')): ?>
+                                        <a href="/rfq/delete_vendor.php?rfq_id=<?= $rfq_id ?>&rfq_vendor_id=<?= $vendor['rfq_vendor_id'] ?>"
                                            class="btn btn-sm btn-outline-danger rounded-pill"
-                                           title="Remove <?= htmlspecialchars($vendor['vendor_name']) ?> from RFQ"
-                                           onclick="return confirm('Are you sure you want to remove <?= htmlspecialchars($vendor['vendor_name'], ENT_QUOTES) ?> from this RFQ?');">
-                                            <i class="bi bi-trash me-1"></i>Remove
+                                          title="Delete <?= htmlspecialchars($vendor['vendor_name']) ?> from RFQ"
+                                          onclick="return confirm('Delete <?= htmlspecialchars($vendor['vendor_name'], ENT_QUOTES) ?> and all associated quotes? This vendor and quotes will be hidden from view.');">
+                                            <i class="bi bi-trash me-1"></i>Delete
                                         </a>
                                         <?php endif; ?>
                                         <?php if ($isAwarded && !($userRoleName === 'Procurement Officer')): ?>
@@ -537,6 +537,15 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
                                         <a href="vote.php?rfq_id=<?= $rfq_id ?>&rfq_vendor_id=<?= $quote['rfq_vendor_id'] ?>"
                                            class="btn btn-sm btn-outline-dark rounded-pill">
                                             <i class="bi bi-check2-square me-1"></i>Vote
+                                        </a>
+                                        <?php endif; ?>
+
+                                        <?php if (!$isAwarded && has_permission('procurement_delete_quote')): ?>
+                                        <a href="/rfq/delete_quote.php?rfq_id=<?= $rfq_id ?>&quote_id=<?= $quote['quote_id'] ?>"
+                                          class="btn btn-sm btn-outline-danger rounded-pill"
+                                          title="Delete this quote"
+                                          onclick="return confirm('Delete this quote? The quote will be hidden from view.');">
+                                            <i class="bi bi-trash me-1"></i>Delete
                                         </a>
                                         <?php endif; ?>
                                     </div>

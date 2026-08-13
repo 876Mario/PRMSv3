@@ -37,6 +37,24 @@ if (!class_exists('NotificationService')) {
     }
 }
 
+/* Load FinanceNotificationService */
+if (!class_exists('FinanceNotificationService')) {
+    $financeServicePath = __DIR__ . '/../services/FinanceNotificationService.php';
+    if (file_exists($financeServicePath)) {
+        require_once $financeServicePath;
+    } else {
+        // Create a stub class for missing FinanceNotificationService
+        class FinanceNotificationService {
+            public static function triggerNotification(int $requestId, string $actionType, array $requestData = []): bool {
+                return false;
+            }
+            public static function completeAction(int $requestId, string $actionType): void {
+            }
+        }
+        error_log("Warning: FinanceNotificationService.php not found at {$financeServicePath}. Using stub class.");
+    }
+}
+
 /**
  * HTML-escape a value for safe insertion into email templates.
  */

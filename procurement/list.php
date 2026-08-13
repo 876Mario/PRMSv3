@@ -678,10 +678,25 @@ $budgetYears = $pdo->query("SELECT DISTINCT YEAR(request_date) AS yr FROM procur
             ?>
             <tr style="background-color: <?= $rowBgColor ?>; border-bottom: 1px solid #e0e0e0; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f5f5f5'" onmouseout="this.style.backgroundColor='<?= $rowBgColor ?>'">
                 <td style="padding: 1rem; border: none; vertical-align: middle;">
-                    <div <?php if (!empty($row['request_description'])): ?>data-bs-toggle="tooltip" data-bs-placement="top" title="<?= htmlspecialchars($row['request_description'], ENT_QUOTES, 'UTF-8') ?>"<?php endif; ?>>
-                        <a href="/procurement/view.php?id=<?= (int)$row['request_id'] ?>" style="text-decoration:none;">
+                    <div>
+                        <a href="/procurement/view.php?id=<?= (int)$row['request_id'] ?>" style="text-decoration:none; display: block;">
                             <code style="background-color: #e8eaf6; padding: 0.4rem 0.8rem; border-radius: 4px; color: #3f51b5; font-weight: 600; font-size: 0.9rem;"><?= htmlspecialchars($row['request_number']) ?></code>
                         </a>
+                        <?php if (!empty($row['request_description'])): ?>
+                        <div style="margin-top: 0.35rem; font-size: 0.8rem; color: #666; line-height: 1.4;" 
+                             data-bs-toggle="tooltip" data-bs-placement="right" 
+                             title="<?= htmlspecialchars($row['request_description'], ENT_QUOTES, 'UTF-8') ?>">
+                            <?php 
+                            $desc = $row['request_description'];
+                            $maxLen = 60;
+                            if (mb_strlen($desc, 'UTF-8') > $maxLen) {
+                                echo htmlspecialchars(mb_substr($desc, 0, $maxLen, 'UTF-8'), ENT_QUOTES, 'UTF-8') . '...';
+                            } else {
+                                echo htmlspecialchars($desc, ENT_QUOTES, 'UTF-8');
+                            }
+                            ?>
+                        </div>
+                        <?php endif; ?>
                     </div>
                 </td>
                 <td style="padding: 1rem; border: none; vertical-align: middle;">
