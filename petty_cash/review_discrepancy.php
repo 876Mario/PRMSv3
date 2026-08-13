@@ -135,7 +135,7 @@ try {
                 $pdo,
                 $request_id,
                 'RECONCILIATION_DISCREPANCY_RESOLVED',
-                "Discrepancy resolved by {$_SESSION['full_name'] ?? 'Finance Officer'}: " . 
+                "Discrepancy resolved by " . ($_SESSION['full_name'] ?? 'Finance Officer') . ": " . 
                 ($resolution_notes !== '' ? $resolution_notes : 'Resolved')
             );
 
@@ -190,7 +190,7 @@ try {
                 $pdo,
                 $request_id,
                 'RECONCILIATION_COMPLETED',
-                "Petty cash reconciliation completed by {$_SESSION['full_name'] ?? 'Finance Officer'}: " . 
+                "Petty cash reconciliation completed by " . ($_SESSION['full_name'] ?? 'Finance Officer') . ": " . 
                 ($resolution_notes !== '' ? $resolution_notes : 'Approved')
             );
 
@@ -247,7 +247,7 @@ try {
             $pdo,
             $request_id,
             'RECONCILIATION_DISCREPANCY_REOPENED',
-            "Discrepancy review reopened by {$_SESSION['full_name'] ?? 'Finance Officer'}: " . 
+            "Discrepancy review reopened by " . ($_SESSION['full_name'] ?? 'Finance Officer') . ": " . 
             ($resolution_notes !== '' ? $resolution_notes : 'Additional corrections required')
         );
 

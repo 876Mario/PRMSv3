@@ -182,7 +182,7 @@ try {
             $pdo,
             $request_id,
             'RECONCILIATION_VERIFIED',
-            "Reconciliation verified and approved by {$_SESSION['full_name'] ?? 'Finance Officer'}"
+            "Reconciliation verified and approved by " . ($_SESSION['full_name'] ?? 'Finance Officer')
         );
 
         $successMessage = "Reconciliation verified and approved successfully.";
@@ -274,7 +274,7 @@ try {
             $pdo,
             $request_id,
             'RECONCILIATION_DISCREPANCY',
-            "Discrepancy found in reconciliation by {$_SESSION['full_name'] ?? 'Finance Officer'}: " . substr($verification_notes, 0, 100)
+            "Discrepancy found in reconciliation by " . ($_SESSION['full_name'] ?? 'Finance Officer') . ": " . substr($verification_notes, 0, 100)
         );
 
         $successMessage = "Reconciliation marked with discrepancy. Requestor has been notified.";

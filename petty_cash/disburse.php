@@ -136,7 +136,7 @@ try {
         $pdo,
         $request_id,
         'DISBURSAL_COMPLETED',
-        "Cash disbursed by {$_SESSION['full_name'] ?? 'Finance Officer'}" . 
+        "Cash disbursed by " . ($_SESSION['full_name'] ?? 'Finance Officer') . 
         ($disbursal_notes !== '' ? ": " . $disbursal_notes : "")
     );
 
