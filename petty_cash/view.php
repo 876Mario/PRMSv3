@@ -63,10 +63,13 @@ if ($disbursement) {
 $reconciliationDocuments = [];
 if ($reconciliation) {
     $docStmt = $pdo->prepare("
-        SELECT *
-        FROM petty_cash_reconciliation_documents
-        WHERE reconcile_id = ? AND is_deleted = 0
-        ORDER BY uploaded_date DESC
+        SELECT 
+            pcd.*,
+            u.full_name as uploaded_by_name
+        FROM petty_cash_reconciliation_documents pcd
+        LEFT JOIN users u ON pcd.uploaded_by = u.user_id
+        WHERE pcd.reconcile_id = ? AND pcd.is_deleted = 0
+        ORDER BY pcd.uploaded_date DESC
     ");
     try {
         $docStmt->execute([(int)$reconciliation['reconcile_id']]);
@@ -279,12 +282,7 @@ if ($disbursement) {
                           </td>
                           <td><?= htmlspecialchars($doc['original_file_name']) ?></td>
                           <td>
-                            <?php 
-                            $docUploadStmt = $pdo->prepare("SELECT full_name FROM users WHERE user_id = ?");
-                            $docUploadStmt->execute([(int)$doc['uploaded_by']]);
-                            $uploader = $docUploadStmt->fetch(PDO::FETCH_ASSOC);
-                            echo htmlspecialchars($uploader['full_name'] ?? 'Unknown');
-                            ?>
+                            <?= htmlspecialchars($doc['uploaded_by_name'] ?? 'Unknown') ?>
                           </td>
                           <td><?= date('M d, Y g:i A', strtotime($doc['uploaded_date'])) ?></td>
                           <td><?= htmlspecialchars(substr($doc['document_notes'] ?? '', 0, 50)) ?></td>
@@ -611,7 +609,7 @@ if ($disbursement) {
           <div class="mb-3">
             <label for="document_type" class="form-label">Document Type <span class="text-danger">*</span></label>
             <select class="form-select" id="document_type" name="document_type" required>
-              <option value="OTHER">-- Select Type --</option>
+              <option value="" disabled selected>-- Select Type --</option>
               <option value="RECEIPT">Receipt</option>
               <option value="INVOICE">Invoice</option>
               <option value="PROOF_OF_PURCHASE">Proof of Purchase</option>

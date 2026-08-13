@@ -15,8 +15,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $reconcile_id = isset($_POST['reconcile_id']) ? (int)$_POST['reconcile_id'] : 0;
-$document_type = isset($_POST['document_type']) ? trim($_POST['document_type']) : 'OTHER';
+$document_type = isset($_POST['document_type']) ? trim($_POST['document_type']) : '';
 $document_notes = isset($_POST['document_notes']) ? trim($_POST['document_notes']) : '';
+
+if (empty($document_type)) {
+    pop("Please select a document type.", "/petty_cash/view.php?request_id={$request_id}", 2000, "error");
+    exit;
+}
 
 if ($reconcile_id <= 0) {
     pop("Invalid reconciliation reference.", "/petty_cash/list.php", 2000, "error");
@@ -185,7 +190,7 @@ try {
 } catch (Throwable $e) {
     error_log("Document upload error: " . $e->getMessage());
     pop(
-        "Error uploading document: " . $e->getMessage(),
+        "An error occurred while uploading the document. Please try again or contact support.",
         "/petty_cash/view.php?request_id={$request_id}",
         2000,
         "error"

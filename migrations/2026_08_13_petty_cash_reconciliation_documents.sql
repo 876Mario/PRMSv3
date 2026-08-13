@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS `petty_cash_reconciliation_verifications` (
   `required_action` text COMMENT 'What requestor needs to do to resolve',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`verification_id`),
-  UNIQUE KEY `uq_reconcile_verification` (`reconcile_id`),
+  KEY `idx_reconcile_id` (`reconcile_id`),
   KEY `idx_verified_by` (`verified_by`),
   KEY `idx_verification_date` (`verification_date`),
   KEY `idx_verification_status` (`verification_status`),
