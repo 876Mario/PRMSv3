@@ -124,37 +124,46 @@ class RFQSearchService
      */
     private function buildCountQuery(string $authWhereClause): string
     {
-        $whereClause = $authWhereClause ? $authWhereClause . " AND " : "WHERE ";
-        
-        return "
-            SELECT COUNT(DISTINCT r.rfq_id)
-            FROM rfqs r
-            JOIN procurement_requests pr ON r.request_id = pr.request_id
-            {$whereClause}(
-                r.rfq_number LIKE :search_term ESCAPE '\\'
-                OR pr.request_number LIKE :search_term ESCAPE '\\'
-                OR pr.description LIKE :search_term ESCAPE '\\'
-                OR r.status LIKE :search_term ESCAPE '\\'
-                OR EXISTS (
-                    SELECT 1
-                    FROM rfq_vendors rv
-                    WHERE rv.rfq_id = r.rfq_id
-                    AND (rv.vendor_name LIKE :search_term ESCAPE '\\')
-                )
-                OR EXISTS (
-                    SELECT 1
-                    FROM users u
-                    WHERE u.user_id = pr.created_by
-                    AND u.full_name LIKE :search_term ESCAPE '\\'
-                )
-                OR EXISTS (
-                    SELECT 1
-                    FROM branches b
-                    WHERE b.branch_id = pr.branch_id
-                    AND b.branch_name LIKE :search_term ESCAPE '\\'
-                )
-            )
-        ";
+       $whereClause = $authWhereClause ? $authWhereClause . " AND " : "WHERE ";
+       $searchPredicate = $this->buildSearchPredicate();
+
+       return "
+           SELECT COUNT(DISTINCT r.rfq_id)
+           FROM rfqs r
+           JOIN procurement_requests pr ON r.request_id = pr.request_id
+           {$whereClause}{$searchPredicate}
+       ";
+    }
+
+    /**
+     * Build the RFQ search predicate used for both count and result queries.
+     */
+    private function buildSearchPredicate(): string
+    {
+       return "(
+               r.rfq_number LIKE :search_term ESCAPE '\\\\'
+               OR pr.request_number LIKE :search_term ESCAPE '\\\\'
+               OR pr.description LIKE :search_term ESCAPE '\\\\'
+               OR r.status LIKE :search_term ESCAPE '\\\\'
+               OR EXISTS (
+                   SELECT 1
+                   FROM rfq_vendors rv
+                   WHERE rv.rfq_id = r.rfq_id
+                   AND (rv.vendor_name LIKE :search_term ESCAPE '\\\\')
+               )
+               OR EXISTS (
+                   SELECT 1
+                   FROM users u
+                   WHERE u.user_id = pr.created_by
+                   AND u.full_name LIKE :search_term ESCAPE '\\\\'
+               )
+               OR EXISTS (
+                   SELECT 1
+                   FROM branches b
+                   WHERE b.branch_id = pr.branch_id
+                   AND b.branch_name LIKE :search_term ESCAPE '\\\\'
+               )
+           )";
     }
 
     /**
@@ -162,41 +171,19 @@ class RFQSearchService
      */
     private function buildSearchQuery(string $authWhereClause): string
     {
-        $whereClause = $authWhereClause ? $authWhereClause . " AND " : "WHERE ";
-        
-        return "
-            SELECT DISTINCT r.rfq_id, r.rfq_number, r.status, r.created_at,
+       $whereClause = $authWhereClause ? $authWhereClause . " AND " : "WHERE ";
+       $searchPredicate = $this->buildSearchPredicate();
+
+       return "
+           SELECT DISTINCT r.rfq_id, r.rfq_number, r.status, r.created_at,
                    pr.request_number, pr.request_id, pr.created_by,
                    (SELECT COUNT(*) FROM rfq_vendors rv WHERE rv.rfq_id = r.rfq_id) AS vendor_count
-            FROM rfqs r
-            JOIN procurement_requests pr ON r.request_id = pr.request_id
-            {$whereClause}(
-                r.rfq_number LIKE :search_term ESCAPE '\\'
-                OR pr.request_number LIKE :search_term ESCAPE '\\'
-                OR pr.description LIKE :search_term ESCAPE '\\'
-                OR r.status LIKE :search_term ESCAPE '\\'
-                OR EXISTS (
-                    SELECT 1
-                    FROM rfq_vendors rv
-                    WHERE rv.rfq_id = r.rfq_id
-                    AND (rv.vendor_name LIKE :search_term ESCAPE '\\')
-                )
-                OR EXISTS (
-                    SELECT 1
-                    FROM users u
-                    WHERE u.user_id = pr.created_by
-                    AND u.full_name LIKE :search_term ESCAPE '\\'
-                )
-                OR EXISTS (
-                    SELECT 1
-                    FROM branches b
-                    WHERE b.branch_id = pr.branch_id
-                    AND b.branch_name LIKE :search_term ESCAPE '\\'
-                )
-            )
-            ORDER BY r.created_at DESC
-            LIMIT :limit OFFSET :offset
-        ";
+           FROM rfqs r
+           JOIN procurement_requests pr ON r.request_id = pr.request_id
+           {$whereClause}{$searchPredicate}
+           ORDER BY r.created_at DESC
+           LIMIT :limit OFFSET :offset
+       ";
     }
 
     /**
