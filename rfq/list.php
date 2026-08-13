@@ -78,15 +78,6 @@ if ($isSearching) {
     $stmt->execute();
     $rfqs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Add vendor counts
-    foreach ($rfqs as &$rfq) {
-        $vendorStmt = $pdo->prepare(
-            "SELECT COUNT(*) FROM rfq_vendors WHERE rfq_id = ?"
-        );
-        $vendorStmt->execute([$rfq['rfq_id']]);
-        $rfq['vendor_count'] = (int)$vendorStmt->fetchColumn();
-    }
-    unset($rfq);
     $searchDisplayTerm = '';
 }
 

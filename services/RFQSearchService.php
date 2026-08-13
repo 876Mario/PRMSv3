@@ -54,16 +54,6 @@ class RFQSearchService
         $searchStmt->execute($params);
         $rfqs = $searchStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Get vendor counts for each RFQ
-        foreach ($rfqs as &$rfq) {
-            $vendorStmt = $this->pdo->prepare(
-                "SELECT COUNT(*) FROM rfq_vendors WHERE rfq_id = ?"
-            );
-            $vendorStmt->execute([$rfq['rfq_id']]);
-            $rfq['vendor_count'] = (int)$vendorStmt->fetchColumn();
-        }
-        unset($rfq);
-
         return [
             'rfqs' => $rfqs,
             'total_count' => $totalCount,
@@ -176,7 +166,8 @@ class RFQSearchService
         
         return "
             SELECT DISTINCT r.rfq_id, r.rfq_number, r.status, r.created_at,
-                   pr.request_number, pr.request_id, pr.created_by
+                   pr.request_number, pr.request_id, pr.created_by,
+                   (SELECT COUNT(*) FROM rfq_vendors rv WHERE rv.rfq_id = r.rfq_id) AS vendor_count
             FROM rfqs r
             JOIN procurement_requests pr ON r.request_id = pr.request_id
             {$whereClause}(

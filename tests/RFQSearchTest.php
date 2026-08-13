@@ -226,9 +226,9 @@ testAssert(
 testSectionStart("Test 11: Special Characters Handling");
 $result = $service->search('TEST_RFQ%', 20, 0);
 testAssert(
-    "Special characters are escaped safely",
-    true,  // Query should not crash
-    "No SQL injection occurred"
+    "Special characters are escaped and treated as literals (no results for TEST_RFQ%)",
+    count($result['rfqs']) === 0,  // Should find zero results since no literal record has TEST_RFQ%
+    "Found " . count($result['rfqs']) . " results (expected 0 to confirm escaping)"
 );
 
 // Test 12: Pagination with search
