@@ -193,12 +193,17 @@ class ProcurementDeleteFunctionalityTest extends PHPUnit\Framework\TestCase
      */
     public function testAuditLogOnDeletion(): void
     {
-        $beforeCount = $this->pdo->prepare("SELECT COUNT(*) FROM audit_log WHERE action = 'SOFT_DELETE'")->query()->fetchColumn();
+        $beforeCountStmt = $this->pdo->prepare("SELECT COUNT(*) FROM audit_log WHERE action = 'SOFT_DELETE'");
+        $beforeCountStmt->execute();
+        $beforeCount = (int)$beforeCountStmt->fetchColumn();
 
         // Simulate deletion
         logAudit($this->pdo, 'rfq_vendors', $this->testVendorId, 'SOFT_DELETE', 'Test vendor deleted');
 
-        $afterCount = $this->pdo->prepare("SELECT COUNT(*) FROM audit_log WHERE action = 'SOFT_DELETE'")->query()->fetchColumn();
+        $afterCountStmt = $this->pdo->prepare("SELECT COUNT(*) FROM audit_log WHERE action = 'SOFT_DELETE'");
+        $afterCountStmt->execute();
+        $afterCount = (int)$afterCountStmt->fetchColumn();
+
         $this->assertGreaterThan($beforeCount, $afterCount);
     }
 

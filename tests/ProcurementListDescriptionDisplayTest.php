@@ -90,12 +90,12 @@ class ProcurementListDescriptionDisplayTest extends PHPUnit\Framework\TestCase
 
         // Simulate truncation (60 chars + '...')
         $maxLen = 60;
-        $truncated = strlen($fullDesc) > $maxLen 
-            ? substr($fullDesc, 0, $maxLen) . '...'
+        $truncated = mb_strlen($fullDesc, 'UTF-8') > $maxLen 
+            ? mb_substr($fullDesc, 0, $maxLen, 'UTF-8') . '...'
             : $fullDesc;
 
-        $this->assertLessThanOrEqual(strlen($fullDesc), strlen($truncated));
-        $this->assertTrue(strlen($truncated) <= ($maxLen + 3)); // +3 for '...'
+        $this->assertLessThanOrEqual(mb_strlen($fullDesc, 'UTF-8'), mb_strlen($truncated, 'UTF-8'));
+        $this->assertTrue(mb_strlen($truncated, 'UTF-8') <= ($maxLen + 3)); // +3 for '...'
     }
 
     /**
@@ -196,7 +196,7 @@ class ProcurementListDescriptionDisplayTest extends PHPUnit\Framework\TestCase
 
         // Should not contain unescaped HTML tags
         $this->assertStringNotContainsString('<script>', $escaped);
-        $this->assertStringNotContainsString('&', $escaped); // Should be &amp;
+        $this->assertStringContainsString('&amp;', $escaped); // & should be &amp;
         $this->assertStringContainsString('&lt;script&gt;', $escaped);
     }
 
@@ -288,11 +288,11 @@ class ProcurementListDescriptionDisplayTest extends PHPUnit\Framework\TestCase
 
         // Verify data structure supports responsive display
         $this->assertNotNull($row);
-        $this->assertLessThan(100, strlen($row['request_number'])); // Short code
+        $this->assertLessThan(100, mb_strlen($row['request_number'], 'UTF-8')); // Short code
         $this->assertNotEmpty($row['description']); // Meaningful description
         
         // Description should be reasonable length for truncation on mobile
-        $truncated = strlen($row['description']) > 60;
+        $truncated = mb_strlen($row['description'], 'UTF-8') > 60;
         $this->assertTrue($truncated); // Should be long enough to truncate
     }
 }

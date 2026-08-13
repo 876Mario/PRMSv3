@@ -402,7 +402,7 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
                                         <a href="/rfq/delete_vendor.php?rfq_id=<?= $rfq_id ?>&rfq_vendor_id=<?= $vendor['rfq_vendor_id'] ?>"
                                            class="btn btn-sm btn-outline-danger rounded-pill"
                                           title="Delete <?= htmlspecialchars($vendor['vendor_name']) ?> from RFQ"
-                                          onclick="return confirm('Delete <?= htmlspecialchars($vendor['vendor_name'], ENT_QUOTES) ?> and all associated quotes? This cannot be undone.');">
+                                          onclick="return confirm('Delete <?= htmlspecialchars($vendor['vendor_name'], ENT_QUOTES) ?> and all associated quotes? This vendor and quotes will be hidden from view.');">
                                             <i class="bi bi-trash me-1"></i>Delete
                                         </a>
                                         <?php endif; ?>
@@ -544,7 +544,7 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
                                         <a href="/rfq/delete_quote.php?rfq_id=<?= $rfq_id ?>&quote_id=<?= $quote['quote_id'] ?>"
                                           class="btn btn-sm btn-outline-danger rounded-pill"
                                           title="Delete this quote"
-                                          onclick="return confirm('Delete this quote? This cannot be undone.');">
+                                          onclick="return confirm('Delete this quote? The quote will be hidden from view.');">
                                             <i class="bi bi-trash me-1"></i>Delete
                                         </a>
                                         <?php endif; ?>

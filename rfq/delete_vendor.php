@@ -63,18 +63,15 @@ $stmt = $pdo->prepare("SELECT COUNT(*) FROM rfq_quotes WHERE rfq_vendor_id = ? A
 $stmt->execute([$rfq_vendor_id]);
 $quoteCount = (int)$stmt->fetchColumn();
 
+$warningMessage = '';
 if ($quoteCount > 0) {
-    pop(
-        'Warning: This vendor has submitted quotes. Deleting will also mark those quotes as deleted.', 
-        '/rfq/view.php?id='.$rfq_id, 
-        POP_DEFAULT_DELAY_MS, 
-        'warning'
-    );
-    // Continue with deletion even if quotes exist
+    $warningMessage = " and $quoteCount associated quote(s)";
 }
 
 /* Perform soft delete of vendor */
 try {
+    $pdo->beginTransaction();
+    
     $stmt = $pdo->prepare("
         UPDATE rfq_vendors
         SET is_deleted = 1, deleted_by = ?, deleted_at = NOW()
@@ -101,8 +98,11 @@ try {
     logAudit($pdo, 'rfq_vendors', $rfq_vendor_id, 'SOFT_DELETE', 
         'Vendor "' . $vendor['vendor_name'] . '" and ' . $quoteCount . ' quote(s) soft-deleted');
 
-    $_SESSION['popup_success'] = htmlspecialchars($vendor['vendor_name']) . ' and associated quotes have been deleted.';
+    $pdo->commit();
+    $_SESSION['popup_success'] = htmlspecialchars($vendor['vendor_name']) . $warningMessage . ' deleted successfully.';
+
 } catch (Throwable $e) {
+    $pdo->rollBack();
     $_SESSION['popup_error'] = 'Failed to delete vendor: ' . extractDbMessage($e);
 }
 

@@ -689,10 +689,10 @@ $budgetYears = $pdo->query("SELECT DISTINCT YEAR(request_date) AS yr FROM procur
                             <?php 
                             $desc = $row['request_description'];
                             $maxLen = 60;
-                            if (strlen($desc) > $maxLen) {
-                                echo htmlspecialchars(substr($desc, 0, $maxLen)) . '...';
+                            if (mb_strlen($desc, 'UTF-8') > $maxLen) {
+                                echo htmlspecialchars(mb_substr($desc, 0, $maxLen, 'UTF-8'), ENT_QUOTES, 'UTF-8') . '...';
                             } else {
-                                echo htmlspecialchars($desc);
+                                echo htmlspecialchars($desc, ENT_QUOTES, 'UTF-8');
                             }
                             ?>
                         </div>

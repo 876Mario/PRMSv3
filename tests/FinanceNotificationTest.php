@@ -108,23 +108,38 @@ class FinanceNotificationTest extends PHPUnit\Framework\TestCase
 
         $actionType = FinanceNotificationService::ACTION_FUNDS_VERIFICATION;
 
+        // Count notifications before
+        $stmt = $this->pdo->prepare("
+            SELECT COUNT(*) FROM user_notifications
+            WHERE request_id = ? AND stage = ? AND is_read = 0
+        ");
+        $stmt->execute([$this->testRequestId, $actionType]);
+        $countBefore = (int)$stmt->fetchColumn();
+
         // Create first notification
-        $result1 = FinanceNotificationService::triggerNotification(
+        FinanceNotificationService::triggerNotification(
             $this->testRequestId,
             $actionType,
             $requestData
         );
 
         // Attempt to create duplicate
-        $result2 = FinanceNotificationService::triggerNotification(
+        FinanceNotificationService::triggerNotification(
             $this->testRequestId,
             $actionType,
             $requestData
         );
 
-        // Both should return true (true = notification exists or was created)
-        $this->assertTrue($result1 || !$result1); // Result depends on finance users
-        $this->assertTrue($result2 || !$result2);
+        // Count notifications after
+        $stmt = $this->pdo->prepare("
+            SELECT COUNT(*) FROM user_notifications
+            WHERE request_id = ? AND stage = ? AND is_read = 0
+        ");
+        $stmt->execute([$this->testRequestId, $actionType]);
+        $countAfter = (int)$stmt->fetchColumn();
+
+        // Duplicate prevention should result in no additional notifications beyond the first
+        $this->assertLessThanOrEqual($countBefore + 1, $countAfter);
     }
 
     /**
@@ -258,7 +273,7 @@ class FinanceNotificationTest extends PHPUnit\Framework\TestCase
         $this->assertStringContainsString($requestData['request_number'], $notification['title']);
         $this->assertStringContainsString($requestData['vendor_name'], $notification['body']);
         $this->assertEquals($requestData['request_number'], $notification['request_ref']);
-        $this->assertStringContainsString($this->testRequestId, $notification['action_url']);
+        $this->assertStringContainsString((string)$this->testRequestId, $notification['action_url']);
     }
 
     /**
@@ -266,9 +281,11 @@ class FinanceNotificationTest extends PHPUnit\Framework\TestCase
      */
     public function testAuditLogForNotificationEvents(): void
     {
-        $beforeCount = $this->pdo->prepare(
+        $beforeCountStmt = $this->pdo->prepare(
             "SELECT COUNT(*) FROM audit_log WHERE action LIKE 'FINANCE_NOTIFICATION%'"
-        )->query()->fetchColumn();
+        );
+        $beforeCountStmt->execute();
+        $beforeCount = (int)$beforeCountStmt->fetchColumn();
 
         // Create a notification event
         $stmt = $this->pdo->prepare("
@@ -283,9 +300,11 @@ class FinanceNotificationTest extends PHPUnit\Framework\TestCase
             'Test finance notification sent'
         ]);
 
-        $afterCount = $this->pdo->prepare(
+        $afterCountStmt = $this->pdo->prepare(
             "SELECT COUNT(*) FROM audit_log WHERE action = 'FINANCE_NOTIFICATION_SENT'"
-        )->query()->fetchColumn();
+        );
+        $afterCountStmt->execute();
+        $afterCount = (int)$afterCountStmt->fetchColumn();
 
         $this->assertGreaterThan($beforeCount, $afterCount);
     }

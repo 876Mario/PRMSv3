@@ -61,15 +61,7 @@ if ($quote['is_deleted']) {
 }
 
 /* Warn if quote was selected */
-if ($quote['is_selected']) {
-    pop(
-        'Warning: This quote was selected. Deleting it will deselect it from this RFQ.', 
-        '/rfq/view.php?id='.$rfq_id, 
-        POP_DEFAULT_DELAY_MS, 
-        'warning'
-    );
-    // Continue with deletion
-}
+$wasSelected = $quote['is_selected'] ? ' (was selected)' : '';
 
 /* Perform soft delete */
 try {
@@ -83,14 +75,14 @@ try {
         $quote_id
     ]);
 
-    /* If the quote was selected, clear selection */
+    /* If the quote was selected, clear selection only from this quote */
     if ($quote['is_selected']) {
         $stmt = $pdo->prepare("
             UPDATE rfq_quotes
             SET is_selected = 0
-            WHERE rfq_vendor_id = ? AND is_deleted = 0
+            WHERE quote_id = ? AND is_selected = 1
         ");
-        $stmt->execute([$quote['rfq_vendor_id']]);
+        $stmt->execute([$quote_id]);
     }
 
     /* Log audit trail */
@@ -98,7 +90,8 @@ try {
         'Quote from "' . $quote['vendor_name'] . '" (' . $quote['currency'] . ' ' . 
         number_format((float)$quote['quote_amount'], 2) . ') soft-deleted');
 
-    $_SESSION['popup_success'] = 'Quote from ' . htmlspecialchars($quote['vendor_name']) . ' has been deleted.';
+    $_SESSION['popup_success'] = 'Quote from ' . htmlspecialchars($quote['vendor_name']) . $wasSelected . ' deleted successfully.';
+
 } catch (Throwable $e) {
     $_SESSION['popup_error'] = 'Failed to delete quote: ' . extractDbMessage($e);
 }
