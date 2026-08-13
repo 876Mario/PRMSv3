@@ -45,13 +45,17 @@ class RFQSearchService
         $countStmt->execute($params);
         $totalCount = (int)$countStmt->fetchColumn();
 
-        // Add pagination
-        $params[':limit'] = $perPage;
-        $params[':offset'] = $offset;
-
         // Get results
+        // LIMIT/OFFSET must be bound as integers (PDO::PARAM_INT); execute()
+        // with an associative array binds everything as strings, which
+        // MariaDB/MySQL rejects for LIMIT/OFFSET (e.g. LIMIT '20' OFFSET '0').
         $searchStmt = $this->pdo->prepare($searchQuery);
-        $searchStmt->execute($params);
+        foreach ($params as $key => $value) {
+            $searchStmt->bindValue($key, $value);
+        }
+        $searchStmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $searchStmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $searchStmt->execute();
         $rfqs = $searchStmt->fetchAll(PDO::FETCH_ASSOC);
 
         return [
