@@ -14,6 +14,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/mailer.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/services/EmailNotificationConfigService.php';
 
 $canManage = in_array($_SESSION['role_name'] ?? '', ['Admin', 'SuperAdmin'], true);
