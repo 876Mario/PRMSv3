@@ -40,8 +40,8 @@ if ($request['created_by'] != $_SESSION['user_id'] && !has_permission('manage_us
     exit;
 }
 
-/* Must be in PRE_AUTHORIZED status */
-if ($request['status'] !== 'PRE_AUTHORIZED') {
+/* Must be in FUNDS_VERIFIED status (or can resubmit if in INVOICE_SUBMITTED) */
+if (!in_array($request['status'], ['FUNDS_VERIFIED', 'INVOICE_SUBMITTED'])) {
     pop('This request is not in a state that allows invoice submission. Status: ' . $request['status'], '/reimbursement/view.php?request_id=' . $request_id, 3000, 'warning');
     exit;
 }

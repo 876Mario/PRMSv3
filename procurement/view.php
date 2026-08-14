@@ -285,24 +285,25 @@ $rfqId = $stmt->fetchColumn();
 $pipelineStages = [];
 
 if ($requestType === 'PETTY_CASH') {
-    $pipelineStages = [
-        'DRAFT'           => ['icon' => 'bi-pencil-square',   'label' => 'Draft'],
-        'SUBMITTED'       => ['icon' => 'bi-send',            'label' => 'Submitted'],
-        'HOD_REVIEWED'    => ['icon' => 'bi-person-check',    'label' => 'HOD Reviews'],
-        'FINANCE_AUTHORIZED' => ['icon' => 'bi-cash-coin',    'label' => 'Finance Auth'],
-        'DISBURSED'       => ['icon' => 'bi-wallet2',         'label' => 'Disbursed'],
-        'COMPLETED'       => ['icon' => 'bi-check-circle',    'label' => 'Complete'],
-    ];
+    // Use centralized pipeline definition from config/workflow.php
+    $pipelineArray = getPettyCashPipeline();
+    $pipelineStages = [];
+    foreach ($pipelineArray as $stage) {
+        $pipelineStages[$stage['status']] = [
+            'icon' => $stage['icon'],
+            'label' => $stage['label'],
+        ];
+    }
 } elseif ($requestType === 'REIMBURSEMENT') {
-    $pipelineStages = [
-        'DRAFT'           => ['icon' => 'bi-pencil-square',   'label' => 'Draft'],
-        'SUBMITTED'       => ['icon' => 'bi-send',            'label' => 'Submitted'],
-        'PRE_AUTHORIZED'  => ['icon' => 'bi-person-check',    'label' => 'Pre-Auth'],
-        'VERIFIED'        => ['icon' => 'bi-check2-circle',   'label' => 'Verified'],
-        'APPROVED'        => ['icon' => 'bi-briefcase-fill',  'label' => 'Approved'],
-        'REIMBURSED'      => ['icon' => 'bi-cash-coin',       'label' => 'Reimbursed'],
-        'COMPLETED'       => ['icon' => 'bi-check-circle',    'label' => 'Complete'],
-    ];
+    // Use centralized pipeline definition from config/workflow.php
+    $pipelineArray = getReimbursementPipeline();
+    $pipelineStages = [];
+    foreach ($pipelineArray as $stage) {
+        $pipelineStages[$stage['status']] = [
+            'icon' => $stage['icon'],
+            'label' => $stage['label'],
+        ];
+    }
 } elseif ($requestType === 'SERVICE_CONTRACT') {
     $pipelineStages = [
         'DRAFT'     => ['icon' => 'bi-pencil-square', 'label' => 'Draft'],
@@ -425,13 +426,12 @@ $badgeMap = [
     'DRAFT'                 => ['secondary',         'bi-pencil-square'],
     'SUBMITTED'             => ['warning text-dark',  'bi-send'],
     'HOD_APPROVED'          => ['info text-dark',     'bi-person-check'],
-    'HOD_REVIEWED'          => ['info text-dark',     'bi-person-check'],
     'FUNDS_VERIFIED'        => ['primary',            'bi-cash-coin'],
     'DIRECTOR_APPROVED'     => ['info',               'bi-briefcase-fill'],
-    'PRE_AUTHORIZED'        => ['info text-dark',     'bi-person-check'],
-    'VERIFIED'              => ['info text-dark',     'bi-check2-circle'],
     'APPROVED'              => ['success',            'bi-briefcase-fill'],
     'REIMBURSED'            => ['success text-dark',  'bi-cash-coin'],
+    'INVOICE_SUBMITTED'     => ['info text-dark',     'bi-file-earmark-text'],
+    'INVOICE_VERIFIED'      => ['info text-dark',     'bi-check2-circle'],
     'GC_APPROVED'           => ['success',            'bi-building-check'],
     'PROCUREMENT_STAGE'     => ['info',               'bi-clipboard-check'],
     'EVALUATION_STAGE'      => ['warning text-dark',  'bi-bar-chart'],
@@ -1855,7 +1855,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <i class="bi bi-pencil-square me-1"></i>Edit Details
                     </a>
                 <?php endif; ?>
-                <?php if (in_array($status, ['VERIFIED', 'APPROVED', 'REIMBURSED', 'COMPLETED'])): ?>
+                <?php if (in_array($status, ['INVOICE_VERIFIED', 'APPROVED', 'REIMBURSED', 'COMPLETED'])): ?>
                     <a href="/invoice/list.php?request_id=<?= $request['request_id'] ?>"
                        class="btn btn-outline-success btn-sm">
                         <i class="bi bi-receipt me-1"></i>View Invoices
@@ -1874,7 +1874,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <i class="bi bi-pencil-square me-1"></i>Edit Details
                     </a>
                 <?php endif; ?>
-                <?php if (in_array($status, ['HOD_REVIEWED', 'FINANCE_AUTHORIZED', 'DISBURSED', 'COMPLETED'])): ?>
+                <?php if (in_array($status, ['FINANCE_AUTHORIZED', 'DISBURSED', 'PENDING_RECONCILIATION', 'COMPLETED'])): ?>
                     <a href="/petty_cash/reconcile.php?id=<?= $request['request_id'] ?>"
                        class="btn btn-outline-success btn-sm">
                         <i class="bi bi-check2-circle me-1"></i>Reconciliation

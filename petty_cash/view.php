@@ -347,32 +347,36 @@ if ($disbursement) {
         </div>
         <div class="card-body">
           <div class="list-group list-group-flush">
-            <div class="list-group-item d-flex justify-content-between align-items-center">
-              <span>1. Create Request</span>
-              <i class="bi bi-check-circle-fill text-success"></i>
-            </div>
-            <div class="list-group-item d-flex justify-content-between align-items-center">
-              <span>2. Finance Verifies Funds</span>
-              <i class="bi <?= in_array($request['status'], ['FUNDS_VERIFIED', 'FINANCE_AUTHORIZED', 'DISBURSED', 'PENDING_RECONCILIATION', 'COMPLETED']) ? 'bi-check-circle-fill text-success' : 'bi-circle' ?>"></i>
-            </div>
-            <div class="list-group-item d-flex justify-content-between align-items-center">
-              <span>3. Finance Disbursal</span>
-              <i class="bi <?= in_array($request['status'], ['DISBURSED', 'PENDING_RECONCILIATION', 'COMPLETED']) ? 'bi-check-circle-fill text-success' : 'bi-circle' ?>"></i>
-            </div>
-            <div class="list-group-item d-flex justify-content-between align-items-center">
-              <span>4. 24-Hour Reconciliation</span>
-              <i class="bi <?= in_array($request['status'], ['COMPLETED']) ? 'bi-check-circle-fill text-success' : 'bi-circle' ?>"></i>
-            </div>
-            <div class="list-group-item d-flex justify-content-between align-items-center">
-              <span>5. Verification</span>
-              <i class="bi <?= $request['status'] === 'COMPLETED' ? 'bi-check-circle-fill text-success' : 'bi-circle' ?>"></i>
-            </div>
-          </div>
-        </div>
-      </div>
+           <?php
+           // Get pipeline stages from centralized workflow config
+           $pipelineStages = getPettyCashPipeline();
+           $currentStatusIdx = -1;
+            
+           // Find current status index in pipeline
+           foreach ($pipelineStages as $idx => $stage) {
+               if ($stage['status'] === $request['status']) {
+                   $currentStatusIdx = $idx;
+                   break;
+               }
+           }
+            
+           // Display each stage
+           foreach ($pipelineStages as $idx => $stage):
+               $isCompleted = ($currentStatusIdx !== -1 && $idx < $currentStatusIdx);
+               $isCurrent = ($stage['status'] === $request['status']);
+               $stageNum = $idx + 1;
+           ?>
+           <div class="list-group-item d-flex justify-content-between align-items-center">
+             <span><?= $stageNum ?>. <?= htmlspecialchars($stage['label']) ?></span>
+             <i class="bi <?= $isCompleted ? 'bi-check-circle-fill text-success' : ($isCurrent ? 'bi-arrow-right text-primary' : 'bi-circle text-muted') ?>"></i>
+           </div>
+           <?php endforeach; ?>
+         </div>
+       </div>
+     </div>
 
-      <!-- Quick Actions -->
-      <div class="card shadow-sm mt-3">
+     <!-- Quick Actions -->
+     <div class="card shadow-sm mt-3">
         <div class="card-header bg-light">
           <h5 class="mb-0">Actions</h5>
         </div>
