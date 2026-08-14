@@ -236,6 +236,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                 'image/jpeg', 'image/png'];
                 
+                // Map MIME types to safe file extensions
+                $mimeToExt = [
+                    'application/pdf' => 'pdf',
+                    'application/msword' => 'doc',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                    'application/vnd.ms-excel' => 'xls',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+                    'image/jpeg' => 'jpg',
+                    'image/png' => 'png',
+                ];
+                
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
                 $mimeType = finfo_file($finfo, $file['tmp_name']);
                 finfo_close($finfo);
@@ -251,7 +262,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!is_dir($uploadDir)) {
                     mkdir($uploadDir, 0755, true);
                 }
-                $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+                $ext = $mimeToExt[$mimeType] ?? 'bin';
                 $safeFilename = 'COMMIT_FORM_' . time() . '_' . uniqid() . '.' . $ext;
                 $uploadPath = $uploadDir . $safeFilename;
                 if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
@@ -375,6 +386,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'application/vnd.ms-excel',
                                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
                 
+                // Map MIME types to safe file extensions
+                $mimeToExt = [
+                    'application/pdf' => 'pdf',
+                    'application/msword' => 'doc',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                    'application/vnd.ms-excel' => 'xls',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+                ];
+                
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
                 $mimeType = finfo_file($finfo, $file['tmp_name']);
                 finfo_close($finfo);
@@ -393,7 +413,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mkdir($uploadDir, 0755, true);
                 }
                 
-                $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+                // Use extension derived from MIME type, not user-supplied filename
+                $ext = $mimeToExt[$mimeType] ?? 'bin';
                 $safeFilename = 'COMMITMENT_' . time() . '_' . uniqid() . '.' . $ext;
                 $uploadPath = $uploadDir . $safeFilename;
                 
@@ -415,12 +436,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                 'image/jpeg', 'image/png'];
                 
+                // Map MIME types to safe file extensions for forms
+                $formMimeToExt = [
+                    'application/pdf' => 'pdf',
+                    'application/msword' => 'doc',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                    'application/vnd.ms-excel' => 'xls',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+                    'image/jpeg' => 'jpg',
+                    'image/png' => 'png',
+                ];
+                
                 $formFinfo = finfo_open(FILEINFO_MIME_TYPE);
                 $formMimeType = finfo_file($formFinfo, $formFile['tmp_name']);
                 finfo_close($formFinfo);
                 
                 if (in_array($formMimeType, $formAllowedTypes) && $formFile['size'] <= 50 * 1024 * 1024) {
-                    $formExt = pathinfo($formFile['name'], PATHINFO_EXTENSION);
+                    $formExt = $formMimeToExt[$formMimeType] ?? 'bin';
                     $formSafeFilename = 'COMMIT_FORM_' . time() . '_' . uniqid() . '.' . $formExt;
                     $formUploadPath = $uploadDir . $formSafeFilename;
                     if (move_uploaded_file($formFile['tmp_name'], $formUploadPath)) {
