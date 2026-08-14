@@ -1177,6 +1177,44 @@ function getServiceContractPipeline(): array {
     ];
 }
 
+/**
+ * Get petty cash workflow pipeline stages for UI display.
+ * Returns stages in the correct order aligned with getPettyCashTransitions().
+ * This is the single source of truth for petty cash stage configuration.
+ *
+ * @return array Array of pipeline stages with status, label, and icon
+ */
+function getPettyCashPipeline(): array {
+    return [
+        ['status' => 'DRAFT', 'label' => 'Draft', 'icon' => 'bi-pencil-square'],
+        ['status' => 'SUBMITTED', 'label' => 'Submitted', 'icon' => 'bi-send'],
+        ['status' => 'FUNDS_VERIFIED', 'label' => 'Funds Verified', 'icon' => 'bi-cash-coin'],
+        ['status' => 'FINANCE_AUTHORIZED', 'label' => 'Finance Authorized', 'icon' => 'bi-cash-coin'],
+        ['status' => 'DISBURSED', 'label' => 'Disbursed', 'icon' => 'bi-wallet2'],
+        ['status' => 'PENDING_RECONCILIATION', 'label' => 'Awaiting Purchase Documentation', 'icon' => 'bi-hourglass-split'],
+        ['status' => 'PROCUREMENT_VERIFIED', 'label' => 'Documents Verified', 'icon' => 'bi-check-circle'],
+        ['status' => 'COMPLETED', 'label' => 'Complete', 'icon' => 'bi-check-circle-fill'],
+    ];
+}
+
+/**
+ * Get reimbursement workflow pipeline stages for UI display.
+ * Returns stages in the correct order aligned with getReimbursementTransitions().
+ * This is the single source of truth for reimbursement stage configuration.
+ *
+ * @return array Array of pipeline stages with status, label, and icon
+ */
+function getReimbursementPipeline(): array {
+    return [
+        ['status' => 'DRAFT', 'label' => 'Draft', 'icon' => 'bi-pencil-square'],
+        ['status' => 'SUBMITTED', 'label' => 'Submitted', 'icon' => 'bi-send'],
+        ['status' => 'FUNDS_VERIFIED', 'label' => 'Funds Verified', 'icon' => 'bi-cash-coin'],
+        ['status' => 'APPROVED', 'label' => 'Approved', 'icon' => 'bi-briefcase-fill'],
+        ['status' => 'REIMBURSED', 'label' => 'Reimbursed', 'icon' => 'bi-cash-coin'],
+        ['status' => 'COMPLETED', 'label' => 'Complete', 'icon' => 'bi-check-circle-fill'],
+    ];
+}
+
 
 /**
  * Resolve the workflow path for a request row.

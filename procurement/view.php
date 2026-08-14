@@ -285,24 +285,25 @@ $rfqId = $stmt->fetchColumn();
 $pipelineStages = [];
 
 if ($requestType === 'PETTY_CASH') {
-    $pipelineStages = [
-        'DRAFT'           => ['icon' => 'bi-pencil-square',   'label' => 'Draft'],
-        'SUBMITTED'       => ['icon' => 'bi-send',            'label' => 'Submitted'],
-        'HOD_REVIEWED'    => ['icon' => 'bi-person-check',    'label' => 'HOD Reviews'],
-        'FINANCE_AUTHORIZED' => ['icon' => 'bi-cash-coin',    'label' => 'Finance Auth'],
-        'DISBURSED'       => ['icon' => 'bi-wallet2',         'label' => 'Disbursed'],
-        'COMPLETED'       => ['icon' => 'bi-check-circle',    'label' => 'Complete'],
-    ];
+    // Use centralized pipeline definition from config/workflow.php
+    $pipelineArray = getPettyCashPipeline();
+    $pipelineStages = [];
+    foreach ($pipelineArray as $stage) {
+        $pipelineStages[$stage['status']] = [
+            'icon' => $stage['icon'],
+            'label' => $stage['label'],
+        ];
+    }
 } elseif ($requestType === 'REIMBURSEMENT') {
-    $pipelineStages = [
-        'DRAFT'           => ['icon' => 'bi-pencil-square',   'label' => 'Draft'],
-        'SUBMITTED'       => ['icon' => 'bi-send',            'label' => 'Submitted'],
-        'PRE_AUTHORIZED'  => ['icon' => 'bi-person-check',    'label' => 'Pre-Auth'],
-        'VERIFIED'        => ['icon' => 'bi-check2-circle',   'label' => 'Verified'],
-        'APPROVED'        => ['icon' => 'bi-briefcase-fill',  'label' => 'Approved'],
-        'REIMBURSED'      => ['icon' => 'bi-cash-coin',       'label' => 'Reimbursed'],
-        'COMPLETED'       => ['icon' => 'bi-check-circle',    'label' => 'Complete'],
-    ];
+    // Use centralized pipeline definition from config/workflow.php
+    $pipelineArray = getReimbursementPipeline();
+    $pipelineStages = [];
+    foreach ($pipelineArray as $stage) {
+        $pipelineStages[$stage['status']] = [
+            'icon' => $stage['icon'],
+            'label' => $stage['label'],
+        ];
+    }
 } elseif ($requestType === 'SERVICE_CONTRACT') {
     $pipelineStages = [
         'DRAFT'     => ['icon' => 'bi-pencil-square', 'label' => 'Draft'],
