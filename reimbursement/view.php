@@ -226,7 +226,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
           <?php if (empty($invoices)): ?>
             <div class="alert alert-info">
               No invoices have been submitted yet.
-              <?php if ($request['status'] === 'PRE_AUTHORIZED' && $_SESSION['user_id'] == $request['created_by']): ?>
+              <?php if ($request['status'] === 'FUNDS_VERIFIED' && $_SESSION['user_id'] == $request['created_by']): ?>
                 <br>
                 <a href="/reimbursement/submit_invoice.php?request_id=<?= $request_id ?>" class="btn btn-sm btn-primary mt-2">
                   <i class="bi bi-upload"></i> Submit Invoice Copy
