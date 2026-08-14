@@ -15,7 +15,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/config/workflow.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 
 // Check for dry-run mode
-$dryRun = in_array('--dry-run', $argv, true);
+$dryRun = (isset($argv) && is_array($argv)) ? in_array('--dry-run', $argv, true) : false;
 $mode = $dryRun ? 'DRY-RUN' : 'EXECUTION';
 
 echo "================================================================================\n";
