@@ -111,7 +111,7 @@ if (!function_exists('isMonitoringRole') ||
         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING',
         'QUOTE_APPROVED',
         'COMMITTEE_RECOMMENDED', 'GC_APPROVED',
-        'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'COMMITMENT_DECLINED',
+        'FUNDS_VERIFIED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'COMMITMENT_DECLINED',
         'PO_PENDING', 'INVOICE_RECEIVED',
     ];
     $myStatuses = [];
@@ -172,7 +172,8 @@ $statusActionMap = [
     'QUOTE_APPROVED'                     => ['label' => 'Create Commitment',       'color' => '#43e97b', 'icon' => 'bi-plus-circle',         'href_tpl' => '/commitments/add.php?request_id={id}'],
     'COMMITTEE_RECOMMENDED'              => ['label' => 'GC Approval Required',    'color' => '#f093fb', 'icon' => 'bi-shield-check',        'href_tpl' => '/rfq/gc_approve.php?request_id={id}'],
     'GC_APPROVED'                        => ['label' => 'Ready for Award',         'color' => '#20c997', 'icon' => 'bi-trophy',              'href_tpl' => '/rfq/award.php?request_id={id}'],
-    'COMMITMENTS_PENDING'                => ['label' => 'Upload Commitment',       'color' => '#3498db', 'icon' => 'bi-upload',              'href_tpl' => '/commitments/add.php?request_id={id}'],
+    'FUNDS_VERIFIED'                     => ['label' => 'Proceed with Commitment', 'color' => '#17a2b8', 'icon' => 'bi-check-circle',       'href_tpl' => '/commitments/add.php?request_id={id}'],
+    'COMMITMENTS_PENDING'                => ['label' => 'Create Commitment',       'color' => '#3498db', 'icon' => 'bi-upload',              'href_tpl' => '/commitments/add.php?request_id={id}'],
     'COMMITMENT_APPROVED'                => ['label' => 'Create Purchase Order',   'color' => '#667eea', 'icon' => 'bi-file-earmark-plus',   'href_tpl' => '/po/add.php?request_id={id}'],
     'COMMITMENT_DECLINED'                => ['label' => 'Revise & Resubmit',       'color' => '#f5576c', 'icon' => 'bi-arrow-repeat',        'href_tpl' => '/procurement/view.php?id={id}'],
     'PO_PENDING'                         => ['label' => 'Create PO',               'color' => '#2980b9', 'icon' => 'bi-file-earmark-text',   'href_tpl' => '/po/add.php?request_id={id}'],

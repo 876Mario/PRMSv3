@@ -22,6 +22,25 @@ if ($request_id <= 0) {
     exit;
 }
 
+// Shared MIME-to-extension mappings for file upload security
+$mimeToExtDocuments = [
+    'application/pdf' => 'pdf',
+    'application/msword' => 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+    'application/vnd.ms-excel' => 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+];
+
+$mimeToExtForms = [
+    'application/pdf' => 'pdf',
+    'application/msword' => 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+    'application/vnd.ms-excel' => 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+    'image/jpeg' => 'jpg',
+    'image/png' => 'png',
+];
+
 /* ===== Get Request & Quote Details ===== */
 $stmt = $pdo->prepare("
     SELECT 
@@ -230,11 +249,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isset($_FILES['commitment_form_doc']) && $_FILES['commitment_form_doc']['error'] === UPLOAD_ERR_OK) {
                 $file = $_FILES['commitment_form_doc'];
                 
-                $allowedTypes = ['application/pdf', 'application/msword',
-                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                                'application/vnd.ms-excel',
-                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                'image/jpeg', 'image/png'];
+                $allowedTypes = array_keys($mimeToExtForms);
                 
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
                 $mimeType = finfo_file($finfo, $file['tmp_name']);
@@ -251,7 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!is_dir($uploadDir)) {
                     mkdir($uploadDir, 0755, true);
                 }
-                $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+                $ext = $mimeToExtForms[$mimeType] ?? 'bin';
                 $safeFilename = 'COMMIT_FORM_' . time() . '_' . uniqid() . '.' . $ext;
                 $uploadPath = $uploadDir . $safeFilename;
                 if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
@@ -365,68 +380,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             
-            // Handle document upload (REQUIRED)
+            // Handle document upload (OPTIONAL)
             $documentPath = null;
-            if (!isset($_FILES['commitment_document']) || $_FILES['commitment_document']['error'] === UPLOAD_ERR_NO_FILE) {
-                throw new Exception("Commitment document from GFMS is required.");
+            if (isset($_FILES['commitment_document']) && $_FILES['commitment_document']['error'] === UPLOAD_ERR_OK) {
+                $file = $_FILES['commitment_document'];
+                
+                $allowedTypes = array_keys($mimeToExtDocuments);
+                
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mimeType = finfo_file($finfo, $file['tmp_name']);
+                finfo_close($finfo);
+                
+                if (!in_array($mimeType, $allowedTypes)) {
+                    throw new Exception("Invalid file type. Only PDF, Word, and Excel files are allowed.");
+                }
+                
+                if ($file['size'] > 50 * 1024 * 1024) {
+                    throw new Exception("File size exceeds 50 MB limit.");
+                }
+                
+                // Save file
+                $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0755, true);
+                }
+                
+                // Use extension derived from MIME type, not user-supplied filename
+                $ext = $mimeToExtDocuments[$mimeType] ?? 'bin';
+                $safeFilename = 'COMMITMENT_' . time() . '_' . uniqid() . '.' . $ext;
+                $uploadPath = $uploadDir . $safeFilename;
+                
+                if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
+                    throw new Exception("Failed to save commitment document.");
+                }
+                
+                $documentPath = '/uploads/commitments/' . $safeFilename;
             }
-            
-            $file = $_FILES['commitment_document'];
-            
-            if ($file['error'] !== UPLOAD_ERR_OK) {
-                throw new Exception("File upload failed. Please try again.");
-            }
-            
-            $allowedTypes = ['application/pdf', 'application/msword', 
-                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                            'application/vnd.ms-excel',
-                            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
-            
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mimeType = finfo_file($finfo, $file['tmp_name']);
-            finfo_close($finfo);
-            
-            if (!in_array($mimeType, $allowedTypes)) {
-                throw new Exception("Invalid file type. Only PDF, Word, and Excel files are allowed.");
-            }
-            
-            if ($file['size'] > 50 * 1024 * 1024) {
-                throw new Exception("File size exceeds 50 MB limit.");
-            }
-            
-            // Save file
-            $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
-            
-            $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $safeFilename = 'COMMITMENT_' . time() . '_' . uniqid() . '.' . $ext;
-            $uploadPath = $uploadDir . $safeFilename;
-            
-            if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-                throw new Exception("Failed to save commitment document.");
-            }
-            
-            $documentPath = '/uploads/commitments/' . $safeFilename;
             
             // Handle optional scanned commitment form upload (if Finance uploads it here)
             $formDocPath = null;
             if (isset($_FILES['commitment_form_doc']) && $_FILES['commitment_form_doc']['error'] === UPLOAD_ERR_OK) {
                 $formFile = $_FILES['commitment_form_doc'];
                 
-                $formAllowedTypes = ['application/pdf', 'application/msword',
-                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                                'application/vnd.ms-excel',
-                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                'image/jpeg', 'image/png'];
+                $formAllowedTypes = array_keys($mimeToExtForms);
                 
                 $formFinfo = finfo_open(FILEINFO_MIME_TYPE);
                 $formMimeType = finfo_file($formFinfo, $formFile['tmp_name']);
                 finfo_close($formFinfo);
                 
                 if (in_array($formMimeType, $formAllowedTypes) && $formFile['size'] <= 50 * 1024 * 1024) {
-                    $formExt = pathinfo($formFile['name'], PATHINFO_EXTENSION);
+                    $formExt = $mimeToExtForms[$formMimeType] ?? 'bin';
                     $formSafeFilename = 'COMMIT_FORM_' . time() . '_' . uniqid() . '.' . $formExt;
                     $formUploadPath = $uploadDir . $formSafeFilename;
                     if (move_uploaded_file($formFile['tmp_name'], $formUploadPath)) {
@@ -865,18 +868,18 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                     <div class="mb-4">
                         <label for="commitment_document" class="form-label">
                             <i class="bi bi-file-pdf text-danger"></i>
-                            <span class="text-danger">*</span> Commitment Document from GFMS
+                            Commitment Document from GFMS
                         </label>
                         <input type="file" id="commitment_document" name="commitment_document"
-                               class="form-control form-control-lg" accept=".pdf,.doc,.docx,.xls,.xlsx" required>
+                               class="form-control form-control-lg" accept=".pdf,.doc,.docx,.xls,.xlsx">
                         <small class="text-muted d-block mt-2">
-                            <strong>Required:</strong> Upload the commitment document from GFMS (PDF, DOC, DOCX, XLS, XLSX). Max 50 MB.
+                            <strong>Optional:</strong> Upload the commitment document from GFMS (PDF, DOC, DOCX, XLS, XLSX). Max 50 MB.
                         </small>
                     </div>
 
                     <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-primary btn-lg">
-                            <i class="bi bi-cloud-upload me-1"></i> Create Commitment & Upload Document
+                            <i class="bi bi-cloud-upload me-1"></i> Create Commitment
                         </button>
                         <a href="/procurement/view.php?id=<?= $request_id ?>" class="btn btn-outline-secondary">
                             <i class="bi bi-arrow-left me-1"></i> Cancel
@@ -916,7 +919,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
             <li><strong>Step 1 (Finance):</strong> Verify that sufficient funds are available</li>
             <?php endif; ?>
             <li><strong>Step 2 (Procurement/Finance):</strong> Optionally upload a scanned copy of the commitment form. This step can be skipped — you can proceed without it.</li>
-            <li><strong>Step 3 (Finance):</strong> Create the commitment in GFMS system, then upload the commitment document here to complete the process</li>
+            <li><strong>Step 3 (Finance):</strong> Create the commitment in GFMS system, then optionally upload the commitment document here to complete the process</li>
             <li><strong>After creation:</strong> If PO Required = Yes, Procurement will be notified to create the PO. If No, the request is routed directly to the disbursement workflow.</li>
         </ul>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>

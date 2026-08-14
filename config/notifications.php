@@ -2684,7 +2684,7 @@ function notifyFinanceCommitmentUploadNeeded(int $requestId, string $commitmentN
         </div>
         <p>
             Procurement has completed their step for this request.
-            Please create the commitment in GFMS, then upload the commitment document into PRMS to finalize the commitment.
+            Please create the commitment in GFMS, then optionally upload the commitment document into PRMS to finalize the commitment.
         </p>
         <p>
             Optional commitment form from Procurement:

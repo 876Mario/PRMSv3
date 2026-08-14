@@ -1064,11 +1064,11 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     $nextStepColor = 'text-info';
                 } elseif ($current === 'FUNDS_VERIFIED' && !$nextApprovalId) {
                     // Post-quote FUNDS_VERIFIED (no more approvals pending = commitment flow)
-                    $nextStepDisplay = "Funds verified by Finance. Procurement may upload an optional commitment form, then Finance creates the commitment in GFMS and uploads the document.";
+                    $nextStepDisplay = "Funds verified by Finance. Procurement may upload an optional commitment form, then Finance creates the commitment in GFMS (document is optional).";
                     $nextStepIcon = 'bi-pencil-square';
                     $nextStepColor = 'text-warning';
                 } elseif ($current === 'COMMITMENTS_PENDING') {
-                    $nextStepDisplay = "Commitment form submitted by Procurement. Finance to create commitment in GFMS and upload the document.";
+                    $nextStepDisplay = "Commitment form submitted by Procurement. Finance to create commitment in GFMS (document upload is optional).";
                     $nextStepIcon = 'bi-cloud-upload';
                     $nextStepColor = 'text-info';
                 } elseif ($current === 'COMMITMENT_APPROVED') {
