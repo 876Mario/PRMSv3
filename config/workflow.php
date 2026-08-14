@@ -685,6 +685,19 @@ function getReimbursementApprovalChain(): array {
  * Get allowed status transitions for reimbursement requests
  * Simplified workflow: Submitted -> Finance Verifies -> Reimbursed
  */
+/**
+ * Get allowed status transitions for reimbursement requests.
+ *
+ * Note on FUNDS_VERIFIED → APPROVED bypass: While the standard pipeline includes
+ * INVOICE_SUBMITTED and INVOICE_VERIFIED stages, the system allows a direct bypass
+ * from FUNDS_VERIFIED to APPROVED. This is intentional and permits:
+ * - Finance officers to approve without invoice submission in cases where
+ *   invoices were already verified externally or are waived
+ * - Expedited processing for small or pre-approved reimbursement requests
+ *
+ * The default workflow should guide users through INVOICE_SUBMITTED and INVOICE_VERIFIED,
+ * but the bypass remains available for exceptional cases requiring explicit authorization.
+ */
 function getReimbursementTransitions(): array {
     return [
         'DRAFT'                        => ['SUBMITTED'],
@@ -1193,7 +1206,7 @@ function getPettyCashPipeline(): array {
         ['status' => 'DRAFT', 'label' => 'Draft', 'icon' => 'bi-pencil-square'],
         ['status' => 'SUBMITTED', 'label' => 'Submitted', 'icon' => 'bi-send'],
         ['status' => 'FUNDS_VERIFIED', 'label' => 'Funds Verified', 'icon' => 'bi-cash-coin'],
-        ['status' => 'FINANCE_AUTHORIZED', 'label' => 'Finance Authorized', 'icon' => 'bi-cash-coin'],
+        ['status' => 'FINANCE_AUTHORIZED', 'label' => 'Finance Authorized', 'icon' => 'bi-shield-check'],
         ['status' => 'DISBURSED', 'label' => 'Disbursed', 'icon' => 'bi-wallet2'],
         ['status' => 'PENDING_RECONCILIATION', 'label' => 'Awaiting Purchase Documentation', 'icon' => 'bi-hourglass-split'],
         ['status' => 'PROCUREMENT_VERIFIED', 'label' => 'Documents Verified', 'icon' => 'bi-check-circle'],

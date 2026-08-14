@@ -104,7 +104,7 @@ APPROVED → REIMBURSED → COMPLETED
 ### Data Migration
 
 #### Repair Script Created
-- **File**: `/tmp/repair_pre_authorized.php`
+- **File**: `tools/repair_pre_authorized.php`
 - **Purpose**: Fixes any existing reimbursement requests stuck in PRE_AUTHORIZED status
 - **Features**:
   - Dry-run mode to preview changes
@@ -114,12 +114,15 @@ APPROVED → REIMBURSED → COMPLETED
 
 **Usage**:
 ```bash
-# Test mode
-php repair_pre_authorized.php --dry-run
-
-# Actual execution
-php repair_pre_authorized.php
+cd /path/to/project
+php tools/repair_pre_authorized.php --dry-run    # Test mode
+php tools/repair_pre_authorized.php              # Actual execution
 ```
+
+**Important**: 
+- Test in dry-run mode first to verify the script will work correctly
+- Review the generated audit trail entries
+- Delete or archive the script after migration is complete
 
 ## Testing Recommendations
 
@@ -180,7 +183,7 @@ The problem statement mentions "Test array_search() no longer returns FALSE"
 
 ## Files Created
 
-1. `/tmp/repair_pre_authorized.php` - Data repair script for migrations
+1. `tools/repair_pre_authorized.php` - Data repair script for migrations
 
 ## Next Steps (Phases 4-5)
 
