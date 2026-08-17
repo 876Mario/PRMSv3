@@ -315,7 +315,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                               </div>
                             </div>
                             <div class="ms-2">
-                              <a href="/reimbursement/download_attachment.php?id=<?= $att['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Download">
+                              <a href="/reimbursement/download_attachment.php?id=<?= (int)$att['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Download">
                                 <i class="bi bi-download"></i>
                               </a>
                               <?php if (has_permission('delete_reimbursement_invoice_attachment') && ($request['created_by'] == $_SESSION['user_id'] || has_permission('manage_users'))): ?>

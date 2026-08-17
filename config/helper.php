@@ -662,9 +662,10 @@ function saveReimbursementAttachment(PDO $pdo, array $file, int $reimb_invoice_i
         throw new Exception('Invalid file extension. Allowed: PDF, JPG, JPEG, PNG, DOC, DOCX, XLS, XLSX.');
     }
 
-    // Validate file size (10 MB max)
+    // Validate file size (10 MB max) using actual file size, not client-reported size
     $maxBytes = 10 * 1024 * 1024;
-    if ($file['size'] > $maxBytes) {
+    $actualFileSize = filesize($file['tmp_name']);
+    if ($actualFileSize === false || $actualFileSize > $maxBytes) {
         throw new Exception('File size exceeds the 10 MB limit.');
     }
 
@@ -701,7 +702,7 @@ function saveReimbursementAttachment(PDO $pdo, array $file, int $reimb_invoice_i
             $originalName,
             $relativePath,
             $mimeType,
-            (int)$file['size'],
+            (int)$actualFileSize,
             $uploaded_by,
         ]);
 

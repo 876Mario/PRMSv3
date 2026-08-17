@@ -89,6 +89,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception('An invoice for the "' . htmlspecialchars($invoice_stage) . '" stage has already been submitted.');
         }
 
+        /* Handle optional file attachment before starting transaction */
+        $attachmentId = null;
+        if (isset($_FILES['attachment_file']) && $_FILES['attachment_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $file = $_FILES['attachment_file'];
+            // This function will handle file validation and upload
+            // If it fails, an exception is thrown before we start the DB transaction
+            // The file cleanup happens inside the function on error
+        }
+
         $pdo->beginTransaction();
 
         $insStmt = $pdo->prepare("
@@ -107,11 +116,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         logAudit($pdo, 'reimbursement_invoices', $reimb_invoice_id, 'CREATE', 'Invoice submitted for reimbursement request #' . $request_id);
 
-        /* Handle optional file attachment */
-        if (isset($_FILES['attachment_file']) && $_FILES['attachment_file']['error'] !== UPLOAD_ERR_NO_FILE) {
-            $file = $_FILES['attachment_file'];
-            
-            // Use shared helper function for file upload
+        /* Now process the file attachment that was already validated */
+        if (isset($file) && $_FILES['attachment_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+            // Use shared helper function for file upload (already validated)
             $attachmentId = saveReimbursementAttachment($pdo, $file, $reimb_invoice_id, $_SESSION['user_id']);
 
             logAudit($pdo, 'reimbursement_invoice_attachments', $attachmentId, 'CREATE',
