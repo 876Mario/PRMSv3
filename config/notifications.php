@@ -3572,9 +3572,145 @@ function notifyProcurementAllApprovalsComplete(int $rfqId): bool {
             $anySent = $anySent || $sent;
         }
 
-        return $anySent;
+                return $anySent;
     } catch (Exception $e) {
         error_log("Error notifying procurement of completion for RFQ {$rfqId}: " . $e->getMessage());
         return false;
     }
 }
+
+/**
+ * Notify requestor that their request has been returned for correction
+ */
+function notifyRequestReturned(int $requestId, int $requestorId, string $returnReason): bool {
+    global $pdo;
+
+    if (!notificationsEnabled()) {
+        return false;
+    }
+
+    try {
+        // Fetch request details
+        $stmt = $pdo->prepare("
+            SELECT pr.request_number, pr.estimated_value, pr.request_type, pr.description,
+                   u.full_name as requestor_name, b.branch_name, a.full_name as approver_name
+            FROM procurement_requests pr
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            LEFT JOIN users a ON pr.approved_by = a.user_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$request) {
+            return false;
+        }
+
+        // Get requestor email
+        $email = getUserEmail($requestorId);
+        if (!$email) {
+            return false;
+        }
+
+        $appUrl = getAppUrl();
+        $estimatedValue = number_format((float)($request['estimated_value'] ?? 0), 2);
+        $requestType = ucfirst(str_replace('_', ' ', $request['request_type'] ?? 'Regular'));
+
+        $subject = "Request Returned for Correction: {$request['request_number']}";
+
+        // HTML-safe variables
+        $safeRequestorName = he($request['requestor_name']);
+        $safeRequestNumber = he($request['request_number']);
+        $safeRequestType = he($requestType);
+        $safeBranchName = he($request['branch_name']);
+        $safeDescription = he($request['description']);
+        $safeReturnReason = he($returnReason);
+        $safeApproverName = he($request['approver_name'] ?? 'Unknown');
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header { background: #ff9800; color: white; padding: 20px; text-align: center; border-radius: 4px 4px 0 0; }
+        .content { background: #f9f9f9; padding: 20px; }
+        .alert { background: #fff3e0; border-left: 4px solid #ff9800; padding: 12px; margin: 15px 0; }
+        .details { background: white; padding: 15px; margin: 15px 0; border: 1px solid #ddd; border-radius: 4px; }
+        .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+        .label { font-weight: bold; color: #555; }
+        .footer { background: #f0f0f0; padding: 15px; text-align: center; font-size: 12px; color: #666; }
+        .button { display: inline-block; background: #2196F3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2 style="margin: 0;">Request Returned for Correction</h2>
+        </div>
+        <div class="content">
+            <p>Dear {$safeRequestorName},</p>
+            <p>Your {$safeRequestType} request has been <strong>returned for correction</strong>.</p>
+            <div class="alert">
+                <strong>Correction Needed:</strong><br>
+                {$safeReturnReason}
+            </div>
+            <div class="details">
+                <div class="detail-row">
+                    <span class="label">Request #:</span>
+                    <span>{$safeRequestNumber}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Type:</span>
+                    <span>{$safeRequestType}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Amount:</span>
+                    <span>{$estimatedValue}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Description:</span>
+                    <span>{$safeDescription}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Branch:</span>
+                    <span>{$safeBranchName}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Returned by:</span>
+                    <span>{$safeApproverName}</span>
+                </div>
+            </div>
+            <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">Review Request</a></p>
+            <p>Please address the above correction(s) and resubmit your request.</p>
+        </div>
+        <div class="footer">
+            <p>This is an automated notification from the Procurement Request Management System.</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        /* In-app notification for requestor */
+        NotificationService::createNotification($requestorId, NotificationService::TYPE_RETURN_CORRECTION, [
+            'title'          => "Request Returned for Correction: {$request['request_number']}",
+            'body'           => "Reason: {$returnReason}",
+            'request_id'     => $requestId,
+            'request_ref'    => $request['request_number'],
+            'action_url'     => "/procurement/view.php?id={$requestId}",
+            'requestor_name' => $request['requestor_name'] ?? null,
+        ]);
+
+        return sendMail($email, $subject, $html);
+
+    } catch (Exception $e) {
+        error_log("Notify request returned error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+?>

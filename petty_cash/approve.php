@@ -1,7 +1,7 @@
 <?php
 /**
  * Petty Cash Approval Handler
- * Finance Officer verifies funds and approves/declines petty cash requests
+ * Supports approvals from: HOD, Branch Head, Finance Officer
  */
 $REQUIRE_PERMISSION = 'approve_petty_cash_request';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
@@ -12,24 +12,47 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
 
 $request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 $action = isset($_POST['action']) ? trim($_POST['action']) : '';
+$comments = isset($_POST['comments']) ? trim($_POST['comments']) : '';
 
 if ($request_id <= 0) {
     pop("Invalid petty cash request reference.", "/petty_cash/list.php");
     exit;
 }
 
-if (!in_array($action, ['approve', 'decline'])) {
+if (!in_array($action, ['approve', 'decline', 'return'])) {
     pop("Invalid action specified.", "/petty_cash/view.php?request_id=".$request_id);
     exit;
 }
 
 /* ================================
-   Verify User Role
+   Determine Approver Role & Authorize
 ================================ */
 $userRole = $_SESSION['role_name'] ?? '';
-if ($userRole !== 'Finance Officer') {
+$userId = (int)($_SESSION['user_id'] ?? 0);
+$approverRole = null;
+$isHodOrBranchHeadApproval = false;
+
+// Check if user is HOD or Branch Head
+if (in_array($userRole, ['HOD', 'Branch Head'])) {
+    // Validate HOD/Branch Head authorization
+    if (isAuthorizedToApprovePettyCashReimbursement($pdo, $userId, $userRole, $request_id)) {
+        $approverRole = $userRole;
+        $isHodOrBranchHeadApproval = true;
+    } else {
+        pop(
+            "You are not authorized to approve this petty cash request. It is outside your scope.",
+            "/petty_cash/view.php?request_id=".$request_id,
+            2000,
+            "error"
+        );
+        exit;
+    }
+} elseif ($userRole === 'Finance Officer') {
+    // Finance Officer approval
+    $approverRole = 'Finance Officer';
+} else {
     pop(
-        "Only Finance Officers can approve petty cash requests.",
+        "Only HOD, Branch Head, and Finance Officers can approve petty cash requests.",
         "/petty_cash/view.php?request_id=".$request_id,
         2000,
         "error"
@@ -72,8 +95,31 @@ if (strtoupper($request['status']) !== 'SUBMITTED') {
 try {
     $pdo->beginTransaction();
 
-    $newStatus = ($action === 'approve') ? 'FUNDS_VERIFIED' : 'DECLINED';
-    $notes = isset($_POST['notes']) ? trim($_POST['notes']) : '';
+    // Determine new status based on approver role and action
+    if ($isHodOrBranchHeadApproval) {
+        // HOD/Branch Head approves or rejects/returns at first stage
+        if ($action === 'approve') {
+            $newStatus = 'HOD_APPROVED';
+        } elseif ($action === 'return') {
+            $newStatus = 'RETURNED_FOR_CORRECTION';
+        } else {
+            // decline
+            $newStatus = 'DECLINED';
+        }
+    } else {
+        // Finance Officer does fund verification
+        if ($action === 'approve') {
+            $newStatus = 'FUNDS_VERIFIED';
+        } elseif ($action === 'return') {
+            $newStatus = 'RETURNED_FOR_CORRECTION';
+        } else {
+            // decline
+            $newStatus = 'DECLINED';
+        }
+    }
+    
+    // Store previous status for audit
+    $previousStatus = $request['status'];
 
     /* ================================
        Update Request Status
@@ -89,27 +135,59 @@ try {
     /* ================================
        Update Approval Record
     ================================ */
+    // Determine approval status for request_approvals table
+    // Note: request_approvals.status enum is ('pending','approved','rejected')
+    // For 'return', we use 'rejected' but include 'return_for_correction' marker in comments
+    $approvalStatus = ($action === 'approve') ? 'approved' : 'rejected';
+    $approvalComments = $comments;
+    if ($action === 'return') {
+        $approvalComments = '[RETURN_FOR_CORRECTION] ' . ($comments ?: '');
+    }
+    
     $approvalUpdate = $pdo->prepare("
         UPDATE request_approvals
         SET status = ?,
             approved_by = ?,
             approved_at = NOW(),
-            notes = ?
+            comments = ?
         WHERE request_id = ?
-          AND role = 'Finance Officer'
+          AND role = ?
           AND status = 'pending'
     ");
     $approvalUpdate->execute([
-        ($action === 'approve') ? 'approved' : 'declined',
+        $approvalStatus,
         $_SESSION['user_id'],
-        $notes,
-        $request_id
+        $approvalComments,
+        $request_id,
+        $approverRole
     ]);
 
     /* ================================
-       If approved, create disbursement record ready for Finance to disburse
+       If HOD/Branch Head approved, create approval chain for Finance Officer
     ================================ */
-    if ($action === 'approve') {
+    if ($isHodOrBranchHeadApproval && $action === 'approve') {
+        // Check if Finance Officer approval is already scheduled
+        $checkFo = $pdo->prepare("
+            SELECT id FROM request_approvals 
+            WHERE request_id = ? AND role = 'Finance Officer'
+        ");
+        $checkFo->execute([$request_id]);
+        
+        if (!$checkFo->fetchColumn()) {
+            // Create approval record for Finance Officer
+            $foStmt = $pdo->prepare("
+                INSERT INTO request_approvals 
+                (request_id, role, status, stage_order, entity_type, created_at)
+                VALUES (?, 'Finance Officer', 'pending', 2, 'REQUEST', NOW())
+            ");
+            $foStmt->execute([$request_id]);
+        }
+    }
+
+    /* ================================
+       If approved by Finance Officer, create disbursement record
+    ================================ */
+    if (!$isHodOrBranchHeadApproval && $action === 'approve') {
         // Check if a disbursement record already exists
         $checkDisb = $pdo->prepare("SELECT disburse_id FROM petty_cash_disbursements WHERE request_id = ?");
         $checkDisb->execute([$request_id]);
@@ -136,22 +214,29 @@ try {
     /* ================================
        Audit Log
     ================================ */
-    logAudit(
+    logApprovalDecision(
         $pdo,
-        'procurement_requests',
         $request_id,
-        'STATUS_CHANGE',
-        "Petty Cash Request: {$request['status']} → {$newStatus} by Finance Officer"
+        $_SESSION['user_id'],
+        $approverRole,
+        $action,
+        $newStatus,
+        $previousStatus,
+        $comments ?: null
     );
 
     /* ================================
        Notify Requestor
     ================================ */
-    if ($action === 'approve') {
-        notifyRequestFinalized($request_id, $newStatus);
+    if ($newStatus === 'DECLINED') {
+        // Request declined
+        notifyRequestDeclined($request_id, (int)$request['created_by'], $comments ?: 'Your petty cash request was declined.');
+    } elseif ($newStatus === 'RETURNED_FOR_CORRECTION') {
+        // Request returned for correction
+        notifyRequestReturned($request_id, (int)$request['created_by'], $comments ?: 'Please review the feedback and correct your request.');
     } else {
-        // Declined — include the decline reason
-        notifyRequestDeclined($request_id, (int)$request['created_by'], $notes ?: 'Your petty cash request was declined by Finance.');
+        // Approved (HOD_APPROVED or FUNDS_VERIFIED)
+        notifyRequestFinalized($request_id, $newStatus);
     }
 
     $pdo->commit();

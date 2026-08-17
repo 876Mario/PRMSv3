@@ -9,6 +9,10 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
 /* Self-heal: seed any missing approval chains for SUBMITTED requests */
 ensureApprovalChainsExist($pdo);
 
+/* Check if current user is HOD or Branch Head for approvals display */
+$approverRole = getCurrentApproverRole();
+$showApprovalsPanel = !empty($approverRole);
+
 /* ================================
    Advanced filter parameters
 ================================ */
@@ -198,6 +202,25 @@ $curDir  = strtoupper($_GET['dir'] ?? 'ASC');
       <span style="font-size: 1.5em; margin-right: 1rem;">👤</span>
       <h4 style="margin: 0; font-size: 1.25rem; font-weight: 700; color: #333;">HOD <span style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600;">Dashboard</span></h4>
     </div>
+
+    <!-- Approvals Required Panel (HOD/Branch Head only) -->
+    <?php if ($showApprovalsPanel): ?>
+        <div style="background: linear-gradient(135deg, #2d5016 0%, #3d6b1f 100%); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; color: white;">
+            <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+                <i style="font-size: 1.5rem; margin-right: 0.75rem;">📋</i>
+                <h5 style="margin: 0; font-size: 1.1rem; font-weight: 700;">Approvals Required</h5>
+            </div>
+            <p style="margin: 0 0 1rem 0; opacity: 0.95;">As a <?= htmlspecialchars($approverRole) ?>, you have pending petty cash and reimbursement requests awaiting your decision.</p>
+        </div>
+
+        <!-- Petty Cash Approvals Widget -->
+        <?php require_once $_SERVER['DOCUMENT_ROOT'] . '/dashboard/widgets/pending_petty_cash_approvals.php'; ?>
+
+        <!-- Reimbursement Approvals Widget -->
+        <?php require_once $_SERVER['DOCUMENT_ROOT'] . '/dashboard/widgets/pending_reimbursement_approvals.php'; ?>
+    <?php endif; ?>
+
+
 
     <!-- Quick Nav Buttons -->
     <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid #e0e0e0;">
