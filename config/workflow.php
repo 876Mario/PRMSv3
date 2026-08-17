@@ -76,7 +76,7 @@ function allowedTransitions(): array {
         'COMMITTEE_RECOMMENDED'  => ['GC_APPROVED', 'QUOTE_REVIEW_PENDING', 'AWARDED',
                                      // ← backward
                                      'EVALUATION_STAGE'],
-        'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING'],
+        'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING', 'INVOICE_RECEIVED'],
     ];
 }
 
@@ -1262,6 +1262,26 @@ function getWorkflowBadgeHtml(array $request): string {
     return '<span style="display:inline-flex;align-items:center;gap:0.3rem;background:#cfe2ff;color:#084298;'
          . 'border:1px solid #b6d4fe;padding:0.3rem 0.75rem;border-radius:20px;font-size:0.78rem;font-weight:600;">'
          . '📋 Standard Procurement Path</span>';
+}
+
+/**
+ * Determine if commitment stages (COMMITMENTS_PENDING, COMMITMENT_APPROVED) should be shown
+ * for a request in a Non-PO Skip-RFQ workflow path.
+ *
+ * Commitments and PO stages are ONLY required when po_required = 'YES'.
+ * When po_required = 'NO', the workflow skips directly from AWARDED to INVOICE.
+ *
+ * @param array|null $originalCommitment The original commitment row, or null if none exists
+ * @return bool True if commitment/PO stages should be included, false otherwise
+ */
+function shouldIncludeCommitmentStages(?array $originalCommitment): bool {
+    if ($originalCommitment === null) {
+        // No commitment exists yet, but may be created later; assume YES for now
+        // (will be reassessed once commitment is created)
+        return true;
+    }
+    // Include commitment stages only if po_required = 'YES'
+    return ($originalCommitment['po_required'] ?? 'YES') === 'YES';
 }
 
 /**

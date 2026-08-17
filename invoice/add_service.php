@@ -22,7 +22,7 @@ if ($commitment_id <= 0) {
 ================================ */
 $stmt = $pdo->prepare("
     SELECT c.commitment_id, c.commitment_number, c.commitment_total, c.request_id,
-           c.contract_id, c.status AS commitment_status,
+           c.contract_id, c.status AS commitment_status, c.po_required,
            pr.request_number, pr.request_type, pr.estimated_value, pr.currency,
            pr.contract_id AS pr_contract_id,
            sc.contract_number, sc.contract_title, sc.total_value AS contract_total,
@@ -42,9 +42,9 @@ if (!$data) {
     exit;
 }
 
-// Only allow for SERVICE_CONTRACT requests (or if no PO exists)
-if ($data['request_type'] !== 'SERVICE_CONTRACT') {
-    modalPop('Error', 'This page is for service contract invoices only. Use the PO invoice page for regular procurement.', '/commitments/list.php', 'error');
+// Allow for SERVICE_CONTRACT requests OR REGULAR requests with po_required='NO'
+if ($data['request_type'] !== 'SERVICE_CONTRACT' && ($data['po_required'] ?? 'YES') !== 'NO') {
+    modalPop('Error', 'Invalid request type. This page is only available for service contracts or non-PO regular procurement. For standard procurement with a purchase order, use the PO invoice page.', '/procurement/list.php', 'error');
     exit;
 }
 
