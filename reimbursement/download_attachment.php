@@ -45,6 +45,21 @@ if (!file_exists($filePath)) {
 logAudit($pdo, 'reimbursement_invoice_attachments', $id, 'VIEW',
     "Reimbursement invoice attachment downloaded: {$att['original_file_name']} (Request #{$att['request_number']})");
 
+// Validate MIME type against allowlist to prevent XSS
+$allowedMimes = [
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+];
+
+if (!in_array($att['file_type'], $allowedMimes, true)) {
+    $att['file_type'] = 'application/octet-stream';
+}
+
 // Sanitize filename for Content-Disposition header to prevent header injection
 $safeFilename = preg_replace('/[^\w.\-]/', '', $att['original_file_name']);
 if (empty($safeFilename)) {
