@@ -1084,8 +1084,8 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                         $nextStepIcon = 'bi-receipt';
                         $nextStepColor = 'text-success';
                     } elseif (!shouldIncludeCommitmentStages($originalCommitment)) {
-                        // Non-PO path: No Purchase Order required
-                        $nextStepDisplay = "Commitment created. Submit the invoice to proceed to payment.";
+                        // Non-PO path: No Purchase Order required, go directly to invoicing
+                        $nextStepDisplay = "Award confirmed. Submit the invoice to proceed to payment.";
                         $nextStepIcon = 'bi-receipt';
                         $nextStepColor = 'text-success';
                     } else {

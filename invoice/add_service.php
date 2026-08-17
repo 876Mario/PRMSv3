@@ -44,7 +44,7 @@ if (!$data) {
 
 // Allow for SERVICE_CONTRACT requests OR REGULAR requests with po_required='NO'
 if ($data['request_type'] !== 'SERVICE_CONTRACT' && ($data['po_required'] ?? 'YES') !== 'NO') {
-    modalPop('Error', 'This page is for service contract invoices or non-PO regular procurement. Use the PO invoice page for regular procurement with PO.', '/commitments/list.php', 'error');
+    modalPop('Error', 'Invalid request type. This page is only available for service contracts or non-PO regular procurement. For standard procurement with a purchase order, use the PO invoice page.', '/procurement/list.php', 'error');
     exit;
 }
 
