@@ -233,7 +233,7 @@ try {
         notifyRequestDeclined($request_id, (int)$request['created_by'], $comments ?: 'Your petty cash request was declined.');
     } elseif ($newStatus === 'RETURNED_FOR_CORRECTION') {
         // Request returned for correction
-        notifyRequestDeclined($request_id, (int)$request['created_by'], $comments ?: 'Your petty cash request has been returned for correction.');
+        notifyRequestReturned($request_id, (int)$request['created_by'], $comments ?: 'Please review the feedback and correct your request.');
     } else {
         // Approved (HOD_APPROVED or FUNDS_VERIFIED)
         notifyRequestFinalized($request_id, $newStatus);

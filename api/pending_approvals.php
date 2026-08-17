@@ -69,6 +69,7 @@ try {
     echo json_encode($response);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    error_log("Pending approvals API error: " . $e->getMessage());
+    echo json_encode(['error' => 'An error occurred while fetching pending approvals']);
 }
 ?>

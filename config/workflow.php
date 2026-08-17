@@ -1576,13 +1576,13 @@ function isAuthorizedToApprovePettyCashReimbursement(PDO $pdo, int $userId, stri
     $stmt = $pdo->prepare("
         SELECT id, status 
         FROM request_approvals 
-        WHERE request_id = ? AND role = ? AND status IN ('pending', 'approved')
+        WHERE request_id = ? AND role = ? AND status = 'pending'
     ");
     $stmt->execute([$requestId, $approverRole]);
     $approval = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // If no approval record or it's already approved, not authorized
-    if (!$approval || $approval['status'] !== 'pending') {
+    // If no pending approval record found, not authorized
+    if (!$approval) {
         return false;
     }
 
@@ -1613,13 +1613,7 @@ function logApprovalDecision(
     string $previousStatus,
     ?string $comment = null
 ): void {
-    // Get approver name and branch info
-    $userStmt = $pdo->prepare("
-        SELECT full_name FROM users WHERE user_id = ?
-    ");
-    $userStmt->execute([$approverId]);
-    $approverName = $userStmt->fetchColumn() ?: 'Unknown';
-    
+    // Get branch info
     $branchStmt = $pdo->prepare("
         SELECT branch_id FROM procurement_requests WHERE request_id = ?
     ");
