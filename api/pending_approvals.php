@@ -19,7 +19,6 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['role_name'])) {
 }
 
 $userId = (int)$_SESSION['user_id'];
-$userRole = $_SESSION['role_name'];
 
 // Check if user is HOD or Branch Head
 $approverRole = getCurrentApproverRole();

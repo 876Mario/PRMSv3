@@ -1613,17 +1613,18 @@ function logApprovalDecision(
     string $previousStatus,
     ?string $comment = null
 ): void {
-    $stmt = $pdo->prepare("
-        SELECT u.full_name, pr.branch_id
-        FROM users u
-        LEFT JOIN procurement_requests pr ON pr.request_id = ?
-        WHERE u.user_id = ?
+    // Get approver name and branch info
+    $userStmt = $pdo->prepare("
+        SELECT full_name FROM users WHERE user_id = ?
     ");
-    $stmt->execute([$requestId, $approverId]);
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    $userStmt->execute([$approverId]);
+    $approverName = $userStmt->fetchColumn() ?: 'Unknown';
     
-    $approverName = $result['full_name'] ?? 'Unknown';
-    $branchId = $result['branch_id'] ?? null;
+    $branchStmt = $pdo->prepare("
+        SELECT branch_id FROM procurement_requests WHERE request_id = ?
+    ");
+    $branchStmt->execute([$requestId]);
+    $branchId = $branchStmt->fetchColumn();
 
     $notes = sprintf(
         "Action: %s | Role: %s | Branch: %s | Comment: %s | Status: %s → %s",
