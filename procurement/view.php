@@ -378,11 +378,16 @@ if ($requestType === 'PETTY_CASH') {
         if ($isSkipRfqPath) {
             // "Proceed Without RFQ" path: AWARDED is the post-approval milestone followed by the
             // full financial post-award sequence. No RFQ/quote stages are shown.
-            $pipelineStages['AWARDED']             = ['icon' => 'bi-trophy',             'label' => 'Awarded'];
-            $pipelineStages['COMMITMENTS_PENDING'] = ['icon' => 'bi-pencil-square',      'label' => 'Commitment Form'];
-            $pipelineStages['COMMITMENT_APPROVED'] = ['icon' => 'bi-file-earmark-check', 'label' => 'Commitment Created'];
-            $pipelineStages['PO_PENDING']          = ['icon' => 'bi-file-earmark-text',  'label' => 'PO Created'];
-            $pipelineStages['INVOICE_RECEIVED']    = ['icon' => 'bi-receipt',            'label' => 'Invoice'];
+            $pipelineStages['AWARDED'] = ['icon' => 'bi-trophy', 'label' => 'Awarded'];
+            
+            // Only include commitment/PO stages if po_required = 'YES'
+            if (shouldIncludeCommitmentStages($originalCommitment)) {
+                $pipelineStages['COMMITMENTS_PENDING'] = ['icon' => 'bi-pencil-square',      'label' => 'Commitment Form'];
+                $pipelineStages['COMMITMENT_APPROVED'] = ['icon' => 'bi-file-earmark-check', 'label' => 'Commitment Created'];
+                $pipelineStages['PO_PENDING']          = ['icon' => 'bi-file-earmark-text',  'label' => 'PO Created'];
+            }
+            
+            $pipelineStages['INVOICE_RECEIVED'] = ['icon' => 'bi-receipt', 'label' => 'Invoice'];
         } elseif ($estimatedValue > $directThreshold) {
             // Over-threshold: Committee evaluation → GC approval gate (SOP Step 10) → Award → Financial stages
             $pipelineStages['PROCUREMENT_STAGE'] = ['icon' => 'bi-clipboard-check', 'label' => 'Procurement'];
@@ -586,6 +591,7 @@ if (!empty($quickActions)): ?>
                 </div>
             </div>
         </div>
+        <?php if (shouldIncludeCommitmentStages($originalCommitment)): ?>
         <div class="col col-sm-6 col-lg">
             <div class="card border-0 shadow-sm kpi-card kpi-green h-100">
                 <div class="card-body text-center py-3">
@@ -595,6 +601,7 @@ if (!empty($quickActions)): ?>
                 </div>
             </div>
         </div>
+        <?php endif; ?>
         <div class="col col-sm-6 col-lg">
             <div class="card border-0 shadow-sm h-100" style="background: linear-gradient(135deg, #e8eaf6, #c5cae9); border-left: 6px solid #3f51b5;">
                 <div class="card-body text-center py-3">
