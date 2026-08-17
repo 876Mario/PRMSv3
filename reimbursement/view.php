@@ -315,9 +315,11 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                               </div>
                             </div>
                             <div class="ms-2">
-                              <a href="/reimbursement/download_attachment.php?id=<?= (int)$att['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Download">
-                                <i class="bi bi-download"></i>
-                              </a>
+                              <?php if ($request['created_by'] == $_SESSION['user_id'] || has_permission('manage_users')): ?>
+                                <a href="/reimbursement/download_attachment.php?id=<?= (int)$att['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Download">
+                                  <i class="bi bi-download"></i>
+                                </a>
+                              <?php endif; ?>
                               <?php if (has_permission('delete_reimbursement_invoice_attachment') && ($request['created_by'] == $_SESSION['user_id'] || has_permission('manage_users'))): ?>
                                 <form method="POST" action="/reimbursement/delete_attachment.php" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this attachment?');">
                                   <input type="hidden" name="attachment_id" value="<?= $att['id'] ?>">
