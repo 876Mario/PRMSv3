@@ -45,10 +45,16 @@ if (!file_exists($filePath)) {
 logAudit($pdo, 'reimbursement_invoice_attachments', $id, 'VIEW',
     "Reimbursement invoice attachment downloaded: {$att['original_file_name']} (Request #{$att['request_number']})");
 
+// Sanitize filename for Content-Disposition header to prevent header injection
+$safeFilename = preg_replace('/[^\w.\-]/', '', $att['original_file_name']);
+if (empty($safeFilename)) {
+    $safeFilename = 'attachment';
+}
+
 // Download the file
 header('Content-Type: ' . $att['file_type']);
 header('Content-Length: ' . $att['file_size']);
-header('Content-Disposition: attachment; filename="' . $att['original_file_name'] . '"');
+header('Content-Disposition: attachment; filename="' . $safeFilename . '"');
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');

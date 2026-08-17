@@ -319,7 +319,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                                 <i class="bi bi-download"></i>
                               </a>
                               <?php if (has_permission('delete_reimbursement_invoice_attachment') && $request['created_by'] == $_SESSION['user_id']): ?>
-                                <form method="POST" action="/reimbursement/delete_attachment.php" style="display: inline;" onclick="return confirm('Are you sure you want to delete this attachment?');">
+                                <form method="POST" action="/reimbursement/delete_attachment.php" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this attachment?');">
                                   <input type="hidden" name="attachment_id" value="<?= $att['id'] ?>">
                                   <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                                     <i class="bi bi-trash"></i>
