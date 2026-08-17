@@ -545,7 +545,7 @@ if ($requestType === 'REGULAR') {
         if (in_array($status, ['QUOTE_APPROVED', 'AWARDED', 'FUNDS_VERIFIED'])) {
             $quickActions[] = ['label' => '💰 Verify Funds / Commitment', 'href' => '/commitments/add.php?request_id=' . $request_id, 'style' => 'background:#d1e7dd;color:#0a3622;'];
         }
-        if ($originalCommitment && empty($po) && $status === 'COMMITMENT_APPROVED') {
+        if ($originalCommitment && empty($po) && $status === 'COMMITMENT_APPROVED' && shouldIncludeCommitmentStages($originalCommitment)) {
             $quickActions[] = ['label' => '📄 Create PO', 'href' => '/po/add.php?commitment_id=' . $originalCommitment['commitment_id'], 'style' => 'background:#fff3cd;color:#856404;'];
         }
     }
@@ -1083,7 +1083,13 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                         $nextStepDisplay = "Commitment created. Submit the invoice to proceed to payment.";
                         $nextStepIcon = 'bi-receipt';
                         $nextStepColor = 'text-success';
+                    } elseif (!shouldIncludeCommitmentStages($originalCommitment)) {
+                        // Non-PO path: No Purchase Order required
+                        $nextStepDisplay = "Commitment created. Submit the invoice to proceed to payment.";
+                        $nextStepIcon = 'bi-receipt';
+                        $nextStepColor = 'text-success';
                     } else {
+                        // Standard path: PO required
                         $nextStepDisplay = "Commitment created. Create a Purchase Order.";
                         $nextStepIcon = 'bi-file-earmark-plus';
                         $nextStepColor = 'text-success';
@@ -1396,9 +1402,14 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                         </a>
                     <?php endif; ?>
 
-                    <?php if ($current === 'COMMITMENT_APPROVED' && $originalCommitment && !$po && $requestType !== 'SERVICE_CONTRACT'): ?>
+                    <?php if ($current === 'COMMITMENT_APPROVED' && $originalCommitment && !$po && $requestType !== 'SERVICE_CONTRACT' && shouldIncludeCommitmentStages($originalCommitment)): ?>
                         <a href="/po/add.php?commitment_id=<?= (int)$originalCommitment['commitment_id'] ?>" class="btn btn-primary">
                             <i class="bi bi-file-earmark-text me-1"></i>Create Purchase Order
+                        </a>
+                    <?php elseif ($current === 'COMMITMENT_APPROVED' && $originalCommitment && !$po && $requestType !== 'SERVICE_CONTRACT' && !shouldIncludeCommitmentStages($originalCommitment)): ?>
+                        <!-- Non-PO workflow: Direct to invoice after commitment -->
+                        <a href="/invoice/add_service.php?commitment_id=<?= (int)$originalCommitment['commitment_id'] ?>" class="btn btn-primary">
+                            <i class="bi bi-receipt me-1"></i>Add Invoice
                         </a>
                     <?php elseif ($current === 'COMMITMENT_APPROVED' && $requestType === 'SERVICE_CONTRACT'): ?>
                         <div class="alert alert-success py-2 mb-0 small">
