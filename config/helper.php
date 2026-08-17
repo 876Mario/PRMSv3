@@ -600,3 +600,23 @@ function normalizeCurrency(string $currency = 'JMD'): string {
     // Validate and return - default to JMD if invalid
     return in_array($currency, ['JMD', 'USD']) ? $currency : 'JMD';
 }
+
+/**
+ * Format file size in human-readable format
+ * 
+ * @param int $bytes File size in bytes
+ * @return string Formatted file size (e.g., "1.5 MB")
+ */
+function formatFileSize(int $bytes): string {
+    if ($bytes <= 0) {
+        return '0 B';
+    }
+    
+    $units = ['B', 'KB', 'MB', 'GB'];
+    $bytes = max($bytes, 0);
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+    $bytes /= (1 << (10 * $pow));
+    
+    return round($bytes, 2) . ' ' . $units[$pow];
+}

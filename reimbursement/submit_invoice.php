@@ -103,7 +103,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_id'],
         ]);
 
-        logAudit($pdo, 'reimbursement_invoices', (int)$pdo->lastInsertId(), 'CREATE', 'Invoice submitted for reimbursement request #' . $request_id);
+        $reimb_invoice_id = (int)$pdo->lastInsertId();
+
+        logAudit($pdo, 'reimbursement_invoices', $reimb_invoice_id, 'CREATE', 'Invoice submitted for reimbursement request #' . $request_id);
+
+        /* Handle optional file attachment */
+        if (isset($_FILES['attachment_file']) && $_FILES['attachment_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $file = $_FILES['attachment_file'];
+
+            if ($file['error'] !== UPLOAD_ERR_OK) {
+                throw new Exception('File upload failed. Please try again.');
+            }
+
+            // Validate file type via MIME
+            $allowedMimes = [
+                'application/pdf',
+                'image/jpeg',
+                'image/png',
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.ms-excel',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ];
+
+            $finfo    = finfo_open(FILEINFO_MIME_TYPE);
+            $mimeType = finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+
+            if (!in_array($mimeType, $allowedMimes, true)) {
+                throw new Exception('Invalid file type. Allowed types: PDF, JPG, JPEG, PNG, DOC, DOCX, XLS, XLSX.');
+            }
+
+            // Also validate by extension as a secondary guard
+            $allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
+            $ext         = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+            if (!in_array($ext, $allowedExts, true)) {
+                throw new Exception('Invalid file extension. Allowed: PDF, JPG, JPEG, PNG, DOC, DOCX, XLS, XLSX.');
+            }
+
+            // Validate file size (10 MB max)
+            $maxBytes = 10 * 1024 * 1024;
+            if ($file['size'] > $maxBytes) {
+                throw new Exception('File size exceeds the 10 MB limit.');
+            }
+
+            // Build upload directory
+            $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/reimbursement_invoice_attachments/';
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0755, true);
+            }
+
+            // Sanitize and generate unique filename
+            $safeExt      = preg_replace('/[^a-zA-Z0-9]/', '', $ext);
+            $uniqueName   = 'REIMB_' . $reimb_invoice_id . '_' . time() . '_' . bin2hex(random_bytes(6)) . '.' . $safeExt;
+            $uploadPath   = $uploadDir . $uniqueName;
+            $relativePath = '/uploads/reimbursement_invoice_attachments/' . $uniqueName;
+
+            if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
+                throw new Exception('Failed to save the file. Please try again.');
+            }
+
+            // Sanitize original filename for storage
+            $originalName = preg_replace('/[^\w.\-]/', '_', basename($file['name']));
+
+            // Persist to database
+            $attStmt = $pdo->prepare("
+                INSERT INTO reimbursement_invoice_attachments
+                    (reimb_invoice_id, file_name, original_file_name, file_path, file_type, file_size, uploaded_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+            $attStmt->execute([
+                $reimb_invoice_id,
+                $uniqueName,
+                $originalName,
+                $relativePath,
+                $mimeType,
+                (int)$file['size'],
+                $_SESSION['user_id'],
+            ]);
+
+            $attachmentId = (int)$pdo->lastInsertId();
+            logAudit($pdo, 'reimbursement_invoice_attachments', $attachmentId, 'CREATE',
+                "Reimbursement invoice attachment uploaded: {$originalName} for Request #{$request['request_number']}");
+        }
 
         $pdo->commit();
 
@@ -206,7 +288,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                         </ul>
                     </div>
 
-                    <form method="POST" class="needs-validation" novalidate>
+                    <form method="POST" class="needs-validation" novalidate enctype="multipart/form-data">
 
                         <!-- Invoice Stage -->
                         <div class="mb-4">
@@ -254,6 +336,26 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                                 Maximum: JMD <?= number_format((float)($request['authorization_amount'] ?? 0), 2) ?>
                             </div>
                             <div class="invalid-feedback">Please enter a valid invoice amount.</div>
+                        </div>
+
+                        <!-- Optional File Attachment -->
+                        <div class="mb-4">
+                            <label class="form-label fw-semibold">
+                                Attach Document <span class="text-muted">(Optional)</span>
+                            </label>
+                            <input type="file"
+                                   name="attachment_file"
+                                   class="form-control"
+                                   id="attachment_file"
+                                   accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+                                   aria-label="Upload invoice document">
+                            <div class="form-text text-muted mt-2">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Allowed formats: PDF, JPG, PNG, DOC, DOCX, XLS, XLSX
+                                <br>
+                                Maximum file size: 10 MB
+                            </div>
+                            <div id="file-error" class="invalid-feedback d-block" style="display: none;"></div>
                         </div>
 
                         <div class="d-flex gap-2">
@@ -351,6 +453,43 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
 document.addEventListener('DOMContentLoaded', function () {
     const form = document.querySelector('.needs-validation');
     if (!form) return;
+
+    const fileInput = document.getElementById('attachment_file');
+    const fileError = document.getElementById('file-error');
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+    const ALLOWED_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
+
+    // Validate file on change
+    if (fileInput) {
+        fileInput.addEventListener('change', function () {
+            fileError.style.display = 'none';
+            fileError.textContent = '';
+
+            if (!this.files || this.files.length === 0) {
+                return; // Optional field
+            }
+
+            const file = this.files[0];
+
+            // Check file size
+            if (file.size > MAX_FILE_SIZE) {
+                fileError.textContent = 'File size exceeds 10 MB limit.';
+                fileError.style.display = 'block';
+                this.value = '';
+                return;
+            }
+
+            // Check file extension
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!ALLOWED_EXTS.includes(ext)) {
+                fileError.textContent = 'Invalid file type. Allowed: PDF, JPG, PNG, DOC, DOCX, XLS, XLSX.';
+                fileError.style.display = 'block';
+                this.value = '';
+                return;
+            }
+        });
+    }
+
     form.addEventListener('submit', function (e) {
         if (!form.checkValidity()) {
             e.preventDefault();
