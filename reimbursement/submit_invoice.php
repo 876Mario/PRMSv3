@@ -89,6 +89,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception('An invoice for the "' . htmlspecialchars($invoice_stage) . '" stage has already been submitted.');
         }
 
+        /* Handle optional file attachment before starting transaction */
+        $attachmentId = null;
+        if (isset($_FILES['attachment_file']) && $_FILES['attachment_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $file = $_FILES['attachment_file'];
+            // This function will handle file validation and upload
+            // If it fails, an exception is thrown before we start the DB transaction
+            // The file cleanup happens inside the function on error
+        }
+
         $pdo->beginTransaction();
 
         $insStmt = $pdo->prepare("
@@ -103,7 +112,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_id'],
         ]);
 
-        logAudit($pdo, 'reimbursement_invoices', (int)$pdo->lastInsertId(), 'CREATE', 'Invoice submitted for reimbursement request #' . $request_id);
+        $reimb_invoice_id = (int)$pdo->lastInsertId();
+
+        logAudit($pdo, 'reimbursement_invoices', $reimb_invoice_id, 'CREATE', 'Invoice submitted for reimbursement request #' . $request_id);
+
+        /* Now process the file attachment that was already validated */
+        if (isset($file) && $_FILES['attachment_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+            // Use shared helper function for file upload (already validated)
+            $attachmentId = saveReimbursementAttachment($pdo, $file, $reimb_invoice_id, $_SESSION['user_id']);
+
+            logAudit($pdo, 'reimbursement_invoice_attachments', $attachmentId, 'CREATE',
+                "Reimbursement invoice attachment uploaded: " . preg_replace('/[^\w.\-]/', '_', basename($file['name'])) . " for Request #{$request['request_number']}");
+        }
 
         $pdo->commit();
 
@@ -206,7 +226,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                         </ul>
                     </div>
 
-                    <form method="POST" class="needs-validation" novalidate>
+                    <form method="POST" class="needs-validation" novalidate enctype="multipart/form-data">
 
                         <!-- Invoice Stage -->
                         <div class="mb-4">
@@ -254,6 +274,26 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                                 Maximum: JMD <?= number_format((float)($request['authorization_amount'] ?? 0), 2) ?>
                             </div>
                             <div class="invalid-feedback">Please enter a valid invoice amount.</div>
+                        </div>
+
+                        <!-- Optional File Attachment -->
+                        <div class="mb-4">
+                            <label class="form-label fw-semibold">
+                                Attach Document <span class="text-muted">(Optional)</span>
+                            </label>
+                            <input type="file"
+                                   name="attachment_file"
+                                   class="form-control"
+                                   id="attachment_file"
+                                   accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+                                   aria-label="Upload invoice document">
+                            <div class="form-text text-muted mt-2">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Allowed formats: PDF, JPG, PNG, DOC, DOCX, XLS, XLSX
+                                <br>
+                                Maximum file size: 10 MB
+                            </div>
+                            <div id="file-error" class="invalid-feedback" style="display: none;"></div>
                         </div>
 
                         <div class="d-flex gap-2">
@@ -351,6 +391,43 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
 document.addEventListener('DOMContentLoaded', function () {
     const form = document.querySelector('.needs-validation');
     if (!form) return;
+
+    const fileInput = document.getElementById('attachment_file');
+    const fileError = document.getElementById('file-error');
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+    const ALLOWED_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
+
+    // Validate file on change
+    if (fileInput) {
+        fileInput.addEventListener('change', function () {
+            fileError.style.display = 'none';
+            fileError.textContent = '';
+
+            if (!this.files || this.files.length === 0) {
+                return; // Optional field
+            }
+
+            const file = this.files[0];
+
+            // Check file size
+            if (file.size > MAX_FILE_SIZE) {
+                fileError.textContent = 'File size exceeds 10 MB limit.';
+                fileError.style.display = 'block';
+                this.value = '';
+                return;
+            }
+
+            // Check file extension
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!ALLOWED_EXTS.includes(ext)) {
+                fileError.textContent = 'Invalid file type. Allowed: PDF, JPG, PNG, DOC, DOCX, XLS, XLSX.';
+                fileError.style.display = 'block';
+                this.value = '';
+                return;
+            }
+        });
+    }
+
     form.addEventListener('submit', function (e) {
         if (!form.checkValidity()) {
             e.preventDefault();

@@ -52,6 +52,29 @@ $invStmt = $pdo->prepare("
 $invStmt->execute([$request_id]);
 $invoices = $invStmt->fetchAll(PDO::FETCH_ASSOC);
 
+/* Fetch attachments for all invoices */
+$invoiceIds = array_column($invoices, 'reimb_invoice_id');
+$attachmentsByInvoice = [];
+if (!empty($invoiceIds)) {
+    $placeholders = implode(',', array_fill(0, count($invoiceIds), '?'));
+    $attStmt = $pdo->prepare("
+        SELECT 
+            a.*
+        FROM reimbursement_invoice_attachments a
+        WHERE a.reimb_invoice_id IN ($placeholders) AND a.is_deleted = 0
+        ORDER BY a.uploaded_date DESC
+    ");
+    $attStmt->execute($invoiceIds);
+    $allAttachments = $attStmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($allAttachments as $att) {
+        if (!isset($attachmentsByInvoice[$att['reimb_invoice_id']])) {
+            $attachmentsByInvoice[$att['reimb_invoice_id']] = [];
+        }
+        $attachmentsByInvoice[$att['reimb_invoice_id']][] = $att;
+    }
+}
+
 /* Fetch verification record if exists */
 $verifyStmt = $pdo->prepare("
     SELECT pv.*
@@ -266,6 +289,54 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 </tbody>
               </table>
             </div>
+
+            <!-- Attachments Section -->
+            <?php if (!empty($attachmentsByInvoice)): ?>
+              <div class="mt-4 border-top pt-4">
+                <h6 class="mb-3"><i class="bi bi-file-earmark-arrow-down me-2"></i>Attached Documents</h6>
+                <?php foreach ($invoices as $inv): ?>
+                  <?php if (!empty($attachmentsByInvoice[$inv['reimb_invoice_id']])): ?>
+                    <div class="mb-4">
+                      <div class="fw-semibold small text-muted mb-2">
+                        <?= $inv['invoice_stage'] === 'COPY_TO_PROCUREMENT' ? '📋 Copy to Procurement (GC2)' : '📄 Original to Finance (GC10A)' ?>
+                      </div>
+                      <div class="ps-3">
+                        <?php foreach ($attachmentsByInvoice[$inv['reimb_invoice_id']] as $att): ?>
+                          <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded mb-2">
+                            <div class="d-flex align-items-center gap-2" style="flex: 1;">
+                              <i class="bi bi-file-earmark text-secondary"></i>
+                              <div style="flex: 1; min-width: 0;">
+                                <div class="small fw-semibold text-truncate">
+                                  <?= htmlspecialchars($att['original_file_name']) ?>
+                                </div>
+                                <small class="text-muted">
+                                  <?= formatFileSize($att['file_size']) ?> • <?= date('M d, Y', strtotime($att['uploaded_date'])) ?>
+                                </small>
+                              </div>
+                            </div>
+                            <div class="ms-2">
+                              <?php if ($request['created_by'] == $_SESSION['user_id'] || has_permission('manage_users')): ?>
+                                <a href="/reimbursement/download_attachment.php?id=<?= (int)$att['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Download">
+                                  <i class="bi bi-download"></i>
+                                </a>
+                              <?php endif; ?>
+                              <?php if (has_permission('delete_reimbursement_invoice_attachment') && ($request['created_by'] == $_SESSION['user_id'] || has_permission('manage_users'))): ?>
+                                <form method="POST" action="/reimbursement/delete_attachment.php" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this attachment?');">
+                                  <input type="hidden" name="attachment_id" value="<?= $att['id'] ?>">
+                                  <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                  </button>
+                                </form>
+                              <?php endif; ?>
+                            </div>
+                          </div>
+                        <?php endforeach; ?>
+                      </div>
+                    </div>
+                  <?php endif; ?>
+                <?php endforeach; ?>
+              </div>
+            <?php endif; ?>
           <?php endif; ?>
         </div>
       </div>

@@ -600,3 +600,118 @@ function normalizeCurrency(string $currency = 'JMD'): string {
     // Validate and return - default to JMD if invalid
     return in_array($currency, ['JMD', 'USD']) ? $currency : 'JMD';
 }
+
+/**
+ * Format file size in human-readable format
+ * 
+ * @param int $bytes File size in bytes
+ * @return string Formatted file size (e.g., "1.5 MB")
+ */
+function formatFileSize(int $bytes): string {
+    if ($bytes <= 0) {
+        return '0 B';
+    }
+    
+    $units = ['B', 'KB', 'MB', 'GB'];
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+    $bytes /= (1 << (10 * $pow));
+    
+    return round($bytes, 2) . ' ' . $units[$pow];
+}
+
+/**
+ * Save reimbursement invoice attachment
+ * Handles file validation, upload, and database insertion
+ * 
+ * @param PDO $pdo Database connection
+ * @param array $file $_FILES array entry
+ * @param int $reimb_invoice_id Reimbursement invoice ID
+ * @param int $uploaded_by User ID
+ * @return int Attachment ID on success
+ * @throws Exception on validation or upload failure
+ */
+function saveReimbursementAttachment(PDO $pdo, array $file, int $reimb_invoice_id, int $uploaded_by): int {
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        throw new Exception('File upload failed. Please try again.');
+    }
+
+    // Validate file type via MIME
+    $allowedMimes = [
+        'application/pdf',
+        'image/jpeg',
+        'image/png',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+
+    $finfo    = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    if (!in_array($mimeType, $allowedMimes, true)) {
+        throw new Exception('Invalid file type. Allowed types: PDF, JPG, JPEG, PNG, DOC, DOCX, XLS, XLSX.');
+    }
+
+    // Also validate by extension as a secondary guard
+    $allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
+    $ext         = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, $allowedExts, true)) {
+        throw new Exception('Invalid file extension. Allowed: PDF, JPG, JPEG, PNG, DOC, DOCX, XLS, XLSX.');
+    }
+
+    // Validate file size (10 MB max) using actual file size, not client-reported size
+    $maxBytes = 10 * 1024 * 1024;
+    $actualFileSize = filesize($file['tmp_name']);
+    if ($actualFileSize === false || $actualFileSize > $maxBytes) {
+        throw new Exception('File size exceeds the 10 MB limit.');
+    }
+
+    // Build upload directory
+    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/reimbursement_invoice_attachments/';
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+    }
+
+    // Sanitize and generate unique filename
+    $safeExt      = preg_replace('/[^a-zA-Z0-9]/', '', $ext);
+    $uniqueName   = 'REIMB_' . $reimb_invoice_id . '_' . time() . '_' . bin2hex(random_bytes(6)) . '.' . $safeExt;
+    $uploadPath   = $uploadDir . $uniqueName;
+    $relativePath = '/uploads/reimbursement_invoice_attachments/' . $uniqueName;
+
+    try {
+        // Move uploaded file and ensure cleanup on failure
+        if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
+            throw new Exception('Failed to save the file. Please try again.');
+        }
+
+        // Sanitize original filename for storage
+        $originalName = preg_replace('/[^\w.\-]/', '_', basename($file['name']));
+
+        // Persist to database
+        $ins = $pdo->prepare("
+            INSERT INTO reimbursement_invoice_attachments
+                (reimb_invoice_id, file_name, original_file_name, file_path, file_type, file_size, uploaded_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ");
+        $ins->execute([
+            $reimb_invoice_id,
+            $uniqueName,
+            $originalName,
+            $relativePath,
+            $mimeType,
+            (int)$actualFileSize,
+            $uploaded_by,
+        ]);
+
+        return (int)$pdo->lastInsertId();
+    } catch (Exception $e) {
+        // Clean up file on any error (upload or DB)
+        if (file_exists($uploadPath)) {
+            unlink($uploadPath);
+        }
+        throw $e;
+    }
+}
