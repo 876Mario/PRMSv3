@@ -286,7 +286,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                                 <br>
                                 Maximum file size: 10 MB
                             </div>
-                            <div id="file-error" class="invalid-feedback d-block" style="display: none;"></div>
+                            <div id="file-error" class="invalid-feedback" style="display: none;"></div>
                         </div>
 
                         <div class="d-flex gap-2">

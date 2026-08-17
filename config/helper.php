@@ -681,11 +681,12 @@ function saveReimbursementAttachment(PDO $pdo, array $file, int $reimb_invoice_i
     $uploadPath   = $uploadDir . $uniqueName;
     $relativePath = '/uploads/reimbursement_invoice_attachments/' . $uniqueName;
 
-    if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-        throw new Exception('Failed to save the file. Please try again.');
-    }
-
     try {
+        // Move uploaded file and ensure cleanup on failure
+        if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
+            throw new Exception('Failed to save the file. Please try again.');
+        }
+
         // Sanitize original filename for storage
         $originalName = preg_replace('/[^\w.\-]/', '_', basename($file['name']));
 
@@ -707,7 +708,7 @@ function saveReimbursementAttachment(PDO $pdo, array $file, int $reimb_invoice_i
 
         return (int)$pdo->lastInsertId();
     } catch (Exception $e) {
-        // Clean up file on DB error
+        // Clean up file on any error (upload or DB)
         if (file_exists($uploadPath)) {
             unlink($uploadPath);
         }

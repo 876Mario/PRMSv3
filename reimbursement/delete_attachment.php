@@ -24,7 +24,7 @@ $stmt = $pdo->prepare("
     FROM reimbursement_invoice_attachments a
     INNER JOIN reimbursement_invoices ri ON a.reimb_invoice_id = ri.reimb_invoice_id
     INNER JOIN procurement_requests pr ON ri.request_id = pr.request_id
-    WHERE a.id = ?
+    WHERE a.id = ? AND a.is_deleted = 0
 ");
 $stmt->execute([$id]);
 $att = $stmt->fetch(PDO::FETCH_ASSOC);
