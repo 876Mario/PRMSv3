@@ -1403,8 +1403,9 @@ function getCurrentApproverRole() {
 
 /**
  * Get the branches/departments that a HOD or Branch Head can approve requests from.
- * For HOD: Returns the HOD's department (derived from user's branch).
- * For Branch Head: Returns the Branch Head's assigned branch.
+ * Both HOD and Branch Head approval scope is determined by the user's assigned branch.
+ * Note: If the system needs to differentiate HOD (by department) and Branch Head (by location),
+ *       separate lookup tables should be implemented (e.g., hod_assignments, branch_head_assignments).
  *
  * @param PDO $pdo Database connection
  * @param int $userId User ID of the HOD/Branch Head
@@ -1412,29 +1413,15 @@ function getCurrentApproverRole() {
  * @return array List of branch_ids this approver can approve for
  */
 function getApproverScope(PDO $pdo, int $userId, string $approverRole): array {
-    if ($approverRole === 'HOD') {
-        // HOD can approve for their own department/branch
-        $stmt = $pdo->prepare("
-            SELECT DISTINCT branch_id 
-            FROM users 
-            WHERE user_id = ? AND branch_id IS NOT NULL
-        ");
-        $stmt->execute([$userId]);
-        $branchId = $stmt->fetchColumn();
-        return $branchId ? [(int)$branchId] : [];
-    } elseif ($approverRole === 'Branch Head') {
-        // Branch Head can approve for their assigned branch
-        // Assuming Branch Heads have a branch_id in users table or a separate assignment
-        $stmt = $pdo->prepare("
-            SELECT DISTINCT branch_id 
-            FROM users 
-            WHERE user_id = ? AND branch_id IS NOT NULL
-        ");
-        $stmt->execute([$userId]);
-        $branchId = $stmt->fetchColumn();
-        return $branchId ? [(int)$branchId] : [];
-    }
-    return [];
+    // Both HOD and Branch Head are scoped by their assigned branch_id in the users table
+    $stmt = $pdo->prepare("
+        SELECT DISTINCT branch_id 
+        FROM users 
+        WHERE user_id = ? AND branch_id IS NOT NULL
+    ");
+    $stmt->execute([$userId]);
+    $branchId = $stmt->fetchColumn();
+    return $branchId ? [(int)$branchId] : [];
 }
 
 /**
@@ -1652,7 +1639,7 @@ function logApprovalDecision(
         INSERT INTO audit_log (table_name, record_id, action, changed_by, notes)
         VALUES ('petty_cash_reimbursement_approval', ?, ?, ?, ?)
     ");
-    $stmt->execute([$requestId, strtoupper($action), $approverName, $notes]);
+    $stmt->execute([$requestId, strtoupper($action), $approverId, $notes]);
 }
 
 ?>

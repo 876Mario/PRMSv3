@@ -8,6 +8,9 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/workflow.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/auth.php';
 
+// Set content type early (before any early exits)
+header('Content-Type: application/json');
+
 // Verify authentication
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role_name'])) {
     http_response_code(401);
@@ -25,8 +28,6 @@ if (!$approverRole) {
     echo json_encode(['error' => 'User is not a HOD or Branch Head']);
     exit;
 }
-
-header('Content-Type: application/json');
 
 try {
     $requestType = $_GET['type'] ?? 'both'; // 'petty_cash', 'reimbursement', or 'both'

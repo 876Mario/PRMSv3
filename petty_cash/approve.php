@@ -97,11 +97,25 @@ try {
 
     // Determine new status based on approver role and action
     if ($isHodOrBranchHeadApproval) {
-        // HOD/Branch Head approves or rejects at first stage
-        $newStatus = ($action === 'approve') ? 'HOD_APPROVED' : 'DECLINED';
+        // HOD/Branch Head approves or rejects/returns at first stage
+        if ($action === 'approve') {
+            $newStatus = 'HOD_APPROVED';
+        } elseif ($action === 'return') {
+            $newStatus = 'RETURNED_FOR_CORRECTION';
+        } else {
+            // decline
+            $newStatus = 'DECLINED';
+        }
     } else {
         // Finance Officer does fund verification
-        $newStatus = ($action === 'approve') ? 'FUNDS_VERIFIED' : 'DECLINED';
+        if ($action === 'approve') {
+            $newStatus = 'FUNDS_VERIFIED';
+        } elseif ($action === 'return') {
+            $newStatus = 'RETURNED_FOR_CORRECTION';
+        } else {
+            // decline
+            $newStatus = 'DECLINED';
+        }
     }
     
     // Store previous status for audit
@@ -121,6 +135,15 @@ try {
     /* ================================
        Update Approval Record
     ================================ */
+    // Determine approval status for request_approvals table
+    // Note: request_approvals.status enum is ('pending','approved','rejected')
+    // For 'return', we use 'rejected' but include 'return_for_correction' marker in comments
+    $approvalStatus = ($action === 'approve') ? 'approved' : 'rejected';
+    $approvalComments = $comments;
+    if ($action === 'return') {
+        $approvalComments = '[RETURN_FOR_CORRECTION] ' . ($comments ?: '');
+    }
+    
     $approvalUpdate = $pdo->prepare("
         UPDATE request_approvals
         SET status = ?,
@@ -132,9 +155,9 @@ try {
           AND status = 'pending'
     ");
     $approvalUpdate->execute([
-        ($action === 'approve') ? 'approved' : 'declined',
+        $approvalStatus,
         $_SESSION['user_id'],
-        $comments,
+        $approvalComments,
         $request_id,
         $approverRole
     ]);

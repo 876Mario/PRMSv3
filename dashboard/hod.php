@@ -173,8 +173,6 @@ $curSort = $_GET['sort'] ?? 'request_date';
 $curDir  = strtoupper($_GET['dir'] ?? 'ASC');
 ?>
 
-?>
-
 <style>
 .hod-kpi-card {
     color: white;
