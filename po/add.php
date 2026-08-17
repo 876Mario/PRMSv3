@@ -45,6 +45,7 @@ $stmt = $pdo->prepare("
         c.commitment_id,
         c.commitment_number,
         c.commitment_total,
+        c.po_required,
         c.request_id,
         CASE
             WHEN EXISTS (
@@ -72,6 +73,16 @@ $commitment = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$commitment) {
     pop("Commitment not found.", "/procurement/list.php", POP_DEFAULT_DELAY_MS);
+    exit;
+}
+
+// Check if this commitment requires a PO
+if (($commitment['po_required'] ?? 'YES') === 'NO') {
+    pop(
+        "This commitment does not require a Purchase Order. The request will proceed directly to invoicing.",
+        "/procurement/view.php?id=" . $commitment['request_id'],
+        POP_DEFAULT_DELAY_MS
+    );
     exit;
 }
 
