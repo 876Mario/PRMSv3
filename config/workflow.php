@@ -1383,4 +1383,276 @@ function isFinalizedRequestStatus(string $status): bool {
     return in_array(strtoupper($status), ['COMPLETED'], true);
 }
 
+// =============================================================================
+// HOD/Branch Head Approval Helpers
+// =============================================================================
+
+/**
+ * Determine if the current user has a HOD or Branch Head role.
+ * Returns the role name if the user has such a role, false otherwise.
+ *
+ * @return string|false The role name ('HOD' or 'Branch Head'), or false if not applicable.
+ */
+function getCurrentApproverRole() {
+    $userRole = $_SESSION['role_name'] ?? '';
+    if (in_array($userRole, ['HOD', 'Branch Head'], true)) {
+        return $userRole;
+    }
+    return false;
+}
+
+/**
+ * Get the branches/departments that a HOD or Branch Head can approve requests from.
+ * For HOD: Returns the HOD's department (derived from user's branch).
+ * For Branch Head: Returns the Branch Head's assigned branch.
+ *
+ * @param PDO $pdo Database connection
+ * @param int $userId User ID of the HOD/Branch Head
+ * @param string $approverRole 'HOD' or 'Branch Head'
+ * @return array List of branch_ids this approver can approve for
+ */
+function getApproverScope(PDO $pdo, int $userId, string $approverRole): array {
+    if ($approverRole === 'HOD') {
+        // HOD can approve for their own department/branch
+        $stmt = $pdo->prepare("
+            SELECT DISTINCT branch_id 
+            FROM users 
+            WHERE user_id = ? AND branch_id IS NOT NULL
+        ");
+        $stmt->execute([$userId]);
+        $branchId = $stmt->fetchColumn();
+        return $branchId ? [(int)$branchId] : [];
+    } elseif ($approverRole === 'Branch Head') {
+        // Branch Head can approve for their assigned branch
+        // Assuming Branch Heads have a branch_id in users table or a separate assignment
+        $stmt = $pdo->prepare("
+            SELECT DISTINCT branch_id 
+            FROM users 
+            WHERE user_id = ? AND branch_id IS NOT NULL
+        ");
+        $stmt->execute([$userId]);
+        $branchId = $stmt->fetchColumn();
+        return $branchId ? [(int)$branchId] : [];
+    }
+    return [];
+}
+
+/**
+ * Fetch pending petty cash requests awaiting HOD/Branch Head approval.
+ * Filters by the approver's scope (department/branch).
+ *
+ * @param PDO $pdo Database connection
+ * @param int $userId User ID of the approver
+ * @param string $approverRole 'HOD' or 'Branch Head'
+ * @return array Array of pending petty cash requests
+ */
+function getPendingPettyCashApprovals(PDO $pdo, int $userId, string $approverRole): array {
+    $branches = getApproverScope($pdo, $userId, $approverRole);
+    if (empty($branches)) {
+        return [];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($branches), '?'));
+    
+    $stmt = $pdo->prepare("
+        SELECT 
+            pr.request_id,
+            pr.request_number,
+            pr.description,
+            pr.estimated_value,
+            pr.currency,
+            pr.status,
+            pr.created_at,
+            pr.created_by,
+            pr.branch_id,
+            b.branch_name,
+            u.full_name as requester_name,
+            DATEDIFF(NOW(), pr.created_at) as days_pending,
+            ra.role as approval_role,
+            ra.status as approval_status
+        FROM procurement_requests pr
+        LEFT JOIN branches b ON pr.branch_id = b.branch_id
+        LEFT JOIN users u ON pr.created_by = u.user_id
+        LEFT JOIN request_approvals ra ON pr.request_id = ra.request_id AND ra.role = ?
+        WHERE pr.request_type = 'PETTY_CASH'
+            AND pr.status = 'SUBMITTED'
+            AND pr.branch_id IN ($placeholders)
+            AND (ra.status = 'pending' OR ra.status IS NULL)
+        ORDER BY pr.created_at ASC
+    ");
+    
+    $params = array_merge([$approverRole], $branches);
+    $stmt->execute($params);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Fetch pending reimbursement requests awaiting HOD/Branch Head approval.
+ * Filters by the approver's scope (department/branch).
+ *
+ * @param PDO $pdo Database connection
+ * @param int $userId User ID of the approver
+ * @param string $approverRole 'HOD' or 'Branch Head'
+ * @return array Array of pending reimbursement requests
+ */
+function getPendingReimbursementApprovals(PDO $pdo, int $userId, string $approverRole): array {
+    $branches = getApproverScope($pdo, $userId, $approverRole);
+    if (empty($branches)) {
+        return [];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($branches), '?'));
+    
+    $stmt = $pdo->prepare("
+        SELECT 
+            pr.request_id,
+            pr.request_number,
+            pr.description,
+            pr.estimated_value,
+            pr.currency,
+            pr.status,
+            pr.created_at,
+            pr.created_by,
+            pr.branch_id,
+            b.branch_name,
+            u.full_name as requester_name,
+            DATEDIFF(NOW(), pr.created_at) as days_pending,
+            ra.role as approval_role,
+            ra.status as approval_status,
+            (SELECT COUNT(*) FROM reimbursement_invoices WHERE request_id = pr.request_id) as invoice_count
+        FROM procurement_requests pr
+        LEFT JOIN branches b ON pr.branch_id = b.branch_id
+        LEFT JOIN users u ON pr.created_by = u.user_id
+        LEFT JOIN request_approvals ra ON pr.request_id = ra.request_id AND ra.role = ?
+        WHERE pr.request_type = 'REIMBURSEMENT'
+            AND pr.status = 'SUBMITTED'
+            AND pr.branch_id IN ($placeholders)
+            AND (ra.status = 'pending' OR ra.status IS NULL)
+        ORDER BY pr.created_at ASC
+    ");
+    
+    $params = array_merge([$approverRole], $branches);
+    $stmt->execute($params);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Validate if a HOD/Branch Head is authorized to approve a petty cash/reimbursement request.
+ * Checks:
+ *  1. User has HOD or Branch Head role
+ *  2. Request belongs to the approver's department/branch
+ *  3. Request is in SUBMITTED status
+ *  4. Request is awaiting the approver's decision
+ *
+ * @param PDO $pdo Database connection
+ * @param int $userId User ID of the approver
+ * @param string $approverRole 'HOD' or 'Branch Head'
+ * @param int $requestId Request ID to authorize
+ * @return bool True if authorized, false otherwise
+ */
+function isAuthorizedToApprovePettyCashReimbursement(PDO $pdo, int $userId, string $approverRole, int $requestId): bool {
+    // Verify user has the correct role
+    if (!in_array($approverRole, ['HOD', 'Branch Head'], true)) {
+        return false;
+    }
+
+    // Get the request
+    $stmt = $pdo->prepare("
+        SELECT pr.request_id, pr.branch_id, pr.status, pr.request_type, pr.created_by
+        FROM procurement_requests pr
+        WHERE pr.request_id = ?
+    ");
+    $stmt->execute([$requestId]);
+    $request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$request) {
+        return false;
+    }
+
+    // Ensure it's a petty cash or reimbursement request
+    if (!in_array($request['request_type'], ['PETTY_CASH', 'REIMBURSEMENT'], true)) {
+        return false;
+    }
+
+    // Ensure request is in SUBMITTED status
+    if (strtoupper($request['status']) !== 'SUBMITTED') {
+        return false;
+    }
+
+    // Check if the request belongs to the approver's scope
+    $approverBranches = getApproverScope($pdo, $userId, $approverRole);
+    if (!in_array($request['branch_id'], $approverBranches)) {
+        return false;
+    }
+
+    // Check if there's a pending approval record for this role
+    $stmt = $pdo->prepare("
+        SELECT id, status 
+        FROM request_approvals 
+        WHERE request_id = ? AND role = ? AND status IN ('pending', 'approved')
+    ");
+    $stmt->execute([$requestId, $approverRole]);
+    $approval = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // If no approval record or it's already approved, not authorized
+    if (!$approval || $approval['status'] !== 'pending') {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Log an approval decision (approve/reject/return) for petty cash or reimbursement request.
+ * Records: approver_id, approver_role, branch_id, timestamp, action, comments, previous_status, new_status.
+ *
+ * @param PDO $pdo Database connection
+ * @param int $requestId Request ID
+ * @param int $approverId User ID of the approver
+ * @param string $approverRole 'HOD' or 'Branch Head'
+ * @param string $action 'approve', 'reject', or 'return_for_correction'
+ * @param string $newStatus New status of the request (e.g., 'FUNDS_VERIFIED', 'DECLINED')
+ * @param string $previousStatus Previous status of the request
+ * @param ?string $comment Comment/reason for the decision
+ * @return void
+ */
+function logApprovalDecision(
+    PDO $pdo,
+    int $requestId,
+    int $approverId,
+    string $approverRole,
+    string $action,
+    string $newStatus,
+    string $previousStatus,
+    ?string $comment = null
+): void {
+    $stmt = $pdo->prepare("
+        SELECT u.full_name, pr.branch_id
+        FROM users u
+        LEFT JOIN procurement_requests pr ON pr.request_id = ?
+        WHERE u.user_id = ?
+    ");
+    $stmt->execute([$requestId, $approverId]);
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    $approverName = $result['full_name'] ?? 'Unknown';
+    $branchId = $result['branch_id'] ?? null;
+
+    $notes = sprintf(
+        "Action: %s | Role: %s | Branch: %s | Comment: %s | Status: %s → %s",
+        strtoupper($action),
+        $approverRole,
+        $branchId ?? 'N/A',
+        $comment ?? '(none)',
+        $previousStatus,
+        $newStatus
+    );
+
+    $stmt = $pdo->prepare("
+        INSERT INTO audit_log (table_name, record_id, action, changed_by, notes)
+        VALUES ('petty_cash_reimbursement_approval', ?, ?, ?, ?)
+    ");
+    $stmt->execute([$requestId, strtoupper($action), $approverName, $notes]);
+}
+
 ?>
