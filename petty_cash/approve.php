@@ -209,7 +209,7 @@ try {
         notifyRequestFinalized($request_id, $newStatus);
     } else {
         // Declined — include the decline reason
-        notifyRequestDeclined($request_id, (int)$request['created_by'], $notes ?: 'Your petty cash request was declined by Finance.');
+        notifyRequestDeclined($request_id, (int)$request['created_by'], $comments ?: 'Your petty cash request was declined.');
     }
 
     $pdo->commit();

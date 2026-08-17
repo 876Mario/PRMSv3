@@ -190,12 +190,6 @@ try {
         $previousStatus,
         $comments ?: null
     );
-        $pdo,
-        'procurement_requests',
-        $request_id,
-        'STATUS_CHANGE',
-        "Reimbursement Request: {$request['status']} → {$newStatus} by Finance Officer"
-    );
 
     /* ================================
        Notify Requestor
@@ -204,7 +198,7 @@ try {
         notifyRequestFinalized($request_id, $newStatus);
     } else {
         // Declined — include the decline reason
-        notifyRequestDeclined($request_id, (int)$request['created_by'], $notes ?: 'Your reimbursement request was declined by Finance.');
+        notifyRequestDeclined($request_id, (int)$request['created_by'], $comments ?: 'Your reimbursement request was declined.');
     }
 
     $pdo->commit();
