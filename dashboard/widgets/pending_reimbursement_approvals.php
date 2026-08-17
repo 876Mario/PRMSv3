@@ -114,7 +114,12 @@ $daysPendingOldest = $oldestDate ? intval((time() - strtotime($oldestDate)) / 86
                                 <td><?= htmlspecialchars($req['branch_name'] ?? 'N/A') ?></td>
                                 <td>
                                     <span title="<?= htmlspecialchars($req['description'] ?? '') ?>">
-                                        <?= htmlspecialchars(substr($req['description'] ?? '', 0, 30)) ?>...
+                                        <?php 
+                                            $desc = $req['description'] ?? '';
+                                            $truncated = substr($desc, 0, 30);
+                                            $ellipsis = (strlen($desc) > 30) ? '...' : '';
+                                            echo htmlspecialchars($truncated) . $ellipsis;
+                                        ?>
                                     </span>
                                 </td>
                                 <td class="text-end">

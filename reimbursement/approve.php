@@ -217,11 +217,15 @@ try {
     /* ================================
        Notify Requestor
     ================================ */
-    if ($action === 'approve') {
-        notifyRequestFinalized($request_id, $newStatus);
-    } else {
-        // Declined — include the decline reason
+    if ($newStatus === 'DECLINED') {
+        // Request declined
         notifyRequestDeclined($request_id, (int)$request['created_by'], $comments ?: 'Your reimbursement request was declined.');
+    } elseif ($newStatus === 'RETURNED_FOR_CORRECTION') {
+        // Request returned for correction
+        notifyRequestDeclined($request_id, (int)$request['created_by'], $comments ?: 'Your reimbursement request has been returned for correction.');
+    } else {
+        // Approved (HOD_APPROVED or FUNDS_VERIFIED)
+        notifyRequestFinalized($request_id, $newStatus);
     }
 
     $pdo->commit();

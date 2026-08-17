@@ -1596,9 +1596,9 @@ function isAuthorizedToApprovePettyCashReimbursement(PDO $pdo, int $userId, stri
  * @param PDO $pdo Database connection
  * @param int $requestId Request ID
  * @param int $approverId User ID of the approver
- * @param string $approverRole 'HOD' or 'Branch Head'
- * @param string $action 'approve', 'reject', or 'return_for_correction'
- * @param string $newStatus New status of the request (e.g., 'FUNDS_VERIFIED', 'DECLINED')
+ * @param string $approverRole 'HOD', 'Branch Head', or 'Finance Officer'
+ * @param string $action 'approve', 'decline', or 'return'
+ * @param string $newStatus New status of the request (e.g., 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DECLINED', 'RETURNED_FOR_CORRECTION')
  * @param string $previousStatus Previous status of the request
  * @param ?string $comment Comment/reason for the decision
  * @return void
