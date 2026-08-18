@@ -1669,4 +1669,42 @@ function logApprovalDecision(
     $stmt->execute([$requestId, strtoupper($action), $approverId, $notes]);
 }
 
+/**
+ * Determine whether a Purchase Order is required based on 
+ * work_performed and goods_delivered flags.
+ * 
+ * Business Rule:
+ * - If BOTH work has been performed AND goods have been delivered → NO PO required
+ * - If either is false → PO IS required
+ * - NULL/missing values default to requiring PO (conservative)
+ * 
+ * @param array $request Row from procurement_requests table
+ * @return bool True if PO is required, false if not required
+ */
+function shouldRequirePoAtCreation(array $request): bool
+{
+    $workPerformed = $request['work_performed'] ?? 0;
+    $goodsDelivered = $request['goods_delivered'] ?? 0;
+    
+    // Convert to boolean for safety
+    $workPerformed = (bool)(int)$workPerformed;
+    $goodsDelivered = (bool)(int)$goodsDelivered;
+    
+    // Both must be true to NOT require PO
+    // If either is false, PO IS required
+    return !($workPerformed && $goodsDelivered);
+}
+
+/**
+ * Get the derived PO requirement as 'YES' or 'NO' string
+ * for use in database and UI
+ * 
+ * @param array $request Row from procurement_requests table
+ * @return string 'YES' if PO required, 'NO' if not required
+ */
+function getDerivedPoRequired(array $request): string
+{
+    return shouldRequirePoAtCreation($request) ? 'YES' : 'NO';
+}
+
 ?>

@@ -97,6 +97,31 @@ if (($commitment['po_required'] ?? 'YES') === 'NO') {
     exit;
 }
 
+// NEW: Additional safeguard - verify request flags still align with po_required decision
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/workflow.php';
+$requestStmt = $pdo->prepare("
+    SELECT work_performed, goods_delivered
+    FROM procurement_requests
+    WHERE request_id = ?
+");
+$requestStmt->execute([$commitment['request_id']]);
+$requestFlags = $requestStmt->fetch(PDO::FETCH_ASSOC);
+
+if ($requestFlags) {
+    $derivedPoReq = getDerivedPoRequired($requestFlags);
+    if ($derivedPoReq === 'NO' && $commitment['po_required'] === 'YES') {
+        // Warn but allow (user may have changed flags after commitment was created)
+        // This requires audit trail investigation
+        logAudit(
+            $pdo,
+            'purchase_orders',
+            0, // No PO ID yet
+            'PO_CREATION_WARNING',
+            'PO creation attempted but request flags indicate NO PO required. Request ID: ' . $commitment['request_id']
+        );
+    }
+}
+
 $currency = normalizeCurrency($commitment['currency'] ?? 'JMD');
 
 
