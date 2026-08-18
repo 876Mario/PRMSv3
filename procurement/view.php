@@ -117,10 +117,12 @@ $items = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
 
 // Commitments (Original + Supplementary)
+// Exclude remediated (soft-deleted/voided) commitments from display
 $commitStmt = $pdo->prepare("
     SELECT *
     FROM commitments
     WHERE request_id = ?
+    AND (is_remediated IS NULL OR is_remediated = 0)
     ORDER BY
         CASE commitment_type
             WHEN 'ORIGINAL' THEN 0
