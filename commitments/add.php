@@ -365,116 +365,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("Please indicate whether a Purchase Order is required (Yes or No).");
             }
             
-            // VALIDATION: Prevent commitment creation for skip-RFQ + NO PO workflows
-            // ─────────────────────────────────────────────────────────────────
-            // When a request skips RFQ (no RFQ exists) AND Finance selects "NO" PO required:
-            // - NO commitment should be created (non-PO skip-RFQ path has no commitment stage)
-            // - The request proceeds directly from AWARDED → INVOICE → COMPLETED
-            // - Creating a commitment would create orphaned/unused data
-            // 
-            // Instead of creating the commitment, we apply the non-PO workflow and
-            // return success to guide the user to invoice upload.
-            $rfqCheckStmt = $pdo->prepare("SELECT COUNT(*) FROM rfqs WHERE request_id = ?");
-            $rfqCheckStmt->execute([$request_id]);
-            $rfqExists = (int)$rfqCheckStmt->fetchColumn() > 0;
+            // Get GFMS number if provided
+            $gfmsNumber = trim($_POST['gfms_commitment_number'] ?? '');
             
-            if (!$rfqExists && $poRequired === 'NO') {
-                // Skip-RFQ + No-PO path: Apply non-PO workflow WITHOUT creating commitment
-                $pdo->beginTransaction();
-                
-                // Set workflow_path and status appropriately for non-PO skip-RFQ
-                applyNonPoWorkflow($pdo, $request_id);
-                
-                // Log this as a skipped commitment creation
-                logAudit($pdo, 'procurement_requests', $request_id, 'COMMITMENT_SKIPPED_NON_PO',
-                    'Finance Officer confirmed "No PO Required" — commitment creation skipped per Non-PO Skip-RFQ workflow');
-                
-                logRequestTimeline($pdo, $request_id, 'AWARDED',
-                    'Finance Officer: "No PO Required" confirmed. Commitment creation not required for Non-PO Skip-RFQ workflow. Ready for invoice submission.');
-                
-                $pdo->commit();
-                
-                pop(
-                    "Confirmed: No Purchase Order Required. Commitment creation is not needed for this Non-PO Skip-RFQ workflow. " .
-                    "The request is now ready for invoice submission. Please proceed to upload the vendor invoice when goods/services are received.",
-                    "/procurement/view.php?id=" . $request_id,
-                    3000,
-                    "success"
-                );
-                exit;
+            if (!in_array($poRequired, ['YES', 'NO'], true)) {
+               throw new Exception("Please indicate whether a Purchase Order is required (Yes or No).");
             }
             
             // Validate GFMS number if provided
             if (!empty($gfmsNumber)) {
-                $checkGfms = $pdo->prepare("SELECT commitment_id FROM commitments WHERE gfms_commitment_number = ? LIMIT 1");
-                $checkGfms->execute([$gfmsNumber]);
-                if ($checkGfms->fetchColumn()) {
-                    throw new Exception("This GFMS Commitment Number already exists in the system.");
-                }
-                if (!preg_match('/^[a-zA-Z0-9\-\/\.]+$/', $gfmsNumber)) {
-                    throw new Exception("Invalid GFMS number format.");
-                }
-                if (strlen($gfmsNumber) > 50) {
-                    throw new Exception("GFMS number too long (max 50 chars).");
-                }
-            }
-            
-            // Handle document upload (OPTIONAL)
-            $documentPath = null;
-            if (isset($_FILES['commitment_document']) && $_FILES['commitment_document']['error'] === UPLOAD_ERR_OK) {
-                $file = $_FILES['commitment_document'];
-                
-                $allowedTypes = array_keys($mimeToExtDocuments);
-                
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $mimeType = finfo_file($finfo, $file['tmp_name']);
-                finfo_close($finfo);
-                
-                if (!in_array($mimeType, $allowedTypes)) {
-                    throw new Exception("Invalid file type. Only PDF, Word, and Excel files are allowed.");
-                }
-                
-                if ($file['size'] > 50 * 1024 * 1024) {
-                    throw new Exception("File size exceeds 50 MB limit.");
-                }
-                
-                // Save file
-                $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
-                if (!is_dir($uploadDir)) {
-                    mkdir($uploadDir, 0755, true);
-                }
-                
-                // Use extension derived from MIME type, not user-supplied filename
-                $ext = $mimeToExtDocuments[$mimeType] ?? 'bin';
-                $safeFilename = 'COMMITMENT_' . time() . '_' . uniqid() . '.' . $ext;
-                $uploadPath = $uploadDir . $safeFilename;
-                
-                if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-                    throw new Exception("Failed to save commitment document.");
-                }
-                
-                $documentPath = '/uploads/commitments/' . $safeFilename;
-            }
-            
-            // Handle optional scanned commitment form upload (if Finance uploads it here)
-            $formDocPath = null;
-            if (isset($_FILES['commitment_form_doc']) && $_FILES['commitment_form_doc']['error'] === UPLOAD_ERR_OK) {
-                $formFile = $_FILES['commitment_form_doc'];
-                
-                $formAllowedTypes = array_keys($mimeToExtForms);
-                
-                $formFinfo = finfo_open(FILEINFO_MIME_TYPE);
-                $formMimeType = finfo_file($formFinfo, $formFile['tmp_name']);
-                finfo_close($formFinfo);
-                
-                if (in_array($formMimeType, $formAllowedTypes) && $formFile['size'] <= 50 * 1024 * 1024) {
-                    $formExt = $mimeToExtForms[$formMimeType] ?? 'bin';
-                    $formSafeFilename = 'COMMIT_FORM_' . time() . '_' . uniqid() . '.' . $formExt;
-                    $formUploadPath = $uploadDir . $formSafeFilename;
-                    if (move_uploaded_file($formFile['tmp_name'], $formUploadPath)) {
-                        $formDocPath = '/uploads/commitments/' . $formSafeFilename;
-                    }
-                }
+               $checkGfms = $pdo->prepare("SELECT commitment_id FROM commitments WHERE gfms_commitment_number = ? LIMIT 1");
+               $checkGfms->execute([$gfmsNumber]);
+               if ($checkGfms->fetchColumn()) {
+                   throw new Exception("This GFMS Commitment Number already exists in the system.");
+               }
+               if (!preg_match('/^[a-zA-Z0-9\-\/\.]+$/', $gfmsNumber)) {
+                   throw new Exception("Invalid GFMS number format.");
+               }
+               if (strlen($gfmsNumber) > 50) {
+                   throw new Exception("GFMS number too long (max 50 chars).");
+               }
             }
             
             $pdo->beginTransaction();
@@ -508,11 +418,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $commitment_id = $pdo->lastInsertId();
             
-            // Update request status: Non-PO path routes to AWARDED; standard path to COMMITMENT_APPROVED
+            // Update request status based on workflow path
             if ($poRequired === 'NO') {
+                // Non-PO workflow: Set workflow_path flag and keep status at COMMITMENT_APPROVED
                 applyNonPoWorkflow($pdo, $request_id);
             } else {
-                // Standard path: set workflow_path = STANDARD and advance to COMMITMENT_APPROVED
+                // Standard path: Set workflow_path = STANDARD and status = COMMITMENT_APPROVED
                 $pdo->prepare("
                     UPDATE procurement_requests
                     SET status        = 'COMMITMENT_APPROVED',
