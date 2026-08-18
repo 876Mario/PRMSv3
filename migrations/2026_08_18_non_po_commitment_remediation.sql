@@ -26,12 +26,12 @@ CREATE INDEX IF NOT EXISTS idx_commitments_po_required ON commitments(po_require
 -- - Have a commitment with po_required='NO'
 -- - Are in a post-award status (AWARDED, COMMITMENT_APPROVED, INVOICE_RECEIVED, COMPLETED)
 -- - Don't have an RFQ (skip-RFQ path)
--- - Haven't already been marked as NON_PO_SKIP_RFQ
+-- - Haven't already been marked as NON_PO_SKIP_RFQ (in case they were already fixed)
 UPDATE procurement_requests pr
 SET workflow_path = 'NON_PO_SKIP_RFQ'
 WHERE 
     pr.request_type = 'REGULAR'
-    AND pr.workflow_path IS NULL
+    AND pr.workflow_path = 'STANDARD'
     AND pr.status IN ('AWARDED', 'COMMITMENT_APPROVED', 'INVOICE_RECEIVED', 'COMPLETED')
     AND NOT EXISTS (SELECT 1 FROM rfqs WHERE request_id = pr.request_id)
     AND EXISTS (
@@ -86,35 +86,40 @@ ORDER BY pr.created_at DESC;
 
 -- Step 6: Add monitoring trigger to prevent future orphaned non-PO commitments
 -- This trigger ensures that if anyone tries to create a non-PO commitment
--- without setting workflow_path, they get an error
+-- without proper workflow setup, they get an error
 DELIMITER $$
 DROP TRIGGER IF EXISTS `trg_prevent_orphaned_non_po_commitment` $$
 CREATE TRIGGER `trg_prevent_orphaned_non_po_commitment` BEFORE INSERT ON `commitments` FOR EACH ROW
 BEGIN
-    DECLARE request_has_rfq INT;
-    DECLARE request_workflow_path VARCHAR(50);
-    DECLARE request_type VARCHAR(50);
+    DECLARE rfq_count INT DEFAULT 0;
+    DECLARE request_workflow_path VARCHAR(50) DEFAULT NULL;
+    DECLARE request_type VARCHAR(50) DEFAULT NULL;
     
     -- Only validate for ORIGINAL commitments (not supplementary)
     IF NEW.commitment_type = 'ORIGINAL' THEN
         -- Check if this is a non-PO commitment (po_required='NO')
         IF NEW.po_required = 'NO' THEN
-            -- Get request details
-            SELECT COUNT(*), pr.workflow_path, pr.request_type
-            INTO request_has_rfq, request_workflow_path, request_type
+            -- Get request details: type and workflow_path
+            SELECT pr.request_type, pr.workflow_path
+            INTO request_type, request_workflow_path
             FROM procurement_requests pr
-            LEFT JOIN rfqs rf ON pr.request_id = rf.request_id
             WHERE pr.request_id = NEW.request_id
-            GROUP BY pr.request_id;
+            LIMIT 1;
+            
+            -- Count RFQs for this request
+            SELECT COUNT(*)
+            INTO rfq_count
+            FROM rfqs
+            WHERE request_id = NEW.request_id;
             
             -- For REGULAR requests in skip-RFQ path (no RFQ exists),
             -- ensure workflow_path is explicitly set to NON_PO_SKIP_RFQ
             IF request_type = 'REGULAR' 
-               AND request_has_rfq = 0
+               AND rfq_count = 0
                AND (request_workflow_path IS NULL OR request_workflow_path = 'STANDARD')
             THEN
-                SIGNAL SQLSTATE '45000' 
-                SET MESSAGE_TEXT = 'Cannot create non-PO commitment without setting workflow_path to NON_PO_SKIP_RFQ for skip-RFQ requests';
+               SIGNAL SQLSTATE '45000' 
+               SET MESSAGE_TEXT = 'Cannot create non-PO commitment without setting workflow_path to NON_PO_SKIP_RFQ for skip-RFQ requests';
             END IF;
         END IF;
     END IF;
