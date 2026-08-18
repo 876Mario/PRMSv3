@@ -46,6 +46,7 @@ $stmt = $pdo->prepare("
         c.commitment_number,
         c.commitment_total,
         c.po_required,
+        c.is_remediated,
         c.request_id,
         CASE
             WHEN EXISTS (
@@ -73,6 +74,16 @@ $commitment = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$commitment) {
     pop("Commitment not found.", "/procurement/list.php", POP_DEFAULT_DELAY_MS);
+    exit;
+}
+
+// Check if commitment has been remediated (soft-deleted)
+if (($commitment['is_remediated'] ?? 0) === 1) {
+    pop(
+        "This commitment has been remediated and is no longer part of the active workflow.",
+        "/procurement/view.php?id=" . $commitment['request_id'],
+        POP_DEFAULT_DELAY_MS
+    );
     exit;
 }
 

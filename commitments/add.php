@@ -365,6 +365,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("Please indicate whether a Purchase Order is required (Yes or No).");
             }
             
+            // VALIDATION: Prevent orphaned commitments for skip-RFQ + skip-PO paths
+            // If RFQ was skipped (no RFQ exists) AND Finance selects "NO" PO required,
+            // this is a non-PO skip-RFQ path. In this case, the workflow_path flag
+            // MUST be explicitly set to 'NON_PO_SKIP_RFQ' to prevent data inconsistency.
+            $rfqCheckStmt = $pdo->prepare("SELECT COUNT(*) FROM rfqs WHERE request_id = ?");
+            $rfqCheckStmt->execute([$request_id]);
+            $rfqExists = (int)$rfqCheckStmt->fetchColumn() > 0;
+            
+            if (!$rfqExists && $poRequired === 'NO') {
+                // This is a non-PO skip-RFQ path. Ensure the workflow_path is set correctly.
+                // This commitment WILL be created, but workflow_path must be marked to prevent
+                // the commitment from appearing as an orphan data record.
+                $pdo->prepare("
+                    UPDATE procurement_requests
+                    SET workflow_path = 'NON_PO_SKIP_RFQ'
+                    WHERE request_id = ?
+                ")->execute([$request_id]);
+                
+                logAudit($pdo, 'procurement_requests', $request_id, 'WORKFLOW_PATH_SET',
+                    'Workflow path set to NON_PO_SKIP_RFQ: Finance selected "No PO Required" for skip-RFQ request');
+            }
+            
             // Validate GFMS number if provided
             if (!empty($gfmsNumber)) {
                 $checkGfms = $pdo->prepare("SELECT commitment_id FROM commitments WHERE gfms_commitment_number = ? LIMIT 1");

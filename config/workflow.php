@@ -1280,6 +1280,10 @@ function shouldIncludeCommitmentStages(?array $originalCommitment): bool {
         // (will be reassessed once commitment is created)
         return true;
     }
+    // Remediated (soft-deleted/voided) commitments are treated as non-existent
+    if (($originalCommitment['is_remediated'] ?? 0) === 1) {
+        return true;  // Treat as if no commitment exists; assume YES for new commitment
+    }
     // Include commitment stages only if po_required = 'YES'
     return ($originalCommitment['po_required'] ?? 'YES') === 'YES';
 }
