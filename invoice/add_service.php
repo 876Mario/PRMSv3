@@ -149,12 +149,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // Advance procurement request status to INVOICE_RECEIVED
+        // Accepts both COMMITMENT_APPROVED (standard & non-PO workflows) and AWARDED (skip-RFQ entry point)
         $request_id = $data['request_id'];
         if ($request_id) {
             $pdo->prepare("
                 UPDATE procurement_requests
                 SET status = 'INVOICE_RECEIVED'
-                WHERE request_id = ? AND status = 'COMMITMENT_APPROVED'
+                WHERE request_id = ? AND status IN ('COMMITMENT_APPROVED', 'AWARDED')
             ")->execute([$request_id]);
 
             logRequestTimeline($pdo, $request_id, 'INVOICE_RECEIVED',

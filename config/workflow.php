@@ -1293,9 +1293,16 @@ function shouldIncludeCommitmentStages(?array $originalCommitment): bool {
  *
  * Business rules:
  *   1. Sets workflow_path = 'NON_PO_SKIP_RFQ' on the request.
- *   2. Sets status = 'AWARDED' (the Skip-RFQ workflow entry point).
- *   3. Ensures requires_rfq = 0 so no RFQ stages are triggered.
- *   4. Writes full audit entries for compliance tracing.
+ *   2. Keeps status = 'COMMITMENT_APPROVED' (maintain stage consistency with standard path).
+ *   3. The workflow_path flag identifies this as a non-PO workflow; PO creation should be blocked.
+ *   4. Ensures requires_rfq = 0 so no RFQ stages are triggered.
+ *   5. Writes full audit entries for compliance tracing.
+ *
+ * IMPORTANT: Do NOT revert status to AWARDED. The stage transition must remain consistent:
+ *   - Standard path: AWARDED → COMMITMENTS_PENDING → COMMITMENT_APPROVED → PO_PENDING → INVOICE_RECEIVED → COMPLETED
+ *   - Non-PO path:   AWARDED → COMMITMENTS_PENDING → COMMITMENT_APPROVED →               INVOICE_RECEIVED → COMPLETED
+ *
+ * The workflow_path flag is used to determine whether PO creation is allowed, not the status.
  *
  * Must be called inside an active transaction; the caller is responsible for
  * commit/rollback.
@@ -1305,10 +1312,11 @@ function shouldIncludeCommitmentStages(?array $originalCommitment): bool {
  * @return void
  */
 function applyNonPoWorkflow(PDO $pdo, int $requestId): void {
+    // Set workflow_path to identify non-PO workflow, but keep status at COMMITMENT_APPROVED
+    // This ensures consistency with the standard workflow stage pipeline
     $pdo->prepare("
         UPDATE procurement_requests
-        SET status        = 'AWARDED',
-            workflow_path = 'NON_PO_SKIP_RFQ',
+        SET workflow_path = 'NON_PO_SKIP_RFQ',
             requires_rfq  = 0,
             updated_at    = NOW()
         WHERE request_id = ?
@@ -1319,13 +1327,13 @@ function applyNonPoWorkflow(PDO $pdo, int $requestId): void {
         'procurement_requests',
         $requestId,
         'NON_PO_WORKFLOW_APPLIED',
-        'PO not required — request auto-routed to Skip-RFQ workflow (status → AWARDED, RFQ bypassed)'
+        'PO not required — request routed to Non-PO Skip-RFQ workflow. RFQ bypassed, PO creation blocked. Ready for invoice submission.'
     );
     logRequestTimeline(
         $pdo,
         $requestId,
         'NON_PO_WORKFLOW_APPLIED',
-        'Finance Officer selected "No PO Required". RFQ and PO creation stages bypassed. Request routed directly to post-award disbursement workflow.'
+        'Finance Officer selected "No PO Required". RFQ and PO creation stages bypassed. Request will proceed directly from commitment approval to invoice submission.'
     );
 }
 
