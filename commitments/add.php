@@ -394,11 +394,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $pdo->commit();
                 
-                // Notify about the skip-PO decision
-                require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
-                notifyCommitmentAction($request_id, '', 'NON_PO_SKIPPED', 
-                    'No Purchase Order Required — commitment creation skipped per Non-PO workflow. Request ready for invoice upload.');
-                
                 pop(
                     "Confirmed: No Purchase Order Required. Commitment creation is not needed for this Non-PO Skip-RFQ workflow. " .
                     "The request is now ready for invoice submission. Please proceed to upload the vendor invoice when goods/services are received.",
