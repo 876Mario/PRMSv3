@@ -79,7 +79,7 @@ LIMIT 50;
 -- Check for POs created with non-PO commitments (should be 0)
 SELECT 
     COUNT(*) as po_with_no_po_commitment_count,
-    COUNT(DISTINCT po.request_id) as unique_requests_with_violation
+    COUNT(DISTINCT c.request_id) as unique_requests_with_violation
 FROM purchase_orders po
 JOIN commitments c ON po.commitment_id = c.commitment_id
 WHERE c.po_required = 'NO'
@@ -87,13 +87,13 @@ AND (c.is_remediated IS NULL OR c.is_remediated = 0);
 
 -- Detailed view if any violations exist
 SELECT 
-    po.po_id, po.po_number, po.request_id,
+    po.po_id, po.po_number, c.request_id,
     pr.request_number, pr.status,
     c.commitment_id, c.po_required,
     po.created_at
 FROM purchase_orders po
 JOIN commitments c ON po.commitment_id = c.commitment_id
-JOIN procurement_requests pr ON po.request_id = pr.request_id
+JOIN procurement_requests pr ON c.request_id = pr.request_id
 WHERE c.po_required = 'NO'
 AND (c.is_remediated IS NULL OR c.is_remediated = 0)
 ORDER BY po.po_id DESC
