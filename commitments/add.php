@@ -53,6 +53,9 @@ $stmt = $pdo->prepare("
         pr.requires_rfq,
         pr.request_type,
         pr.commitment_form_path,
+        pr.work_performed,
+        pr.goods_delivered,
+        pr.po_requirement_notes,
         rf.rfq_id,
         rq.quote_id,
         rq.quote_amount,
@@ -351,7 +354,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $commitmentDate  = trim($_POST['commitment_date'] ?? '');
             $commitmentTotal = $_POST['commitment_total'] ?? null;
             $gfmsNumber      = trim($_POST['gfms_commitment_number'] ?? '');
-            $poRequired      = strtoupper(trim($_POST['po_required'] ?? ''));
+            
+            // UPDATED: Use derived PO requirement from request flags
+            // If both work_performed AND goods_delivered are true, PO not required
+            // Otherwise, default to requiring PO unless explicitly overridden
+            $derivedPoRequired = getDerivedPoRequired($request); // Uses shouldRequirePoAtCreation()
+            $poRequired = strtoupper(trim($_POST['po_required'] ?? $derivedPoRequired)); // Allow user to override but default to derived
             
             if (empty($commitmentDate)) {
                 throw new Exception("Commitment date is required.");
@@ -752,6 +760,51 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 <form method="post" enctype="multipart/form-data">
                     <input type="hidden" name="action" value="upload_commitment">
                     
+                    <!-- NEW: Display Request PO Flags -->
+                    <div class="mb-4 p-3 border rounded bg-info bg-opacity-10">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-info-circle text-info"></i> PO Requirement Analysis</h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="work_perf_display" disabled 
+                                           <?= $request['work_performed'] ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="work_perf_display">
+                                        Work has been performed
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="goods_deliv_display" disabled 
+                                           <?= $request['goods_delivered'] ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="goods_deliv_display">
+                                        Goods have been delivered
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <?php if (!empty($request['po_requirement_notes'])): ?>
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                <strong>Notes:</strong> <?= htmlspecialchars($request['po_requirement_notes']) ?>
+                            </small>
+                        </div>
+                        <?php endif; ?>
+                        <div class="mt-3 p-2 bg-light rounded">
+                            <small class="fw-bold" id="derived_po_info">
+                                <?php 
+                                    require_once $_SERVER['DOCUMENT_ROOT'] . "/config/workflow.php";
+                                    $derivedPoReq = getDerivedPoRequired($request);
+                                    if ($derivedPoReq === 'NO') {
+                                        echo '✓ Derived PO Requirement: <span class="text-success">NO PO REQUIRED</span>';
+                                    } else {
+                                        echo '⚠ Derived PO Requirement: <span class="text-warning">PO REQUIRED</span>';
+                                    }
+                                ?>
+                            </small>
+                        </div>
+                    </div>
+                    
                     <!-- Is PO Required? -->
                     <div class="mb-4">
                         <label class="form-label fw-semibold">
@@ -760,8 +813,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                         </label>
                         <select name="po_required" id="po_required_select" class="form-select form-select-lg" required onchange="updatePoWorkflowInfo(this.value)">
                             <option value="">— Select —</option>
-                            <option value="YES">Yes – Standard Procurement Workflow (RFQ → PO → Invoice)</option>
-                            <option value="NO">No – Skip RFQ / Non-PO Workflow (Direct to disbursement)</option>
+                            <option value="YES" <?= $derivedPoReq === 'YES' ? 'selected' : '' ?>>Yes – Standard Procurement Workflow (RFQ → PO → Invoice)</option>
+                            <option value="NO" <?= $derivedPoReq === 'NO' ? 'selected' : '' ?>>No – Skip RFQ / Non-PO Workflow (Direct to disbursement)</option>
                         </select>
                         <small class="text-muted d-block mt-2">
                             Selecting <strong>No</strong> will automatically bypass RFQ and PO creation steps and route the request directly to payment/disbursement.

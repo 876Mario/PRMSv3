@@ -27,6 +27,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $estimated_value = (float)($_POST['estimated_value'] ?? 0);
         $currency = in_array(($_POST['currency'] ?? ''), ['JMD', 'USD']) ? $_POST['currency'] : 'JMD';
         $usd_rate = null;
+        
+        // NEW: Capture work_performed and goods_delivered flags
+        $workPerformed = isset($_POST['work_performed']) && $_POST['work_performed'] === 'on' ? 1 : 0;
+        $goodsDelivered = isset($_POST['goods_delivered']) && $_POST['goods_delivered'] === 'on' ? 1 : 0;
+        $poRequirementNotes = trim($_POST['po_requirement_notes'] ?? '');
 
         // If USD, get the current exchange rate
         if ($currency === 'USD') {
@@ -68,8 +73,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* ---------- Insert procurement request ---------- */
         $stmt = $pdo->prepare("
             INSERT INTO procurement_requests
-            (branch_id, request_number, request_date, description, created_by, status, request_type, estimated_value, currency, usd_rate)
-            VALUES (?, ?, ?, ?, ?, 'Draft', ?, ?, ?, ?)
+            (branch_id, request_number, request_date, description, created_by, status, request_type, estimated_value, currency, usd_rate, work_performed, goods_delivered, po_requirement_notes)
+            VALUES (?, ?, ?, ?, ?, 'Draft', ?, ?, ?, ?, ?, ?, ?)
         ");
 
         $stmt->execute([
@@ -81,7 +86,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $request_type,
             $estimated_value,
             $currency,
-            $usd_rate
+            $usd_rate,
+            $workPerformed,
+            $goodsDelivered,
+            $poRequirementNotes ?: null
         ]);
 
         // FIX: correct request ID
@@ -285,6 +293,50 @@ $jsUsdRate = (float)($sysRateStmt->fetchColumn() ?: 155.00);
                    required>
           </div>
         </div>
+
+        <!-- NEW: PO Requirement Decision Flags -->
+        <div class="row g-3 mb-3 border-top pt-3">
+          <div class="col-12">
+            <div class="alert alert-info" role="alert">
+              <i class="bi bi-info-circle me-2"></i>
+              <strong>Purchase Order Determination:</strong> Indicate whether work has already been performed and goods have already been delivered. 
+              If both are checked, a Purchase Order will not be required for this request.
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input type="checkbox" name="work_performed" id="work_performed" class="form-check-input" onchange="updatePoRequirementInfo()">
+              <label class="form-check-label" for="work_performed">
+                <span class="fw-bold">Work has already been performed</span>
+                <br>
+                <small class="text-muted">Check if the requested work or service has already been completed</small>
+              </label>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input type="checkbox" name="goods_delivered" id="goods_delivered" class="form-check-input" onchange="updatePoRequirementInfo()">
+              <label class="form-check-label" for="goods_delivered">
+                <span class="fw-bold">Goods have already been delivered</span>
+                <br>
+                <small class="text-muted">Check if the ordered goods have already been received</small>
+              </label>
+            </div>
+          </div>
+          <div class="col-12">
+            <div id="po_requirement_status" class="alert alert-warning d-none">
+              <strong>PO Status:</strong> <span id="po_requirement_text"></span>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Additional Notes (Optional)</label>
+            <textarea name="po_requirement_notes" id="po_requirement_notes" class="form-control" rows="2" 
+                      placeholder="Provide justification or additional context for the PO requirement decision"
+                      maxlength="500"></textarea>
+            <small class="text-muted">Max 500 characters</small>
+          </div>
+        </div>
+
         <div class="mb-3">
           <label for="description" class="form-label fw-bold">Brief Description <span class="text-danger">*</span></label>
           <textarea name="description" id="description" class="form-control" rows="3" maxlength="500" required
@@ -377,6 +429,31 @@ function updateThresholdHint() {
         hint.innerHTML = '';
     }
 }
+
+// NEW: Update PO requirement status display
+function updatePoRequirementInfo() {
+    const workPerformed = document.getElementById('work_performed').checked;
+    const goodsDelivered = document.getElementById('goods_delivered').checked;
+    const statusDiv = document.getElementById('po_requirement_status');
+    const statusText = document.getElementById('po_requirement_text');
+    
+    if (workPerformed && goodsDelivered) {
+        // Both true: NO PO required
+        statusDiv.classList.remove('alert-warning', 'd-none');
+        statusDiv.classList.add('alert-success');
+        statusText.textContent = '✓ Purchase Order NOT REQUIRED (work performed + goods delivered)';
+    } else if (workPerformed || goodsDelivered) {
+        // One true: PO still required
+        statusDiv.classList.remove('alert-success', 'd-none');
+        statusDiv.classList.add('alert-warning');
+        const missing = !workPerformed ? 'work' : 'goods delivery';
+        statusText.textContent = `⚠ Purchase Order REQUIRED (${missing} not yet completed)`;
+    } else {
+        // Both false: Hide status
+        statusDiv.classList.add('d-none');
+    }
+}
+
 
 // Optional: dynamic add/remove rows (does not change backend logic)
 let rowIndex = 1;
