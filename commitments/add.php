@@ -365,26 +365,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("Please indicate whether a Purchase Order is required (Yes or No).");
             }
             
-            // VALIDATION: Prevent orphaned commitments for skip-RFQ + skip-PO paths
-            // If RFQ was skipped (no RFQ exists) AND Finance selects "NO" PO required,
-            // this is a non-PO skip-RFQ path. In this case, the workflow_path flag
-            // MUST be explicitly set to 'NON_PO_SKIP_RFQ' to prevent data inconsistency.
+            // VALIDATION: Prevent commitment creation for skip-RFQ + NO PO workflows
+            // ─────────────────────────────────────────────────────────────────
+            // When a request skips RFQ (no RFQ exists) AND Finance selects "NO" PO required:
+            // - NO commitment should be created (non-PO skip-RFQ path has no commitment stage)
+            // - The request proceeds directly from AWARDED → INVOICE → COMPLETED
+            // - Creating a commitment would create orphaned/unused data
+            // 
+            // Instead of creating the commitment, we apply the non-PO workflow and
+            // return success to guide the user to invoice upload.
             $rfqCheckStmt = $pdo->prepare("SELECT COUNT(*) FROM rfqs WHERE request_id = ?");
             $rfqCheckStmt->execute([$request_id]);
             $rfqExists = (int)$rfqCheckStmt->fetchColumn() > 0;
             
             if (!$rfqExists && $poRequired === 'NO') {
-                // This is a non-PO skip-RFQ path. Ensure the workflow_path is set correctly.
-                // This commitment WILL be created, but workflow_path must be marked to prevent
-                // the commitment from appearing as an orphan data record.
-                $pdo->prepare("
-                    UPDATE procurement_requests
-                    SET workflow_path = 'NON_PO_SKIP_RFQ'
-                    WHERE request_id = ?
-                ")->execute([$request_id]);
+                // Skip-RFQ + No-PO path: Apply non-PO workflow WITHOUT creating commitment
+                $pdo->beginTransaction();
                 
-                logAudit($pdo, 'procurement_requests', $request_id, 'WORKFLOW_PATH_SET',
-                    'Workflow path set to NON_PO_SKIP_RFQ: Finance selected "No PO Required" for skip-RFQ request');
+                // Set workflow_path and status appropriately for non-PO skip-RFQ
+                applyNonPoWorkflow($pdo, $request_id);
+                
+                // Log this as a skipped commitment creation
+                logAudit($pdo, 'procurement_requests', $request_id, 'COMMITMENT_SKIPPED_NON_PO',
+                    'Finance Officer confirmed "No PO Required" — commitment creation skipped per Non-PO Skip-RFQ workflow');
+                
+                logRequestTimeline($pdo, $request_id, 'AWARDED',
+                    'Finance Officer: "No PO Required" confirmed. Commitment creation not required for Non-PO Skip-RFQ workflow. Ready for invoice submission.');
+                
+                $pdo->commit();
+                
+                pop(
+                    "Confirmed: No Purchase Order Required. Commitment creation is not needed for this Non-PO Skip-RFQ workflow. " .
+                    "The request is now ready for invoice submission. Please proceed to upload the vendor invoice when goods/services are received.",
+                    "/procurement/view.php?id=" . $request_id,
+                    3000,
+                    "success"
+                );
+                exit;
             }
             
             // Validate GFMS number if provided
