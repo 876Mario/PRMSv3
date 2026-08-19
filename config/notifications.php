@@ -3906,13 +3906,13 @@ HTML;
                 : NotificationService::TYPE_FINANCE_ACTION;
             
             if (NotificationService::createNotification($user['user_id'], $notificationType, [
-                'title'          => "Reimbursement Invoice Verification: {$safeRequestNumber}",
-                'body'           => "{$safeStageLabel} - Amount: {$formattedAmount}",
+                'title'          => "Reimbursement Invoice Verification: {$request['request_number']}",
+                'body'           => "{$stageLabel} - Amount: {$formattedAmount}",
                 'request_id'     => $requestId,
-                'request_ref'    => $safeRequestNumber,
-                'action_url'     => "/reimbursement/view.php?request_id={$requestId}",
-                'stage'          => $safeStageLabel,
-                'requestor_name' => $safeRequestorName,
+                'request_ref'    => $request['request_number'],
+                'action_url'     => "/reimbursement/view.php?request_id=" . urlencode((string)$requestId),
+                'stage'          => $stageLabel,
+                'requestor_name' => $request['requestor_name'] ?? null,
                 'priority'       => 'high',
             ])) {
                 $notificationsSent++;
