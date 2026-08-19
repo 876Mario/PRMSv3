@@ -16,18 +16,14 @@ ADD COLUMN IF NOT EXISTS doc_ctrl_dcr_number VARCHAR(100) DEFAULT NULL COMMENT '
 
 -- 2. Ensure doc_ctrl_settings table has entries for all request types
 -- This table is used to store document control settings for form generation
-CREATE TABLE IF NOT EXISTS doc_ctrl_settings (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    request_type ENUM('REGULAR', 'REIMBURSEMENT', 'PETTY_CASH') UNIQUE NOT NULL COMMENT 'Request type these settings apply to',
-    form_revision VARCHAR(100) NOT NULL COMMENT 'Current form revision number',
-    effective_date DATE NOT NULL COMMENT 'Date this revision became effective',
-    dcr_number VARCHAR(100) NOT NULL COMMENT 'DCR (Design Control Record) number',
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_by_id INT DEFAULT NULL,
-    updated_by_name VARCHAR(255) DEFAULT NULL,
-    INDEX idx_request_type (request_type),
-    INDEX idx_updated_at (updated_at)
-);
+-- First, add the request_type column if it doesn't exist (migration 2026_08_10 didn't include it)
+ALTER TABLE `doc_ctrl_settings`
+ADD COLUMN IF NOT EXISTS `request_type` ENUM('REGULAR', 'REIMBURSEMENT', 'PETTY_CASH') UNIQUE COMMENT 'Request type these settings apply to' AFTER `id`;
+
+-- Add indexes for query performance
+ALTER TABLE `doc_ctrl_settings`
+ADD INDEX IF NOT EXISTS `idx_request_type` (`request_type`),
+ADD INDEX IF NOT EXISTS `idx_updated_at` (`updated_at`);
 
 -- Initialize doc_ctrl_settings for all request types if not exists
 INSERT IGNORE INTO doc_ctrl_settings (id, request_type, form_revision, effective_date, dcr_number)
