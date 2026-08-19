@@ -52,9 +52,22 @@ $reconcileStmt = $pdo->prepare("
     LEFT JOIN users v ON pcr.verified_by = v.user_id
     WHERE pcr.disburse_id = ?
 ");
+$deadlineStatus = null;
 if ($disbursement) {
     $reconcileStmt->execute([$disbursement['disburse_id']]);
     $reconciliation = $reconcileStmt->fetch(PDO::FETCH_ASSOC);
+
+    // Compute deadline countdown from the disbursement_deadline column
+    if (!empty($disbursement['disbursement_deadline'])) {
+        $now      = new DateTime();
+        $deadline = new DateTime($disbursement['disbursement_deadline']);
+        $diff     = $now->diff($deadline);
+        $deadlineStatus = [
+            'deadline'       => $deadline,
+            'is_overdue'     => ($now > $deadline),
+            'time_remaining' => $diff,
+        ];
+    }
 } else {
     $reconciliation = null;
 }
