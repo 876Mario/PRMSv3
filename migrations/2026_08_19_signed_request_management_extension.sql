@@ -110,9 +110,9 @@ CREATE INDEX IF NOT EXISTS idx_signed_docs_request_active ON signed_request_docu
 
 INSERT INTO audit_log (table_name, record_id, action, notes)
 VALUES ('DATABASE', 0, 'SCHEMA_CHANGE', 
-  'Migrated signed request management to support REIMBURSEMENT and PETTY_CASH request types. ' .
-  'Added signed_request_documents table for versioning, admin_edits_log table for audit trail, ' .
-  'and new permissions for signed document and admin operations.');
+  CONCAT('Migrated signed request management to support REIMBURSEMENT and PETTY_CASH request types. ',
+         'Added signed_request_documents table for versioning, admin_edits_log table for audit trail, ',
+         'and new permissions for signed document and admin operations.'));
 
 -- ============================================================
 -- VERIFICATION QUERIES
