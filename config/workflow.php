@@ -214,14 +214,11 @@ function getAwardedWorkflowGuidance(): string {
  * @return bool True when approval must be blocked pending signed request upload
  */
 function signedRequestUploadPending(array $request): bool {
-    // Gate only applies to the first approval (while still SUBMITTED)
+    // Gate applies to all request types at SUBMITTED status
     if (strtoupper($request['status'] ?? '') !== 'SUBMITTED') {
         return false;
     }
-    // Petty cash / reimbursement flows are not gated
-    if (in_array($request['request_type'] ?? 'REGULAR', ['PETTY_CASH', 'REIMBURSEMENT'], true)) {
-        return false;
-    }
+    // Check if signed request document is missing
     return empty($request['signed_request_document_path']);
 }
 
@@ -558,6 +555,17 @@ function enforceTransition(array $request, string $nextStage) {
             '/procurement/list.php',
             POP_DEFAULT_DELAY_MS,
             'error'
+        );
+        exit;
+    }
+
+    // Gate: Check if a signed request document is required before transitioning from SUBMITTED
+    if ($request['status'] === 'SUBMITTED' && signedRequestUploadPending($request)) {
+        pop(
+            'A signed request document must be uploaded before proceeding. Please print the form, sign it, and upload the signed copy.',
+            '/procurement/view.php?id=' . $request['request_id'],
+            POP_DEFAULT_DELAY_MS,
+            'warning'
         );
         exit;
     }

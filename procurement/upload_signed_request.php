@@ -3,7 +3,7 @@
  * Upload Signed Procurement Request
  * Handles branch head signed request uploads
  */
-$REQUIRE_PERMISSION = 'view_requests';
+$REQUIRE_PERMISSION = 'upload_procurement_signed_request';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
@@ -22,9 +22,9 @@ if ($request_id <= 0) {
 // Verify request exists and user permissions
 try {
     $stmt = $pdo->prepare("
-        SELECT request_id, request_number, created_by, status
+        SELECT request_id, request_number, created_by, status, request_type
         FROM procurement_requests 
-        WHERE request_id = ?
+        WHERE request_id = ? AND request_type = 'REGULAR'
     ");
     $stmt->execute([$request_id]);
     $request = $stmt->fetch(PDO::FETCH_ASSOC);
