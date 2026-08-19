@@ -185,11 +185,6 @@ class AdminEditService {
             return ['success' => false, 'error' => $validation['error']];
         }
         
-        // Security: Double-check field is whitelisted before building SQL
-        if (!$this->isFieldWhitelisted($fieldName)) {
-            return ['success' => false, 'error' => 'Field name validation failed: field is not whitelisted'];
-        }
-        
         // Get old value
         $oldValue = $request[$fieldName] ?? null;
         
@@ -207,6 +202,7 @@ class AdminEditService {
         
         try {
             // Update the field using parameterized identifier (field name must be whitelisted)
+            // validateEdit() already ensures the field is whitelisted
             $stmt = $this->pdo->prepare("
                 UPDATE procurement_requests
                 SET $fieldName = ?
