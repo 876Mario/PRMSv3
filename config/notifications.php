@@ -3717,7 +3717,7 @@ HTML;
  * Notify Procurement Officers when a reimbursement invoice copy is submitted (GC2)
  * Notify Finance Officers when original invoice is submitted (GC10A)
  */
-function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStage, float $invoiceAmount, string $requestorName): bool {
+function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStage, float $invoiceAmount): bool {
     if (!notificationsEnabled()) return false;
 
     global $pdo;
@@ -3739,7 +3739,8 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
             return false;
         }
 
-        $appUrl = getAppUrl();
+        $appUrl = he(getAppUrl());
+        $safeRequestId = he((string)$requestId);
         $currency = normalizeCurrency($request['currency'] ?? 'JMD');
         $safeAmount = $currency . ' ' . number_format($invoiceAmount, 2);
 
@@ -3862,13 +3863,13 @@ HTML;
             </div>
 
             <p>
-                <a href="{$appUrl}/reimbursement/view.php?request_id={$requestId}" class="button">
-                    ✓ Review & Verify Invoice
+                <a href="{$appUrl}/reimbursement/view.php?request_id={$safeRequestId}" class="button">
+                    ✓ Review &amp; Verify Invoice
                 </a>
             </p>
 
             <p style="margin-top: 30px; font-size: 13px; color: #666;">
-                <strong>Reference:</strong> Request {$safeRequestNumber} | ID: {$requestId}
+                <strong>Reference:</strong> Request {$safeRequestNumber} | ID: {$safeRequestId}
             </p>
         </div>
         <div class="footer">
@@ -3880,17 +3881,15 @@ HTML;
 </html>
 HTML;
 
-        // Send email to all users in the target role
-        $emailsSent = 0;
+        // Send email and in-app notifications to all users in the target role
+        $notificationsSent = 0;
         foreach ($targetUsers as $user) {
-            if (empty($user['email'])) continue;
-            
-            // In-app notification
+            // In-app notification (always sent for active users)
             $notificationType = ($invoiceStage === 'COPY_TO_PROCUREMENT') 
                 ? NotificationService::TYPE_APPROVAL_NEEDED
                 : NotificationService::TYPE_FINANCE_ACTION;
             
-            NotificationService::createNotification($user['user_id'], $notificationType, [
+            if (NotificationService::createNotification($user['user_id'], $notificationType, [
                 'title'          => "Reimbursement Invoice Verification: {$request['request_number']}",
                 'body'           => "{$stageLabel} - Amount: {$safeAmount}",
                 'request_id'     => $requestId,
@@ -3899,15 +3898,17 @@ HTML;
                 'stage'          => $stageLabel,
                 'requestor_name' => $request['requestor_name'] ?? null,
                 'priority'       => 'high',
-            ]);
+            ])) {
+                $notificationsSent++;
+            }
 
-            // Send email
-            if (sendMail($user['email'], $subject, $html)) {
-                $emailsSent++;
+            // Send email if user has email address
+            if (!empty($user['email'])) {
+                sendMail($user['email'], $subject, $html);
             }
         }
 
-        return $emailsSent > 0;
+        return $notificationsSent > 0;
 
     } catch (Exception $e) {
         error_log("Notify reimbursement invoice submitted error: {$e->getMessage()}");

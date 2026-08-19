@@ -4,6 +4,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
 
 $request_id = isset($_GET['request_id']) ? (int)$_GET['request_id'] : 0;
 if ($request_id <= 0) {
@@ -128,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->commit();
 
         /* Send notifications to Procurement Officer (GC2) or Finance Officer (GC10A) */
-        notifyReimbursementInvoiceSubmitted($request_id, $invoice_stage, $invoice_amount, $request['full_name'] ?? '');
+        notifyReimbursementInvoiceSubmitted($request_id, $invoice_stage, $invoice_amount);
 
         modalPop(
             'Invoice Submitted',
