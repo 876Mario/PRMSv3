@@ -33,9 +33,10 @@ DROP KEY IF EXISTS `uk_signed_req_active`;
 
 -- Create a generated column that is NULL when is_active=0 or is_deleted=1
 -- This allows the unique index to naturally exclude inactive/deleted records
+-- Using IF() instead of CASE WHEN for MariaDB compatibility
 ALTER TABLE `signed_request_documents`
 ADD COLUMN `active_marker` INT GENERATED ALWAYS AS 
-    CASE WHEN is_active = 1 AND is_deleted = 0 THEN request_id ELSE NULL END 
+    IF(is_active = 1 AND is_deleted = 0, request_id, NULL) 
     STORED,
 ADD UNIQUE KEY `uk_signed_req_active` (`active_marker`);
 
@@ -130,6 +131,6 @@ CREATE INDEX IF NOT EXISTS `idx_deleted_status` ON `signed_request_documents` (`
 
 INSERT INTO audit_log (table_name, record_id, action, notes)
 VALUES ('DATABASE', 0, 'SCHEMA_CHANGE', 
-  'Fixed signed_request_documents table: Replaced incompatible partial unique index with ' .
-  'generated column + unique index + trigger-based enforcement. Ensures only one active ' .
-  'non-deleted document per request across all request types.');
+  CONCAT('Fixed signed_request_documents table: Replaced incompatible partial unique index with ',
+         'generated column + unique index + trigger-based enforcement. Ensures only one active ',
+         'non-deleted document per request across all request types.'));

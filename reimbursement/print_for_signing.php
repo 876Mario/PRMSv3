@@ -59,7 +59,7 @@ if (!$isAuthorized) {
 
 // Fetch invoices for this reimbursement
 $invStmt = $pdo->prepare("
-    SELECT SUM(amount) as total_amount
+    SELECT SUM(invoice_amount) as total_amount
     FROM reimbursement_invoices
     WHERE request_id = ?
 ");

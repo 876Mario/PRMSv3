@@ -50,9 +50,9 @@ CREATE TABLE IF NOT EXISTS admin_edit_audit (
     editor_user_agent VARCHAR(500) DEFAULT NULL COMMENT 'User-Agent of editing user',
     edited_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'When edit was made',
     
-    CONSTRAINT fk_admin_edit_request FOREIGN KEY (request_id) 
+    CONSTRAINT fk_admin_edit_audit_request FOREIGN KEY (request_id) 
         REFERENCES procurement_requests(request_id) ON DELETE CASCADE,
-    CONSTRAINT fk_admin_edit_user FOREIGN KEY (edited_by) 
+    CONSTRAINT fk_admin_edit_audit_user FOREIGN KEY (edited_by) 
         REFERENCES users(user_id),
     
     INDEX idx_request_id (request_id),
