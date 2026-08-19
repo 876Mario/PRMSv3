@@ -208,7 +208,7 @@ HTML;
     {
         return [
             'accented name'         => ['José Álvarez', 'José Álvarez'],
-            'apostrophe in name'    => ["O'Connor", "O&#039;Connor"],
+            'apostrophe in name'    => ["O'Connor", "O&apos;Connor"],
             'naïve word'            => ['naïve', 'naïve'],
             'résumé word'           => ['résumé', 'résumé'],
             'café word'             => ['Café', 'Café'],
