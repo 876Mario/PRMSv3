@@ -40,6 +40,13 @@ class AdminEditService {
         'external_approval_required', 'requires_rfq'
     ];
     
+    // Whitelist of all allowed field names (prevents SQL injection)
+    private $whitelistedFields = [
+        'description', 'estimated_value', 'currency', 'procurement_method',
+        'external_approval_required', 'requires_rfq', 'change_reason',
+        'cancel_reason', 'decline_reason'
+    ];
+    
     public function __construct($pdo, $requestId, $adminUserId, $adminUserRole, $adminUserName) {
         $this->pdo = $pdo;
         $this->requestId = (int)$requestId;
@@ -100,9 +107,21 @@ class AdminEditService {
     }
     
     /**
-     * Check if a field edit is allowed
+     * Check if field name is whitelisted (prevents SQL injection)
+     */
+    private function isFieldWhitelisted($fieldName) {
+        return in_array($fieldName, $this->whitelistedFields, true);
+    }
+    
+    /**
+     * Check if field name is editable
      */
     public function canEditField($request, $fieldName) {
+        // First check if field is whitelisted (prevents SQL injection)
+        if (!$this->isFieldWhitelisted($fieldName)) {
+            return false;
+        }
+        
         $editableFields = $this->getEditableFields($request);
         return in_array($fieldName, $editableFields);
     }
@@ -111,6 +130,14 @@ class AdminEditService {
      * Validate edit request
      */
     public function validateEdit($request, $fieldName, $newValue) {
+        // Security: Check if field is whitelisted (prevents SQL injection)
+        if (!$this->isFieldWhitelisted($fieldName)) {
+            return [
+                'valid' => false,
+                'error' => 'Field "' . htmlspecialchars($fieldName) . '" is not a valid field'
+            ];
+        }
+        
         // Check if field is editable
         if (!$this->canEditField($request, $fieldName)) {
             return [
@@ -152,7 +179,7 @@ class AdminEditService {
      * Apply an edit with comprehensive audit trail
      */
     public function applyEdit($request, $fieldName, $newValue, $editReason = '') {
-        // Validate the edit
+        // Security: Validate the edit (includes whitelist check)
         $validation = $this->validateEdit($request, $fieldName, $newValue);
         if (!$validation['valid']) {
             return ['success' => false, 'error' => $validation['error']];
@@ -174,7 +201,8 @@ class AdminEditService {
         }
         
         try {
-            // Update the field
+            // Update the field using parameterized identifier (field name must be whitelisted)
+            // validateEdit() already ensures the field is whitelisted
             $stmt = $this->pdo->prepare("
                 UPDATE procurement_requests
                 SET $fieldName = ?
