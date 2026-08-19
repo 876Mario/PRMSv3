@@ -70,6 +70,11 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
                <a href="/tools/email_diagnostic.php" style="background: white; border: 1px solid #2FFA51; color: #2FFA51; padding: 0.625rem 1.25rem; border-radius: 8px; text-decoration: none; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
                 <i class="bi bi-file-earmark-text" style="margin-right: 0.5rem;"></i>Email Diagnostics
             </a>
+            <?php if (has_permission('access_test_suite')): ?>
+            <a href="/admin/test_suite.php" style="background: white; border: 1px solid #764ba2; color: #764ba2; padding: 0.625rem 1.25rem; border-radius: 8px; text-decoration: none; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
+                <i class="bi bi-bug" style="margin-right: 0.5rem;"></i>Test Suite
+            </a>
+            <?php endif; ?>
             <button type="button" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; padding: 0.625rem 1.25rem; border-radius: 8px; border: none; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: transform 0.3s ease, box-shadow 0.3s ease; box-shadow: 0 2px 8px rgba(250, 112, 154, 0.3);" onclick="location.reload()" title="Refresh page">
                 <i class="bi bi-arrow-clockwise" style="margin-right: 0.5rem;"></i>Refresh
             </button>
