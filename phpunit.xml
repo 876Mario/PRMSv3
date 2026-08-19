@@ -1,14 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.0/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
+         bootstrap="tests/bootstrap.php"
          colors="true"
          stopOnFailure="false">
 
     <testsuites>
-        <testsuite name="PRMS Test Suite">
-            <directory suffix="Test.php">tests</directory>
-            <directory suffix="_test.php">tests</directory>
+        <!-- Unit tests: pure logic, no database, no HTTP -->
+        <testsuite name="Unit">
+            <directory suffix="Test.php">tests/unit</directory>
+        </testsuite>
+
+        <!-- Feature / integration tests -->
+        <testsuite name="Feature">
+            <directory suffix="Test.php">tests/feature</directory>
+        </testsuite>
+
+        <!-- Workflow transition tests -->
+        <testsuite name="Workflow">
+            <directory suffix="Test.php">tests/workflow</directory>
+        </testsuite>
+
+        <!-- Authorization and security tests -->
+        <testsuite name="Security">
+            <directory suffix="Test.php">tests/security</directory>
         </testsuite>
     </testsuites>
 

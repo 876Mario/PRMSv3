@@ -27,14 +27,17 @@ if (!$existing) {
     exit;
 }
 
-/* Only allow editing DRAFT status */
-if ($existing['status'] !== 'DRAFT') {
+/* Admin override: admins with the dedicated permission may edit any status */
+$isAdminEdit = has_permission('edit_petty_cash_request_admin');
+
+/* Only allow editing DRAFT status (unless admin override) */
+if (!$isAdminEdit && $existing['status'] !== 'DRAFT') {
     pop('Only DRAFT requests can be edited.', '/petty_cash/view.php?request_id=' . $id, 3000, 'warning');
     exit;
 }
 
 /* Only owner or admin can edit */
-if ($existing['created_by'] != $_SESSION['user_id'] && !has_permission('manage_users')) {
+if ($existing['created_by'] != $_SESSION['user_id'] && !$isAdminEdit && !has_permission('manage_users')) {
     pop('You are not authorized to edit this request.', '/petty_cash/list.php', 3000, 'error');
     exit;
 }
@@ -73,7 +76,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ");
         $upStmt->execute([$branch_id, $purpose, $requested_amount, $id]);
 
-        logAudit($pdo, 'procurement_requests', $id, 'UPDATE', 'Petty cash request edited');
+        if ($isAdminEdit) {
+            $oldStatus = $existing['status'];
+            logAudit($pdo, 'procurement_requests', $id, 'ADMIN_UPDATE',
+                'Administrator override edit by ' . ($_SESSION['full_name'] ?? $_SESSION['user_id']) .
+                " (status={$oldStatus}) on petty cash request {$existing['request_number']}"
+            );
+        } else {
+            logAudit($pdo, 'procurement_requests', $id, 'UPDATE', 'Petty cash request edited');
+        }
 
         $pdo->commit();
 

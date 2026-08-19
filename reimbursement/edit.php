@@ -27,14 +27,17 @@ if (!$existing) {
     exit;
 }
 
-/* Only allow editing DRAFT or SUBMITTED status */
-if (!in_array($existing['status'], ['DRAFT', 'SUBMITTED'])) {
+/* Admin override: admins with the dedicated permission may edit any status */
+$isAdminEdit = has_permission('edit_reimbursement_request_admin');
+
+/* Only allow editing DRAFT or SUBMITTED status (unless admin override) */
+if (!$isAdminEdit && !in_array($existing['status'], ['DRAFT', 'SUBMITTED'])) {
     pop('Only DRAFT or SUBMITTED requests can be edited.', '/reimbursement/view.php?request_id=' . $id, 3000, 'warning');
     exit;
 }
 
 /* Only owner or admin can edit */
-if ($existing['created_by'] != $_SESSION['user_id'] && !has_permission('manage_users')) {
+if ($existing['created_by'] != $_SESSION['user_id'] && !$isAdminEdit && !has_permission('manage_users')) {
     pop('You are not authorized to edit this request.', '/reimbursement/list.php', 3000, 'error');
     exit;
 }
@@ -107,7 +110,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
         }
 
-        logAudit($pdo, 'procurement_requests', $id, 'UPDATE', 'Reimbursement request edited');
+        if ($isAdminEdit) {
+            $oldStatus = $existing['status'];
+            logAudit($pdo, 'procurement_requests', $id, 'ADMIN_UPDATE',
+                'Administrator override edit by ' . ($_SESSION['full_name'] ?? $_SESSION['user_id']) .
+                " (status={$oldStatus}) on reimbursement request {$existing['request_number']}"
+            );
+        } else {
+            logAudit($pdo, 'procurement_requests', $id, 'UPDATE', 'Reimbursement request edited');
+        }
 
         $pdo->commit();
 
