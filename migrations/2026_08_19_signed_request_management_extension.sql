@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS `signed_request_documents` (
   `deleted_at` TIMESTAMP DEFAULT NULL,
   
   PRIMARY KEY (`doc_id`),
-  UNIQUE KEY `uk_signed_req_active` (`request_id`, `is_active`) WHERE `is_active` = 1,
   KEY `idx_request_id` (`request_id`),
   KEY `idx_request_type` (`request_type`),
   KEY `idx_uploaded_by` (`uploaded_by_user_id`),
