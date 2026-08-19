@@ -1715,4 +1715,84 @@ function getDerivedPoRequired(array $request): string
     return shouldRequirePoAtCreation($request) ? 'YES' : 'NO';
 }
 
+/**
+ * Create or recreate approval task chain for a request.
+ * 
+ * This is the single centralized entry point for creating approval tasks.
+ * Used during:
+ *   - Initial request submission
+ *   - Workflow revert/correction (when reverting to SUBMITTED)
+ *   - Request resubmission
+ * 
+ * SAFETY: First deletes any orphaned pending approvals, then recreates fresh chain.
+ *
+ * @param PDO $pdo Database connection
+ * @param int $requestId Request ID
+ * @param string $requestType REGULAR | REIMBURSEMENT | PETTY_CASH | SERVICE_CONTRACT
+ * @param float $estimatedValue Monetary value (for threshold-based routing)
+ * @param int|null $branchId Branch ID (affects approver selection)
+ * @return array Array of role names in approval chain
+ * @throws Exception if insertion fails
+ */
+function createApprovalChain(
+    PDO $pdo,
+    int $requestId,
+    string $requestType,
+    float $estimatedValue,
+    ?int $branchId = null
+): array {
+    
+    if ($requestId <= 0) {
+        throw new Exception('Invalid request ID');
+    }
+    
+    // Step 1: Delete any stale pending approvals (cleanup from previous attempts)
+    $pdo->prepare("
+        DELETE FROM request_approvals
+        WHERE request_id = ?
+          AND status = 'pending'
+    ")->execute([$requestId]);
+    
+    // Step 2: Get the approval chain for this request type/amount/branch
+    $approvalRoles = getApprovalChain($requestType, $estimatedValue, $branchId, $pdo);
+    
+    // Step 3: Insert approval tasks in order
+    $stageOrder = 1;
+    foreach ($approvalRoles as $role) {
+        $pdo->prepare("
+            INSERT INTO request_approvals
+            (entity_type, entity_id, request_id, role, stage_order, status)
+            VALUES ('REQUEST', ?, ?, ?, ?, 'pending')
+        ")->execute([$requestId, $requestId, $role, $stageOrder]);
+        $stageOrder++;
+    }
+    
+    return $approvalRoles;
+}
+
+/**
+ * Determine the appropriate first approval stage name based on approval chain.
+ * Used by workflow to set request status after approval chain creation.
+ *
+ * @param array $approvalRoles Array of role names from getApprovalChain()
+ * @return string Status name (HOD_APPROVED, FUNDS_VERIFIED, DIRECTOR_APPROVED, GC_APPROVED, or default HOD_APPROVED)
+ */
+function getFirstApprovalStage(array $approvalRoles): string
+{
+    if (empty($approvalRoles)) {
+        return 'HOD_APPROVED';
+    }
+    
+    $firstRole = $approvalRoles[0];
+    return match($firstRole) {
+        'HOD' => 'HOD_APPROVED',
+        'Finance Officer' => 'FUNDS_VERIFIED',
+        'Director HRM&A' => 'DIRECTOR_APPROVED',
+        'Deputy Government Chemist' => 'GC_APPROVED',
+        'Procurement Committee' => 'PROCUREMENT_STAGE',
+        'Procurement Officer' => 'PROCUREMENT_ENDORSED',
+        default => 'HOD_APPROVED'
+    };
+}
+
 ?>

@@ -1,353 +1,447 @@
 <?php
 /**
- * AdminEditService
- * Centralized service for administrative edits with comprehensive audit logging
- * Handles authorization, field validation, approval invalidation, and audit trail
+ * AdminEditService - Secure admin editing with comprehensive audit trails
+ * 
+ * Provides:
+ * - Server-side authorization checks
+ * - Field-level edit restrictions
+ * - Approval-critical field detection
+ * - Audit logging of all edits
+ * - Approval invalidation handling
+ * - Before/after value tracking
  */
 
 class AdminEditService {
+    
     private $pdo;
-    private $fieldsEditableByAdmin = [
-        'REGULAR' => [
-            'DRAFT' => ['description', 'estimated_value', 'procurement_method'],
-            'SUBMITTED' => ['description', 'estimated_value'],
-            'HOD_APPROVED' => [],
-            'FUNDS_VERIFIED' => [],
-            'DIRECTOR_APPROVED' => [],
-            'GC_APPROVED' => ['procurement_method'], // Can adjust method only after GC approval
-            'AWARDED' => [], // Typically locked
-            'COMPLETED' => []
+    private $requestId;
+    private $adminUserId;
+    private $adminUserRole;
+    private $adminUserName;
+    
+    // Define which fields can be edited at each workflow stage
+    private $editableFieldsByStage = [
+        'DRAFT' => [
+            'description', 'estimated_value', 'currency', 'procurement_method',
+            'external_approval_required', 'requires_rfq'
         ],
-        'REIMBURSEMENT' => [
-            'DRAFT' => ['description'],
-            'SUBMITTED' => [],
-            'INVOICE_RECEIVED' => [],
-            'COMPLETED' => []
+        'SUBMITTED' => [
+            'description', 'estimated_value', 'currency',  // Limited edits after submission
+            'change_reason'
         ],
-        'PETTY_CASH' => [
-            'DRAFT' => ['description'],
-            'SUBMITTED' => [],
-            'DISBURSEMENT_SCHEDULED' => [],
-            'DISBURSAL_COMPLETE' => [],
-            'RECONCILIATION_COMPLETE' => []
+        'ALL_STAGES' => [
+            'cancel_reason', 'decline_reason'  // Administrative notes
         ]
     ];
-
+    
+    // Fields that invalidate approvals if changed
     private $approvalCriticalFields = [
-        'REGULAR' => ['estimated_value', 'procurement_method'],
-        'REIMBURSEMENT' => [],
-        'PETTY_CASH' => []
+        'description', 'estimated_value', 'currency', 'procurement_method',
+        'external_approval_required', 'requires_rfq'
     ];
-
-    public function __construct(PDO $pdo) {
+    
+    // Whitelist of all allowed field names (prevents SQL injection)
+    private $whitelistedFields = [
+        'description', 'estimated_value', 'currency', 'procurement_method',
+        'external_approval_required', 'requires_rfq', 'change_reason',
+        'cancel_reason', 'decline_reason'
+    ];
+    
+    public function __construct($pdo, $requestId, $adminUserId, $adminUserRole, $adminUserName) {
         $this->pdo = $pdo;
+        $this->requestId = (int)$requestId;
+        $this->adminUserId = (int)$adminUserId;
+        $this->adminUserRole = $adminUserRole;
+        $this->adminUserName = $adminUserName;
     }
-
+    
     /**
-     * Verify if user has admin edit permission
+     * Check if user has admin edit permission
      */
-    public function isAdmin($role) {
-        return in_array($role, ['Admin', 'SuperAdmin']);
-    }
-
-    /**
-     * Check if a field is editable by admin for this request type and status
-     */
-    public function isFieldEditable($requestType, $currentStatus, $fieldName) {
-        if (!isset($this->fieldsEditableByAdmin[$requestType])) {
-            return false;
-        }
-
-        $statusConfig = $this->fieldsEditableByAdmin[$requestType];
-        if (!isset($statusConfig[$currentStatus])) {
-            return false;
-        }
-
-        return in_array($fieldName, $statusConfig[$currentStatus]);
-    }
-
-    /**
-     * Check if editing this field would invalidate approvals
-     */
-    public function isApprovalCritical($requestType, $fieldName) {
-        if (!isset($this->approvalCriticalFields[$requestType])) {
-            return false;
-        }
-        return in_array($fieldName, $this->approvalCriticalFields[$requestType]);
-    }
-
-    /**
-     * Perform admin edit with full audit trail
-     */
-    public function performEdit($requestId, $requestType, $fieldName, $newValue, $editReason = null, $editReasonCode = null) {
-        // Verify current user is admin
-        if (!$this->isAdmin($_SESSION['role_name'] ?? '')) {
-            return ['success' => false, 'error' => 'Only Admin and SuperAdmin can perform edits'];
-        }
-
-        // Fetch current request
-        $stmt = $this->pdo->prepare("
-            SELECT * FROM procurement_requests 
-            WHERE request_id = ? AND request_type = ?
-        ");
-        $stmt->execute([$requestId, $requestType]);
-        $request = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$request) {
-            return ['success' => false, 'error' => 'Request not found'];
-        }
-
-        // Verify field is editable
-        if (!$this->isFieldEditable($requestType, $request['status'], $fieldName)) {
+    public function checkAdminPermission() {
+        // Only SuperAdmin and Admin roles can edit requests
+        if (!in_array($this->adminUserRole, ['SuperAdmin', 'Admin'])) {
             return [
-                'success' => false,
-                'error' => "Field '{$fieldName}' cannot be edited at status '{$request['status']}' for {$requestType} requests"
+                'authorized' => false,
+                'reason' => 'Only Admin and SuperAdmin users can edit requests administratively.'
             ];
         }
-
-        // Get old value
-        $oldValue = $request[$fieldName] ?? null;
-
-        // Validate new value based on field type
-        $validation = $this->validateField($requestType, $fieldName, $newValue);
+        
+        return ['authorized' => true, 'reason' => ''];
+    }
+    
+    /**
+     * Load the current request
+     */
+    public function loadRequest() {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT * FROM procurement_requests
+                WHERE request_id = ?
+            ");
+            $stmt->execute([$this->requestId]);
+            return $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            throw new Exception("Failed to load request: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Check which fields can be edited for current request status
+     */
+    public function getEditableFields($request) {
+        $status = $request['status'] ?? 'DRAFT';
+        $editableFields = [];
+        
+        // Get stage-specific fields
+        if (isset($this->editableFieldsByStage[$status])) {
+            $editableFields = array_merge($editableFields, $this->editableFieldsByStage[$status]);
+        }
+        
+        // Add fields allowed at all stages
+        if (isset($this->editableFieldsByStage['ALL_STAGES'])) {
+            $editableFields = array_merge($editableFields, $this->editableFieldsByStage['ALL_STAGES']);
+        }
+        
+        return array_unique($editableFields);
+    }
+    
+    /**
+     * Check if field name is whitelisted (prevents SQL injection)
+     */
+    private function isFieldWhitelisted($fieldName) {
+        return in_array($fieldName, $this->whitelistedFields, true);
+    }
+    
+    /**
+     * Check if field name is editable
+     */
+    public function canEditField($request, $fieldName) {
+        // First check if field is whitelisted (prevents SQL injection)
+        if (!$this->isFieldWhitelisted($fieldName)) {
+            return false;
+        }
+        
+        $editableFields = $this->getEditableFields($request);
+        return in_array($fieldName, $editableFields);
+    }
+    
+    /**
+     * Validate edit request
+     */
+    public function validateEdit($request, $fieldName, $newValue) {
+        // Security: Check if field is whitelisted (prevents SQL injection)
+        if (!$this->isFieldWhitelisted($fieldName)) {
+            return [
+                'valid' => false,
+                'error' => 'Field "' . htmlspecialchars($fieldName) . '" is not a valid field'
+            ];
+        }
+        
+        // Check if field is editable
+        if (!$this->canEditField($request, $fieldName)) {
+            return [
+                'valid' => false,
+                'error' => 'Field "' . $fieldName . '" cannot be edited at status "' . $request['status'] . '"'
+            ];
+        }
+        
+        // Field-specific validation
+        switch ($fieldName) {
+            case 'estimated_value':
+                if (!is_numeric($newValue) || $newValue < 0) {
+                    return ['valid' => false, 'error' => 'Estimated value must be a positive number'];
+                }
+                break;
+            case 'currency':
+                $validCurrencies = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD'];
+                if (!in_array($newValue, $validCurrencies)) {
+                    return ['valid' => false, 'error' => 'Invalid currency code'];
+                }
+                break;
+            case 'procurement_method':
+                $validMethods = ['OPEN_TENDER', 'RESTRICTED_TENDER', 'DIRECT_PROCUREMENT', 'FRAMEWORK'];
+                if (!in_array($newValue, $validMethods)) {
+                    return ['valid' => false, 'error' => 'Invalid procurement method'];
+                }
+                break;
+            case 'description':
+                if (strlen($newValue) > 5000) {
+                    return ['valid' => false, 'error' => 'Description cannot exceed 5000 characters'];
+                }
+                break;
+        }
+        
+        return ['valid' => true, 'error' => ''];
+    }
+    
+    /**
+     * Apply an edit with comprehensive audit trail
+     */
+    public function applyEdit($request, $fieldName, $newValue, $editReason = '') {
+        // Security: Validate the edit (includes whitelist check)
+        $validation = $this->validateEdit($request, $fieldName, $newValue);
         if (!$validation['valid']) {
             return ['success' => false, 'error' => $validation['error']];
         }
-
-        try {
-            // Re-validate field name against whitelist before using in query (defense in depth)
-            $allowedFields = [];
-            foreach ($this->fieldsEditableByAdmin[$requestType][$request['status']] ?? [] as $field) {
-                $allowedFields[] = $field;
-            }
-            if (!in_array($fieldName, $allowedFields)) {
-                return [
-                    'success' => false,
-                    'error' => "Field '{$fieldName}' cannot be edited"
-                ];
-            }
-
+        
+        // Get old value
+        $oldValue = $request[$fieldName] ?? null;
+        
+        // Check if value actually changed
+        if ($oldValue === $newValue) {
+            return ['success' => true, 'changed' => false, 'error' => 'No change was made'];
+        }
+        
+        // Start transaction
+        $startedTransaction = false;
+        if (!$this->pdo->inTransaction()) {
             $this->pdo->beginTransaction();
-
-            // Track if approval-critical field is being changed
-            $isApprovalCritical = $this->isApprovalCritical($requestType, $fieldName);
-            $affectedApprovals = [];
-
-            // Update request (field name validated against whitelist above)
-            $updateStmt = $this->pdo->prepare("
-                UPDATE procurement_requests 
-                SET {$fieldName} = ?, updated_at = NOW()
+            $startedTransaction = true;
+        }
+        
+        try {
+            // Update the field using parameterized identifier (field name must be whitelisted)
+            // validateEdit() already ensures the field is whitelisted
+            $stmt = $this->pdo->prepare("
+                UPDATE procurement_requests
+                SET $fieldName = ?
                 WHERE request_id = ?
             ");
-            $updateStmt->execute([$newValue, $requestId]);
-
-            // If approval-critical field changed, invalidate related approvals
-            if ($isApprovalCritical && $oldValue !== $newValue) {
-                $affectedApprovals = $this->invalidateApprovals($requestId, $fieldName);
+            $stmt->execute([$newValue, $this->requestId]);
+            
+            // Log the edit in admin_edit_audit
+            $this->logEditAudit($request, $fieldName, $oldValue, $newValue, $editReason);
+            
+            // Check if this field invalidates approvals
+            $affectedApprovals = [];
+            if (in_array($fieldName, $this->approvalCriticalFields)) {
+                $affectedApprovals = $this->invalidateAffectedApprovals($request, [$fieldName]);
             }
-
-            // Log the edit in admin_edits_log
-            $logStmt = $this->pdo->prepare("
-                INSERT INTO admin_edits_log 
-                (request_id, request_type, table_name, field_name, old_value, new_value, 
-                 changed_by_user_id, changed_by_role, change_ip, change_user_agent, 
-                 affected_approvals, edit_notes, edit_reason_code)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-
-            $affectedApprovalsJson = empty($affectedApprovals) ? NULL : json_encode($affectedApprovals);
-
-            $logStmt->execute([
-                $requestId,
-                $requestType,
-                'procurement_requests',
-                $fieldName,
-                substr((string)$oldValue, 0, 5000), // Truncate large values
-                substr((string)$newValue, 0, 5000),
-                $_SESSION['user_id'] ?? null,
-                $_SESSION['role_name'] ?? 'Unknown',
-                $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0',
-                substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 500),
-                $affectedApprovalsJson,
-                $editReason,
-                $editReasonCode
-            ]);
-
-            // Also log to audit_log for backward compatibility
-            logAudit(
-                $this->pdo,
-                'procurement_requests',
-                $requestId,
-                'ADMIN_EDIT',
-                'Admin edit by ' . ($_SESSION['full_name'] ?? $_SESSION['user_id']) .
-                " ({$_SESSION['role_name']}): {$fieldName} changed from '" .
-                substr((string)$oldValue, 0, 100) . "' to '" .
-                substr((string)$newValue, 0, 100) . "'. " .
-                ($editReason ? "Reason: " . htmlspecialchars($editReason) : '')
-            );
-
-            $this->pdo->commit();
-
+            
+            // Log to general audit trail
+            $this->logGeneralAudit($request, $fieldName, $oldValue, $newValue);
+            
+            if ($startedTransaction) {
+                $this->pdo->commit();
+            }
+            
             return [
                 'success' => true,
-                'message' => 'Edit applied successfully',
-                'old_value' => $oldValue,
-                'new_value' => $newValue,
-                'approval_critical' => $isApprovalCritical,
-                'affected_approvals' => $affectedApprovals
+                'changed' => true,
+                'error' => '',
+                'affectedApprovals' => $affectedApprovals
             ];
-
+            
         } catch (Exception $e) {
-            $this->pdo->rollBack();
-            error_log("Admin edit error for request {$requestId}: " . $e->getMessage());
-            return ['success' => false, 'error' => 'Database error: ' . htmlspecialchars($e->getMessage())];
+            if ($startedTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            return ['success' => false, 'error' => 'Database error: ' . $e->getMessage()];
         }
     }
-
+    
     /**
-     * Validate field value based on type and field name
+     * Apply bulk edits
      */
-    private function validateField($requestType, $fieldName, $value) {
-        switch ($fieldName) {
-            case 'estimated_value':
-                if (!is_numeric($value) || $value <= 0) {
-                    return ['valid' => false, 'error' => 'Estimated value must be a positive number'];
-                }
-                return ['valid' => true];
-
-            case 'procurement_method':
-                $validMethods = ['SINGLE_SOURCE', 'RESTRICTED_BIDDING', 'NATIONAL_COMPETITIVE', 'INTERNATIONAL_COMPETITIVE'];
-                if (!in_array($value, $validMethods)) {
-                    return ['valid' => false, 'error' => 'Invalid procurement method'];
-                }
-                return ['valid' => true];
-
-            case 'description':
-                if (strlen(trim($value)) === 0) {
-                    return ['valid' => false, 'error' => 'Description cannot be empty'];
-                }
-                return ['valid' => true];
-
-            default:
-                return ['valid' => true]; // Allow other field edits without specific validation
+    public function applyBulkEdits($request, $edits, $editReason = '') {
+        $results = [];
+        $startedTransaction = false;
+        
+        if (!$this->pdo->inTransaction()) {
+            $this->pdo->beginTransaction();
+            $startedTransaction = true;
         }
-    }
-
-    /**
-     * Invalidate approvals when critical fields change
-     * Returns array of affected approval IDs
-     */
-    private function invalidateApprovals($requestId, $changedField) {
-        $affectedApprovals = [];
-
+        
         try {
-            // Find all non-rejected approvals that would be affected by this change
-            $stmt = $this->pdo->prepare("
-                SELECT id, role, status, approved_at
-                FROM request_approvals
-                WHERE request_id = ? AND status IN ('approved', 'pending')
-            ");
-            $stmt->execute([$requestId]);
-            $approvals = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-            if (empty($approvals)) {
-                return []; // No approvals to invalidate
-            }
-
-            // Clear/invalidate all approvals
-            foreach ($approvals as $approval) {
-                $invalidationReason = "Admin edit to '{$changedField}' requires re-approval";
+            foreach ($edits as $fieldName => $newValue) {
+                $result = $this->applyEdit($request, $fieldName, $newValue, $editReason);
+                $results[$fieldName] = $result;
                 
-                // For approved items, reset to pending; for pending, keep as pending
-                if ($approval['status'] === 'approved') {
-                    $newStatus = 'pending';
-                } else {
-                    $newStatus = $approval['status']; // Keep pending as pending
-                }
-                
-                $updateStmt = $this->pdo->prepare("
-                    UPDATE request_approvals
-                    SET status = ?,
-                        approved_at = NULL,
-                        comments = CONCAT(
-                            COALESCE(comments, ''),
-                            CASE WHEN comments IS NOT NULL AND comments != '' THEN '; ' ELSE '' END,
-                            ?
-                        )
-                    WHERE id = ?
-                ");
-                $updateStmt->execute([
-                    $newStatus,
-                    $invalidationReason,
-                    $approval['id']
-                ]);
-
-                $affectedApprovals[] = $approval['id'];
-                
-                // Log the invalidation event
-                if (function_exists('logAudit')) {
-                    logAudit(
-                        $this->pdo,
-                        'request_approvals',
-                        $approval['id'],
-                        'APPROVAL_INVALIDATED',
-                        "Approval for {$approval['role']} invalidated due to admin edit of {$changedField}"
-                    );
+                if (!$result['success']) {
+                    // Rollback on first error
+                    if ($startedTransaction && $this->pdo->inTransaction()) {
+                        $this->pdo->rollBack();
+                    }
+                    return ['success' => false, 'error' => 'Edit failed: ' . $result['error'], 'results' => $results];
                 }
             }
-
-            return $affectedApprovals;
+            
+            if ($startedTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->commit();
+            }
+            
+            return ['success' => true, 'error' => '', 'results' => $results];
+            
         } catch (Exception $e) {
-            error_log("Approval invalidation error for request {$requestId}: " . $e->getMessage());
+            if ($startedTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            return ['success' => false, 'error' => 'Error: ' . $e->getMessage(), 'results' => $results];
+        }
+    }
+    
+    /**
+     * Invalidate approvals affected by an edit
+     */
+    private function invalidateAffectedApprovals($request, $fieldsChanged) {
+        $affectedApprovals = [];
+        
+        try {
+            // Find approvals that approved this request
+            $stmt = $this->pdo->prepare("
+                SELECT approval_id, approval_stage, approved_by, approved_at
+                FROM request_approvals
+                WHERE request_id = ? AND approval_status = 'APPROVED'
+            ");
+            $stmt->execute([$this->requestId]);
+            $approvals = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            foreach ($approvals as $approval) {
+                // Mark approval as invalidated
+                $invStmt = $this->pdo->prepare("
+                    UPDATE request_approvals
+                    SET approval_status = 'INVALIDATED',
+                        invalidated_at = NOW(),
+                        invalidated_reason = ?
+                    WHERE approval_id = ?
+                ");
+                $invStmt->execute([
+                    'Admin edit to critical field(s): ' . implode(', ', $fieldsChanged),
+                    $approval['approval_id']
+                ]);
+                
+                // Log invalidation
+                $this->logApprovalInvalidation($approval, $fieldsChanged);
+                
+                $affectedApprovals[] = $approval;
+            }
+            
+        } catch (Exception $e) {
+            error_log("Warning: Failed to invalidate affected approvals: " . $e->getMessage());
+        }
+        
+        return $affectedApprovals;
+    }
+    
+    /**
+     * Log edit to admin_edit_audit table
+     */
+    private function logEditAudit($request, $fieldName, $oldValue, $newValue, $editReason) {
+        try {
+            $stmt = $this->pdo->prepare("
+                INSERT INTO admin_edit_audit
+                (request_id, request_type, request_number, field_name, old_value, new_value,
+                 change_reason, edited_by, editor_role, editor_ip_address, editor_user_agent, edited_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            ");
+            
+            $stmt->execute([
+                $this->requestId,
+                $request['request_type'],
+                $request['request_number'],
+                $fieldName,
+                $oldValue,
+                $newValue,
+                $editReason,
+                $this->adminUserId,
+                $this->adminUserRole,
+                $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+                $_SERVER['HTTP_USER_AGENT'] ?? 'unknown'
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("Failed to log edit audit: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Log to general audit trail
+     */
+    private function logGeneralAudit($request, $fieldName, $oldValue, $newValue) {
+        try {
+            $stmt = $this->pdo->prepare("
+                INSERT INTO audit_log
+                (table_name, record_id, action, changed_by, change_date, notes)
+                VALUES ('procurement_requests', ?, 'ADMIN_EDIT', ?, NOW(), ?)
+            ");
+            
+            $notes = sprintf(
+                'Admin edit: %s changed from "%s" to "%s"',
+                $fieldName,
+                $oldValue,
+                $newValue
+            );
+            
+            $stmt->execute([
+                $this->requestId,
+                $this->adminUserName,
+                $notes
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("Failed to log general audit: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Log approval invalidation
+     */
+    private function logApprovalInvalidation($approval, $fieldsChanged) {
+        try {
+            $stmt = $this->pdo->prepare("
+                INSERT INTO approval_invalidation_log
+                (request_id, approval_stage, invalidated_by, invalidation_reason, fields_affected, created_at)
+                VALUES (?, ?, ?, ?, ?, NOW())
+            ");
+            
+            $stmt->execute([
+                $this->requestId,
+                $approval['approval_stage'],
+                $this->adminUserId,
+                'Admin edit triggered invalidation',
+                json_encode($fieldsChanged)
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("Failed to log approval invalidation: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Get audit history for request
+     */
+    public function getEditHistory() {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT * FROM admin_edit_audit
+                WHERE request_id = ?
+                ORDER BY edited_at DESC
+            ");
+            $stmt->execute([$this->requestId]);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            error_log("Failed to get edit history: " . $e->getMessage());
             return [];
         }
     }
-
+    
     /**
-     * Get admin edit history for a request
+     * Get invalidated approvals
      */
-    public function getEditHistory($requestId) {
-        $stmt = $this->pdo->prepare("
-            SELECT ael.*, u.full_name as changed_by_name
-            FROM admin_edits_log ael
-            LEFT JOIN users u ON ael.changed_by_user_id = u.user_id
-            WHERE ael.request_id = ?
-            ORDER BY ael.change_timestamp DESC
-        ");
-        $stmt->execute([$requestId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    /**
-     * Get audit trail for export or reporting
-     */
-    public function getAuditTrail($requestId, $requestType = null) {
-        $query = "
-            SELECT ael.*, u.full_name as changed_by_name
-            FROM admin_edits_log ael
-            LEFT JOIN users u ON ael.changed_by_user_id = u.user_id
-            WHERE ael.request_id = ?
-        ";
-
-        $params = [$requestId];
-
-        if ($requestType) {
-            $query .= " AND ael.request_type = ?";
-            $params[] = $requestType;
+    public function getInvalidatedApprovals() {
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT * FROM approval_invalidation_log
+                WHERE request_id = ?
+                ORDER BY created_at DESC
+            ");
+            $stmt->execute([$this->requestId]);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            error_log("Failed to get invalidated approvals: " . $e->getMessage());
+            return [];
         }
-
-        $query .= " ORDER BY ael.change_timestamp DESC";
-
-        $stmt = $this->pdo->prepare($query);
-        $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    /**
-     * Check if edit would require re-review of approvals
-     */
-    public function requiresReApproval($requestType, $fieldName) {
-        return $this->isApprovalCritical($requestType, $fieldName);
     }
 }
 ?>

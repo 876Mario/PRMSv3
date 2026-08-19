@@ -93,14 +93,46 @@ try {
         WHERE request_id = ?
     ")->execute([$targetStatus, $id]);
 
-    // Remove only the pending approvals for this request.
+    // Remove old pending approvals for this request.
     // Previously-approved stages are retained in audit_log / workflow_transition_history.
-    // The approval chain will be re-seeded by the next approver action if required.
     $pdo->prepare("
         DELETE FROM request_approvals
         WHERE request_id = ?
           AND status = 'pending'
     ")->execute([$id]);
+
+    // ========================================================
+    // CRITICAL FIX: Recreate approval chain for new status
+    // ========================================================
+    // If reverting to a status that requires approvals (e.g., SUBMITTED),
+    // recreate the approval task chain so approvers can act.
+    // This prevents the "No pending approvals" error.
+    // 
+    // IMPORTANT: Exceptions here are NOT caught — if approval recreation fails,
+    // the entire transaction is rolled back. This is SAFER than silently reverting
+    // without approvals (which would reproduce the original bug).
+    if (in_array($targetStatus, ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'], true)) {
+        // Fetch request details for approval chain calculation
+        $reqStmt = $pdo->prepare("
+            SELECT request_type, estimated_value, branch_id
+            FROM procurement_requests
+            WHERE request_id = ?
+        ");
+        $reqStmt->execute([$id]);
+        $reqDetails = $reqStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($reqDetails) {
+            // Recreate approval chain using centralized helper
+            // Exceptions here are NOT caught — they will cause transaction rollback
+            createApprovalChain(
+                $pdo,
+                $id,
+                $reqDetails['request_type'] ?? 'REGULAR',
+                (float)($reqDetails['estimated_value'] ?? 0),
+                $reqDetails['branch_id']
+            );
+        }
+    }
 
     $actor = $_SESSION['full_name'] ?? $currentRole;
     $notes = "Workflow reverted from {$currentStatus} to {$targetStatus} by {$actor} ({$currentRole}). Reason: {$reason}";
