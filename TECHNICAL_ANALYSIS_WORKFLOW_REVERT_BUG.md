@@ -199,9 +199,9 @@ try {
 
 **Key Improvements**:
 1. Conditional recreation: Only for statuses that require approvals
-2. Error handling: Logs failure but doesn't fail the revert (graceful degradation)
+2. Error handling: Exceptions propagate and cause transaction rollback (safety-first approach)
 3. Audit trail: All actions logged for investigation
-4. Atomic transaction: Status update and approval recreation occur together
+4. Atomic transaction: Status update, approval deletion, and chain recreation occur together or fail together
 
 ---
 
@@ -306,7 +306,7 @@ try {
 ### Code Changes
 - [x] Helper functions added to workflow.php
 - [x] Revert logic enhanced to recreate approvals
-- [x] Error handling with graceful degradation
+- [x] Error handling with exceptions propagating for transaction rollback
 - [x] Audit trail for all changes
 - [x] No breaking changes
 - [x] Backward compatible

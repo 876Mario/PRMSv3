@@ -248,7 +248,7 @@ class WorkflowRevertStateMatchTest extends PHPUnit\Framework\TestCase {
     /**
      * TEST 8: HRM&A branch requests get Director HRM&A approval
      */
-    public function testHrmaRevertGetsDirecotrHrmaApproval(): void {
+    public function testHrmaRevertGetsDirectorHrmaApproval(): void {
         $this->testRequestId = $this->createTestRequest(
             'REGULAR',
             150000,
@@ -271,7 +271,7 @@ class WorkflowRevertStateMatchTest extends PHPUnit\Framework\TestCase {
     /**
      * TEST 9: Analytical & Advisory branch requests get Deputy GC approval
      */
-    public function testAnalyticalBranchRevertsGetsDeputyGcApproval(): void {
+    public function testAnalyticalBranchRevertGetsDeputyGcApproval(): void {
         $this->testRequestId = $this->createTestRequest(
             'REGULAR',
             150000,
@@ -357,18 +357,16 @@ class WorkflowRevertStateMatchTest extends PHPUnit\Framework\TestCase {
             ->execute([$requestId]);
 
         // Recreate approval chain (the fix)
+        // NOTE: Exceptions are NOT caught here — if this fails, the test's transaction will rollback.
+        // This matches production behavior in revert_status.php where exceptions propagate.
         if (in_array($targetStatus, ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'])) {
-            try {
-                createApprovalChain(
-                    $this->pdo,
-                    $requestId,
-                    $request['request_type'] ?? 'REGULAR',
-                    (float)($request['estimated_value'] ?? 0),
-                    $request['branch_id']
-                );
-            } catch (Throwable $e) {
-                error_log("Failed to recreate approval chain: " . $e->getMessage());
-            }
+            createApprovalChain(
+                $this->pdo,
+                $requestId,
+                $request['request_type'] ?? 'REGULAR',
+                (float)($request['estimated_value'] ?? 0),
+                $request['branch_id']
+            );
         }
 
         $this->pdo->commit();

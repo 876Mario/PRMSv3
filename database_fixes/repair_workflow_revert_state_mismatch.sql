@@ -80,11 +80,8 @@ WHERE ra.id IS NULL
 
 -- Step 5: APPROVAL CHAIN RECREATION FOR REGULAR PROCUREMENT REQUESTS
 -- For REGULAR requests, calculate based on branch and amount
--- Branch 5 (HRM&A) → Director HRM&A
--- Branch 6 (Analytical & Advisory) → Deputy Government Chemist
--- Over 3,000,000 → Procurement Committee first
--- Over 500,000 → HOD
--- Otherwise → HOD
+-- Branch-based routing takes precedence for branch-specific paths (branches 5, 6)
+-- Threshold-based routing applies to generic branches (1, 2, 3, 4, etc.)
 INSERT IGNORE INTO request_approvals 
     (entity_type, entity_id, request_id, role, stage_order, status, created_at)
 SELECT 
@@ -92,10 +89,12 @@ SELECT
     art.request_id,
     art.request_id,
     CASE 
-        WHEN art.estimated_value > 3000000 THEN 'Procurement Committee'
-        WHEN art.estimated_value > 500000 THEN 'HOD'
+        -- Branch-specific routing (highest priority)
         WHEN art.branch_id = 5 THEN 'Director HRM&A'
         WHEN art.branch_id = 6 THEN 'Deputy Government Chemist'
+        -- Generic threshold-based routing (applies to all other branches)
+        WHEN art.estimated_value > 3000000 THEN 'Procurement Committee'
+        WHEN art.estimated_value > 500000 THEN 'HOD'
         ELSE 'HOD'
     END,
     1,
@@ -107,9 +106,8 @@ WHERE ra.id IS NULL
   AND art.request_type = 'REGULAR'
   AND art.status IN ('SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED');
 
--- Step 6: Add secondary approver for REGULAR REGULAR requests that need them
--- Branch 5 (HRM&A) → Also needs Finance Officer after first stage
--- Over threshold → Also needs additional approvers
+-- Step 6: Add secondary approver for REGULAR requests that need them
+-- Finance Officer is added for HRM&A branch (branch 5) after first stage
 INSERT IGNORE INTO request_approvals 
     (entity_type, entity_id, request_id, role, stage_order, status, created_at)
 SELECT 

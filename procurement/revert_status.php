@@ -107,30 +107,30 @@ try {
     // If reverting to a status that requires approvals (e.g., SUBMITTED),
     // recreate the approval task chain so approvers can act.
     // This prevents the "No pending approvals" error.
+    // 
+    // IMPORTANT: Exceptions here are NOT caught — if approval recreation fails,
+    // the entire transaction is rolled back. This is SAFER than silently reverting
+    // without approvals (which would reproduce the original bug).
     if (in_array($targetStatus, ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'], true)) {
-        try {
-            // Fetch request details for approval chain calculation
-            $reqStmt = $pdo->prepare("
-                SELECT request_type, estimated_value, branch_id
-                FROM procurement_requests
-                WHERE request_id = ?
-            ");
-            $reqStmt->execute([$id]);
-            $reqDetails = $reqStmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($reqDetails) {
-                // Recreate approval chain using centralized helper
-                createApprovalChain(
-                    $pdo,
-                    $id,
-                    $reqDetails['request_type'] ?? 'REGULAR',
-                    (float)($reqDetails['estimated_value'] ?? 0),
-                    $reqDetails['branch_id']
-                );
-            }
-        } catch (Throwable $e) {
-            // Log but don't fail the revert if approval chain recreation fails
-            error_log("Failed to recreate approval chain for request {$id}: " . $e->getMessage());
+        // Fetch request details for approval chain calculation
+        $reqStmt = $pdo->prepare("
+            SELECT request_type, estimated_value, branch_id
+            FROM procurement_requests
+            WHERE request_id = ?
+        ");
+        $reqStmt->execute([$id]);
+        $reqDetails = $reqStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($reqDetails) {
+            // Recreate approval chain using centralized helper
+            // Exceptions here are NOT caught — they will cause transaction rollback
+            createApprovalChain(
+                $pdo,
+                $id,
+                $reqDetails['request_type'] ?? 'REGULAR',
+                (float)($reqDetails['estimated_value'] ?? 0),
+                $reqDetails['branch_id']
+            );
         }
     }
 
