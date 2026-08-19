@@ -82,17 +82,16 @@ if ($reconciliation) {
 
 require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 
-// Calculate deadline status
-$deadlineStatus = null;
-if ($disbursement) {
-    $now = new DateTime();
-    $deadline = new DateTime($disbursement['disbursement_deadline']);
-    $interval = $now->diff($deadline);
-    $deadlineStatus = [
-        'is_overdue' => $now > $deadline,
-        'deadline' => $deadline,
-        'time_remaining' => $interval
-    ];
+// Initialize SignedRequestService
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SignedRequestService.php';
+$signedRequestService = new SignedRequestService($pdo);
+$signedRequestPending = $signedRequestService->isUploadPending($request_id, 'PETTY_CASH');
+$activeSignedDoc = $signedRequestService->getActiveDocument($request_id);
+$signedDocHistory = $signedRequestService->getDocumentHistory($request_id);
+
+// Generate CSRF token for uploads
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 ?>
 
@@ -375,7 +374,155 @@ if ($disbursement) {
        </div>
      </div>
 
-     <!-- Quick Actions -->
+      <!-- Signed Request Management -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">🔏 Signed Request Management</h5>
+          <?php if ($signedRequestPending): ?>
+            <span class="badge bg-warning">Pending Signature</span>
+          <?php elseif ($activeSignedDoc): ?>
+            <span class="badge bg-success">Signed ✓</span>
+          <?php endif; ?>
+        </div>
+        <div class="card-body">
+          <?php if ($signedRequestPending && $request['status'] === 'SUBMITTED'): ?>
+            <div class="alert alert-warning mb-3">
+              <i class="bi bi-exclamation-triangle"></i>
+              <strong>Action Required:</strong> The signed approval form must be uploaded before this request can proceed for disbursal.
+            </div>
+          <?php endif; ?>
+
+          <div class="row g-3">
+            <!-- Print Section -->
+            <div class="col-md-6">
+              <div class="card bg-light">
+                <div class="card-body">
+                  <h6 class="card-title">Step 1: Print Form</h6>
+                  <p class="small text-muted mb-3">Print the approval form, review all information, and sign it.</p>
+                  <a href="/petty_cash/print_for_signing.php?request_id=<?= $request_id ?>" 
+                     class="btn btn-primary btn-sm w-100" target="_blank">
+                    <i class="bi bi-printer"></i> Print Approval Form
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <!-- Upload Section -->
+            <div class="col-md-6">
+              <div class="card bg-light">
+                <div class="card-body">
+                  <h6 class="card-title">Step 2: Upload Signed Copy</h6>
+                  <p class="small text-muted mb-3">Scan or photograph the signed form and upload here.</p>
+                  <?php if ($signedRequestService->canUserUpload($request_id, 'PETTY_CASH', $_SESSION['user_id'], $_SESSION['role_name'])): ?>
+                    <button class="btn btn-success btn-sm w-100" data-bs-toggle="collapse" data-bs-target="#uploadForm">
+                      <i class="bi bi-upload"></i> Upload Signed Form
+                    </button>
+                  <?php endif; ?>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Upload Form (Collapsible) -->
+          <?php if ($signedRequestService->canUserUpload($request_id, 'PETTY_CASH', $_SESSION['user_id'], $_SESSION['role_name'])): ?>
+            <div class="collapse mt-3" id="uploadForm">
+              <div class="card card-body">
+                <form method="post" action="/petty_cash/upload_signed_request.php" enctype="multipart/form-data">
+                  <input type="hidden" name="request_id" value="<?= $request_id ?>">
+                  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                  
+                  <div class="mb-3">
+                    <label for="signed_request_file" class="form-label">Select Signed Document (PDF, JPG, PNG, GIF, DOC, DOCX)</label>
+                    <input type="file" class="form-control" id="signed_request_file" name="signed_request_file" 
+                           accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx" required>
+                    <small class="text-muted d-block mt-2">Maximum file size: 25MB</small>
+                  </div>
+
+                  <div class="mb-3">
+                    <small class="text-muted">
+                      <strong>Requirements:</strong>
+                      <ul class="mb-0 mt-2">
+                        <li>Document must be clearly readable</li>
+                        <li>All signature fields must be signed</li>
+                        <li>Acceptable formats: PDF, JPG, PNG, GIF, DOC, DOCX</li>
+                        <li>File size must not exceed 25MB</li>
+                      </ul>
+                    </small>
+                  </div>
+
+                  <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-success btn-sm">
+                      <i class="bi bi-check-circle"></i> Upload Document
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#uploadForm">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          <?php endif; ?>
+
+          <!-- Active Document Display -->
+          <?php if ($activeSignedDoc): ?>
+            <div class="mt-3">
+              <h6 class="mb-2">📄 Current Signed Document</h6>
+              <div class="alert alert-info py-2 mb-2">
+                <small>
+                  <strong>Version <?= htmlspecialchars($activeSignedDoc['version_number']) ?></strong><br>
+                  Uploaded by: <?= htmlspecialchars($activeSignedDoc['uploaded_by_name']) ?><br>
+                  Date: <?= date('M d, Y H:i', strtotime($activeSignedDoc['uploaded_at'])) ?><br>
+                  File: <?= htmlspecialchars($activeSignedDoc['original_file_name']) ?> (<?= number_format($activeSignedDoc['file_size'] / 1024, 2) ?> KB)
+                </small>
+              </div>
+              <a href="<?= htmlspecialchars($activeSignedDoc['document_path']) ?>" class="btn btn-sm btn-outline-primary" target="_blank">
+                <i class="bi bi-download"></i> Download Signed Document
+              </a>
+            </div>
+          <?php endif; ?>
+
+          <!-- Document History -->
+          <?php if (!empty($signedDocHistory)): ?>
+            <div class="mt-3">
+              <h6 class="mb-2">📋 Document Upload History</h6>
+              <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Version</th>
+                      <th>Uploaded By</th>
+                      <th>Date</th>
+                      <th>File Name</th>
+                      <th>Size</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <?php foreach ($signedDocHistory as $doc): ?>
+                      <tr>
+                        <td><?= htmlspecialchars($doc['version_number']) ?></td>
+                        <td><?= htmlspecialchars($doc['uploaded_by_name']) ?></td>
+                        <td><?= date('M d, Y H:i', strtotime($doc['uploaded_at'])) ?></td>
+                        <td><?= htmlspecialchars($doc['original_file_name']) ?></td>
+                        <td><?= number_format($doc['file_size'] / 1024, 1) ?> KB</td>
+                        <td>
+                          <?php if ($doc['is_active']): ?>
+                            <span class="badge bg-success">Active</span>
+                          <?php else: ?>
+                            <span class="badge bg-secondary">Replaced</span>
+                          <?php endif; ?>
+                        </td>
+                      </tr>
+                    <?php endforeach; ?>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          <?php endif; ?>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
      <div class="card shadow-sm mt-3">
         <div class="card-header bg-light">
           <h5 class="mb-0">Actions</h5>
