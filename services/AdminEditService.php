@@ -117,11 +117,23 @@ class AdminEditService {
         try {
             $this->pdo->beginTransaction();
 
+            // Re-validate field name against whitelist before using in query (defense in depth)
+            $allowedFields = [];
+            foreach ($this->fieldsEditableByAdmin[$requestType][$request['status']] ?? [] as $field) {
+                $allowedFields[] = $field;
+            }
+            if (!in_array($fieldName, $allowedFields)) {
+                return [
+                    'success' => false,
+                    'error' => "Field '{$fieldName}' cannot be edited"
+                ];
+            }
+
             // Track if approval-critical field is being changed
             $isApprovalCritical = $this->isApprovalCritical($requestType, $fieldName);
             $affectedApprovals = [];
 
-            // Update request
+            // Update request (field name validated against whitelist above)
             $updateStmt = $this->pdo->prepare("
                 UPDATE procurement_requests 
                 SET {$fieldName} = ?, updated_at = NOW()
@@ -246,8 +258,7 @@ class AdminEditService {
             foreach ($approvals as $approval) {
                 $invalidationReason = "Admin edit to '{$changedField}' requires re-approval";
                 
-                // For approved items, reset to pending; for pending, add comment about invalidation
-                $newStatus = ($approval['status'] === 'approved') ? 'pending' : 'approved';
+                // For approved items, reset to pending; for pending, keep as pending
                 if ($approval['status'] === 'approved') {
                     $newStatus = 'pending';
                 } else {
