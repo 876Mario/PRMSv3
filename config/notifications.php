@@ -3746,7 +3746,7 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
         // Get raw URL (no encoding for href attribute)
         $appUrl = getAppUrl();
         $currency = normalizeCurrency($request['currency'] ?? 'JMD');
-        $safeAmount = $currency . ' ' . number_format($invoiceAmount, 2);
+        $formattedAmount = $currency . ' ' . number_format($invoiceAmount, 2);
 
         // Determine which role to notify based on invoice stage
         if ($invoiceStage === $INVOICE_STAGE_COPY_TO_PROCUREMENT) {
@@ -3837,7 +3837,7 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
                 </div>
                 <div class="detail-row">
                     <span class="label">Invoice Amount:</span>
-                    <span class="value">{$safeAmount}</span>
+                    <span class="value">{$formattedAmount}</span>
                 </div>
                 <div class="detail-row">
                     <span class="label">Stage:</span>
@@ -3891,13 +3891,13 @@ HTML;
         $notificationsSent = 0;
         foreach ($targetUsers as $user) {
             // In-app notification (always sent for active users)
-            $notificationType = ($invoiceStage === 'COPY_TO_PROCUREMENT') 
+            $notificationType = ($invoiceStage === $INVOICE_STAGE_COPY_TO_PROCUREMENT) 
                 ? NotificationService::TYPE_APPROVAL_NEEDED
                 : NotificationService::TYPE_FINANCE_ACTION;
             
             if (NotificationService::createNotification($user['user_id'], $notificationType, [
                 'title'          => "Reimbursement Invoice Verification: {$safeRequestNumber}",
-                'body'           => "{$safeStageLabel} - Amount: {$safeAmount}",
+                'body'           => "{$safeStageLabel} - Amount: {$formattedAmount}",
                 'request_id'     => $requestId,
                 'request_ref'    => $safeRequestNumber,
                 'action_url'     => "/reimbursement/view.php?request_id={$requestId}",
