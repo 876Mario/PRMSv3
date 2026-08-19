@@ -92,6 +92,19 @@ if (strtoupper($request['status']) !== 'SUBMITTED') {
     exit;
 }
 
+/* ================================
+   Workflow Gate: Signed Request Upload
+================================ */
+if (function_exists('signedRequestUploadPending') && signedRequestUploadPending($request)) {
+   pop(
+       'A signed request document must be uploaded before this request can be approved. Please ask the requestor to print the form, sign it, and upload the signed copy.',
+       "/petty_cash/view.php?request_id=".$request_id,
+       3000,
+       "warning"
+   );
+   exit;
+}
+
 try {
     $pdo->beginTransaction();
 

@@ -559,6 +559,17 @@ function enforceTransition(array $request, string $nextStage) {
         exit;
     }
 
+    // Gate: Check if a signed request document is required before transitioning from SUBMITTED
+    if ($request['status'] === 'SUBMITTED' && signedRequestUploadPending($request)) {
+        pop(
+            'A signed request document must be uploaded before proceeding. Please print the form, sign it, and upload the signed copy.',
+            '/procurement/view.php?id=' . $request['request_id'],
+            POP_DEFAULT_DELAY_MS,
+            'warning'
+        );
+        exit;
+    }
+
     // Terminal statuses (AWARDED, COMPLETED) don't need role checking
     // They can be reached by any role after their approval is complete
     if (in_array(strtoupper($nextStage), ['AWARDED', 'COMPLETED', 'REIMBURSED', 'DECLINED', 'CANCELLED'])) {

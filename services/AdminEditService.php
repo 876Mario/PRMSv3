@@ -228,16 +228,84 @@ class AdminEditService {
     private function invalidateApprovals($requestId, $changedField) {
         $affectedApprovals = [];
 
-        // This is a simplified example - actual invalidation logic would depend on your approval system
-        // For now, we log that approvals should be reviewed
-        
-        // You could add logic to:
-        // - Flag approvals as "needs-review"
-        // - Clear approval dates
-        // - Send notifications to approvers
-        // - Revert status to an earlier stage if needed
+        try {
+            // Find all non-rejected approvals that would be affected by this change
+            $stmt = $this->pdo->prepare("
+                SELECT id, role, status, approved_at
+                FROM request_approvals
+                WHERE request_id = ? AND status IN ('approved', 'pending')
+            ");
+            $stmt->execute([$requestId]);
+            $approvals = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        return $affectedApprovals;
+            if (empty($approvals)) {
+                return []; // No approvals to invalidate
+            }
+
+            // Clear/invalidate all approvals
+            foreach ($approvals as $approval) {
+                $invalidationReason = "Admin edit to '{$changedField}' requires re-approval";
+                
+                // For approved items, reset to pending; for pending, add comment about invalidation
+                $newStatus = ($approval['status'] === 'approved') ? 'pending' : 'approved';
+                if ($approval['status'] === 'approved') {
+                    $newStatus = 'pending';
+                } else {
+                    $newStatus = $approval['status']; // Keep pending as pending
+                }
+                
+                $updateStmt = $this->pdo->prepare("
+                    UPDATE request_approvals
+                    SET status = ?,
+                        approved_at = NULL,
+                        comments = CONCAT(
+                            COALESCE(comments, ''),
+                            CASE WHEN comments IS NOT NULL AND comments != '' THEN '; ' ELSE '' END,
+                            ?
+                        )
+                    WHERE id = ?
+                ");
+                $updateStmt->execute([
+                    $newStatus,
+                    $invalidationReason,
+                    $approval['id']
+                ]);
+
+                $affectedApprovals[] = $approval['id'];
+                
+                // Log the invalidation event
+                if (function_exists('logAudit')) {
+                    logAudit(
+                        $this->pdo,
+                        'request_approvals',
+                        $approval['id'],
+                        'APPROVAL_INVALIDATED',
+                        "Approval for {$approval['role']} invalidated due to admin edit of {$changedField}"
+                    );
+                }
+            }
+
+            // Log the invalidation in admin_edits_log with invalidation details
+            if (!empty($affectedApprovals)) {
+                $invalidationStmt = $this->pdo->prepare("
+                    UPDATE admin_edits_log
+                    SET invalidated_approvals = ?
+                    WHERE request_id = ? AND changed_field = ?
+                    ORDER BY change_timestamp DESC
+                    LIMIT 1
+                ");
+                $invalidationStmt->execute([
+                    json_encode($affectedApprovals),
+                    $requestId,
+                    $changedField
+                ]);
+            }
+
+            return $affectedApprovals;
+        } catch (Exception $e) {
+            error_log("Approval invalidation error for request {$requestId}: " . $e->getMessage());
+            return [];
+        }
     }
 
     /**

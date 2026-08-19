@@ -3,7 +3,7 @@
  * Print Procurement Request for Signing by Branch Head
  * Generates a clean PDF document that branch heads can print, sign, and return
  */
-$REQUIRE_PERMISSION = 'view_requests';
+$REQUIRE_PERMISSION = 'print_procurement_approval_form';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
@@ -39,7 +39,7 @@ try {
         LEFT JOIN branches b ON pr.branch_id = b.branch_id
         LEFT JOIN users u1 ON pr.created_by = u1.user_id
         LEFT JOIN users u2 ON pr.approved_by = u2.user_id
-        WHERE pr.request_id = ?
+        WHERE pr.request_id = ? AND pr.request_type = 'REGULAR'
     ");
     $stmt->execute([$request_id]);
     $r = $stmt->fetch(PDO::FETCH_ASSOC);
