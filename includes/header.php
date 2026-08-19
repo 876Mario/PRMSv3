@@ -25,6 +25,7 @@ if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
   <link rel="stylesheet" href="/assets/css/dashboard.css?v=<?= time() ?>">
   <link rel="stylesheet" href="/assets/css/tables.css?v=<?= time() ?>">
   <link rel="stylesheet" href="/assets/css/modern-ui.css?v=<?= time() ?>">
+  <link rel="stylesheet" href="/assets/css/pipeline.css?v=<?= time() ?>">
   <style>
     @media print {
       #sidebarMenu,
