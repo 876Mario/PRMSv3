@@ -81,7 +81,23 @@ $dcStmt = $pdo->prepare("SELECT * FROM doc_ctrl_settings WHERE id = 1");
 $dcStmt->execute();
 $docCtrl = $dcStmt->fetch(PDO::FETCH_ASSOC) ?? [];
 
-$html = <<<'HTML'
+// Pre-compute all dynamic values before building HTML
+$tplRequestId     = 'PC-' . str_pad((string)$request['request_id'], 6, '0', STR_PAD_LEFT);
+$tplRequestDate   = date('d-M-Y', strtotime($request['request_date']));
+$tplBranch        = htmlspecialchars($request['branch_name'] ?? 'N/A', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+$tplRequestor     = htmlspecialchars($request['requestor_name'] ?? 'N/A', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+$tplEmail         = htmlspecialchars($request['requestor_email'] ?? 'N/A', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+$tplDescription   = htmlspecialchars(mb_substr($request['description'] ?? '', 0, 200), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+$tplCurrency      = htmlspecialchars($request['currency'] ?? 'JMD', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+$tplAmount        = number_format((float)($request['estimated_value'] ?? 0), 2);
+$tplStatus        = htmlspecialchars($request['status'] ?? 'DRAFT', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+$tplFormRevision  = htmlspecialchars($docCtrl['form_revision'] ?? 'v1.0', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+$tplEffectiveDate = htmlspecialchars($docCtrl['effective_date'] ?? 'N/A', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+$tplDcrNumber     = htmlspecialchars($docCtrl['dcr_number'] ?? 'N/A', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+$tplPrintedOn     = date('d-M-Y H:i:s');
+$tplReconcileDays = htmlspecialchars((string)(isset($_SESSION['petty_cash_reconcile_days']) ? (int)$_SESSION['petty_cash_reconcile_days'] : 7), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+$html = <<<HTML
 <!DOCTYPE html>
 <html>
 <head>
@@ -213,29 +229,29 @@ $html = <<<'HTML'
     <table>
         <tr>
             <td>Request ID:</td>
-            <td>PC-' . str_pad($request['request_id'], 6, '0', STR_PAD_LEFT) . '</td>
+            <td>{$tplRequestId}</td>
             <td>Request Date:</td>
-            <td>' . date('d-M-Y', strtotime($request['request_date'])) . '</td>
+            <td>{$tplRequestDate}</td>
         </tr>
         <tr>
             <td>Branch:</td>
-            <td colspan="3">' . htmlspecialchars($request['branch_name'] ?? 'N/A') . '</td>
+            <td colspan="3">{$tplBranch}</td>
         </tr>
         <tr>
             <td>Requestor:</td>
-            <td colspan="3">' . htmlspecialchars($request['requestor_name'] ?? 'N/A') . '</td>
+            <td colspan="3">{$tplRequestor}</td>
         </tr>
         <tr>
             <td>Email:</td>
-            <td colspan="3">' . htmlspecialchars($request['requestor_email'] ?? 'N/A') . '</td>
+            <td colspan="3">{$tplEmail}</td>
         </tr>
         <tr>
             <td>Description/Purpose:</td>
-            <td colspan="3">' . htmlspecialchars(substr($request['description'] ?? '', 0, 200)) . '</td>
+            <td colspan="3">{$tplDescription}</td>
         </tr>
         <tr>
             <td><strong>Petty Cash Amount:</strong></td>
-            <td colspan="3"><strong>' . $request['currency'] . ' ' . number_format((float)($request['estimated_value'] ?? 0), 2) . '</strong></td>
+            <td colspan="3"><strong>{$tplCurrency} {$tplAmount}</strong></td>
         </tr>
     </table>
 
@@ -244,7 +260,7 @@ $html = <<<'HTML'
     <table>
         <tr>
             <td>Status:</td>
-            <td colspan="3">' . htmlspecialchars($request['status'] ?? 'DRAFT') . '</td>
+            <td colspan="3">{$tplStatus}</td>
         </tr>
         <tr>
             <td>Request Status:</td>
@@ -253,7 +269,7 @@ $html = <<<'HTML'
     </table>
 
     <!-- TERMS & CONDITIONS -->
-    <div class="section-title">TERMS & CONDITIONS</div>
+    <div class="section-title">TERMS &amp; CONDITIONS</div>
     <p style="margin-left: 10px; margin-bottom: 8px;">
         The authorized officer certifies that:
     </p>
@@ -266,7 +282,7 @@ $html = <<<'HTML'
 
     <!-- CERTIFICATION & SIGNATURES -->
     <div class="signature-section">
-        <div class="section-title">AUTHORIZATION & SIGNATURES</div>
+        <div class="section-title">AUTHORIZATION &amp; SIGNATURES</div>
         <p style="margin-bottom: 10px;"><strong>Authorization and Certification:</strong></p>
         <p style="margin-left: 10px; margin-bottom: 10px; font-size: 10px;">
             I hereby authorize and approve the disbursal of the petty cash amount shown above,
@@ -280,7 +296,7 @@ $html = <<<'HTML'
                     <div style="height: 40px;"></div>
                     <div class="signature-line">
                         Signature<br>
-                        ' . htmlspecialchars($request['requestor_name'] ?? 'Name') . '<br>
+                        {$tplRequestor}<br>
                         Date: _______________________
                     </div>
                 </td>
@@ -299,48 +315,21 @@ $html = <<<'HTML'
 
     <!-- RECONCILIATION NOTICE -->
     <div style="background-color: #e8f5e9; border: 1px solid #4caf50; padding: 8px; margin-top: 15px; font-size: 9px;">
-        <strong>RECONCILIATION REQUIREMENT:</strong> All petty cash disbursals must be reconciled within 
-        ' . (isset($_SESSION['petty_cash_reconcile_days']) ? htmlspecialchars($_SESSION['petty_cash_reconcile_days']) : '7') . ' days 
-        with supporting documentation.
+        <strong>RECONCILIATION REQUIREMENT:</strong> All petty cash disbursals must be reconciled within
+        {$tplReconcileDays} days with supporting documentation.
     </div>
 
     <!-- DOCUMENT CONTROL -->
     <div class="footer">
         <strong>Document Control Information:</strong><br>
-        Form Revision: ' . htmlspecialchars($docCtrl['form_revision'] ?? 'v1.0') . ' | 
-        Effective Date: ' . htmlspecialchars($docCtrl['effective_date'] ?? 'N/A') . ' | 
-        DCR #: ' . htmlspecialchars($docCtrl['dcr_number'] ?? 'N/A') . '<br>
-        Printed on: ' . date('d-M-Y H:i:s') . ' | System: PRMS v3
+        Form Revision: {$tplFormRevision} |
+        Effective Date: {$tplEffectiveDate} |
+        DCR #: {$tplDcrNumber}<br>
+        Printed on: {$tplPrintedOn} | System: PRMS v3
     </div>
 </body>
 </html>
 HTML;
-
-$html = str_replace(array(
-    "' . \$request['request_id'] . '",
-    "' . \$request['branch_name'] . '",
-    "' . \$request['requestor_name'] . '",
-    "' . \$request['requestor_email'] . '",
-    "' . \$request['description'] . '",
-    "' . \$request['currency'] . '",
-    "' . \$request['estimated_value'] . '",
-    "' . \$request['status'] . '",
-    "' . \$docCtrl['form_revision'] . '",
-    "' . \$docCtrl['effective_date'] . '",
-    "' . \$docCtrl['dcr_number'] . '"
-), array(
-    htmlspecialchars($request['request_id']),
-    htmlspecialchars($request['branch_name'] ?? 'N/A'),
-    htmlspecialchars($request['requestor_name'] ?? 'N/A'),
-    htmlspecialchars($request['requestor_email'] ?? 'N/A'),
-    htmlspecialchars(substr($request['description'] ?? '', 0, 200)),
-    htmlspecialchars($request['currency']),
-    number_format((float)($request['estimated_value'] ?? 0), 2),
-    htmlspecialchars($request['status'] ?? 'DRAFT'),
-    htmlspecialchars($docCtrl['form_revision'] ?? 'v1.0'),
-    htmlspecialchars($docCtrl['effective_date'] ?? 'N/A'),
-    htmlspecialchars($docCtrl['dcr_number'] ?? 'N/A')
-), $html);
 
 // Load HTML into Dompdf
 $dompdf->loadHtml($html, 'UTF-8');
