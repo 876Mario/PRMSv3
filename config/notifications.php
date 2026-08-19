@@ -3783,9 +3783,11 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
         $safeActionDescription = he($actionDescription);
         // Use htmlspecialchars for URL-in-HTML-attribute context (preserves & for query strings)
         $safeAppUrl = htmlspecialchars($appUrl, ENT_QUOTES, 'UTF-8');
+        // Build review URL with encoded query parameters
+        $reviewUrl = htmlspecialchars($appUrl . '/reimbursement/view.php?request_id=' . urlencode((string)$requestId), ENT_QUOTES, 'UTF-8');
 
-        // Sanitize subject to prevent header injection
-        $subject = "Reimbursement Invoice Verification Required: " . preg_replace('/[^\x20-\x7E]/', '', $request['request_number']);
+        // Sanitize subject to prevent header injection (exclude control chars including \r, \n)
+        $subject = "Reimbursement Invoice Verification Required: " . preg_replace('/[\r\n\x00-\x1F\x7F]|[^\x20-\x7E]/', '', $request['request_number']);
 
         $html = <<<HTML
 <!DOCTYPE html>
@@ -3864,7 +3866,7 @@ HTML;
                     <li>Check that the quantity and quality meet requirements</li>
                     <li>Mark as verified in the system to allow Finance processing</li>
 HTML;
-            } else {
+            } elseif ($invoiceStage === $INVOICE_STAGE_ORIGINAL_TO_FINANCE) {
                 $html .= <<<HTML
                     <li>Review the original invoice amount</li>
                     <li>Verify funds are available for processing</li>
@@ -3877,7 +3879,7 @@ HTML;
             </div>
 
             <p>
-                <a href="{$safeAppUrl}/reimbursement/view.php?request_id={$requestId}" class="button">
+                <a href="{$reviewUrl}" class="button">
                     ✓ Review &amp; Verify Invoice
                 </a>
             </p>
