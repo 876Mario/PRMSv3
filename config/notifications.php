@@ -3763,7 +3763,7 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
             $actionDescription = 'Please review and approve the reimbursement invoice for payment processing.';
         } else {
             // Invalid or unrecognized invoice stage
-            error_log("Reimbursement invoice notification: Invalid invoice stage '{$invoiceStage}' for request {$request_id}");
+            error_log("Reimbursement invoice notification: Invalid invoice stage '{$invoiceStage}' for request {$requestId}");
             return false;
         }
 
@@ -3781,7 +3781,8 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
         $safeRequestorName = he($request['requestor_name']);
         $safeStageLabel = he($stageLabel);
         $safeActionDescription = he($actionDescription);
-        $safeAppUrl = he($appUrl);
+        // Use htmlspecialchars for URL-in-HTML-attribute context (preserves & for query strings)
+        $safeAppUrl = htmlspecialchars($appUrl, ENT_QUOTES, 'UTF-8');
 
         // Sanitize subject to prevent header injection
         $subject = "Reimbursement Invoice Verification Required: " . preg_replace('/[^\x20-\x7E]/', '', $request['request_number']);
