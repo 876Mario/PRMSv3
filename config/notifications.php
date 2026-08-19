@@ -3739,8 +3739,8 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
             return false;
         }
 
-        $appUrl = he(getAppUrl());
-        $safeRequestId = he((string)$requestId);
+        // Get raw URL (no encoding for href attribute)
+        $appUrl = getAppUrl();
         $currency = normalizeCurrency($request['currency'] ?? 'JMD');
         $safeAmount = $currency . ' ' . number_format($invoiceAmount, 2);
 
@@ -3764,14 +3764,16 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
             return false;
         }
 
-        // Prepare email template
+        // Prepare email template - HTML-escape all user-controlled data
         $safeRequestNumber = he($request['request_number']);
         $safeDescription = he($request['description']);
         $safeBranchName = he($request['branch_name']);
         $safeRequestorName = he($request['requestor_name']);
         $safeStageLabel = he($stageLabel);
+        $safeActionDescription = he($actionDescription);
 
-        $subject = "Reimbursement Invoice Verification Required: {$request['request_number']}";
+        // Sanitize subject to prevent header injection
+        $subject = "Reimbursement Invoice Verification Required: " . preg_replace('/[^\x20-\x7E]/', '', $request['request_number']);
 
         $html = <<<HTML
 <!DOCTYPE html>
@@ -3810,7 +3812,7 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
                 <br><span class="urgent">Stage: {$safeStageLabel}</span>
             </div>
 
-            <p>{$actionDescription}</p>
+            <p>{$safeActionDescription}</p>
 
             <div class="details">
                 <div class="detail-row">
@@ -3863,13 +3865,13 @@ HTML;
             </div>
 
             <p>
-                <a href="{$appUrl}/reimbursement/view.php?request_id={$safeRequestId}" class="button">
+                <a href="{$appUrl}/reimbursement/view.php?request_id={$requestId}" class="button">
                     ✓ Review &amp; Verify Invoice
                 </a>
             </p>
 
             <p style="margin-top: 30px; font-size: 13px; color: #666;">
-                <strong>Reference:</strong> Request {$safeRequestNumber} | ID: {$safeRequestId}
+                <strong>Reference:</strong> Request {$safeRequestNumber} | ID: {$requestId}
             </p>
         </div>
         <div class="footer">
