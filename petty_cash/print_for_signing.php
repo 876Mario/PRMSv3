@@ -72,7 +72,9 @@ logAudit(
 require_once $_SERVER['DOCUMENT_ROOT'] . '/vendor/autoload.php';
 use Dompdf\Dompdf;
 
-$dompdf = new Dompdf();
+$options = new \Dompdf\Options();
+$options->setDefaultFont('DejaVu Sans');
+$dompdf = new Dompdf($options);
 
 // Get current document control settings
 $dcStmt = $pdo->prepare("SELECT * FROM doc_ctrl_settings WHERE id = 1");
@@ -87,7 +89,7 @@ $html = <<<'HTML'
     <style>
         * { margin: 0; padding: 0; }
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'DejaVu Sans', Arial, sans-serif;
             font-size: 11px;
             line-height: 1.4;
             color: #333;
@@ -341,7 +343,7 @@ $html = str_replace(array(
 ), $html);
 
 // Load HTML into Dompdf
-$dompdf->loadHtml($html);
+$dompdf->loadHtml($html, 'UTF-8');
 $dompdf->setPaper('A4', 'portrait');
 $dompdf->render();
 
