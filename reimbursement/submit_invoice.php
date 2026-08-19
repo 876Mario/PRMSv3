@@ -127,6 +127,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $pdo->commit();
 
+        /* Send notifications to Procurement Officer (GC2) or Finance Officer (GC10A) */
+        notifyReimbursementInvoiceSubmitted($request_id, $invoice_stage, $invoice_amount, $request['full_name'] ?? '');
+
         modalPop(
             'Invoice Submitted',
             'Your invoice copy has been submitted successfully for Request ' . $request['request_number'] . '.',
