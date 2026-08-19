@@ -115,8 +115,6 @@ class AdminEditService {
         }
 
         try {
-            $this->pdo->beginTransaction();
-
             // Re-validate field name against whitelist before using in query (defense in depth)
             $allowedFields = [];
             foreach ($this->fieldsEditableByAdmin[$requestType][$request['status']] ?? [] as $field) {
@@ -128,6 +126,8 @@ class AdminEditService {
                     'error' => "Field '{$fieldName}' cannot be edited"
                 ];
             }
+
+            $this->pdo->beginTransaction();
 
             // Track if approval-critical field is being changed
             $isApprovalCritical = $this->isApprovalCritical($requestType, $fieldName);
@@ -294,22 +294,6 @@ class AdminEditService {
                         "Approval for {$approval['role']} invalidated due to admin edit of {$changedField}"
                     );
                 }
-            }
-
-            // Log the invalidation in admin_edits_log with invalidation details
-            if (!empty($affectedApprovals)) {
-                $invalidationStmt = $this->pdo->prepare("
-                    UPDATE admin_edits_log
-                    SET invalidated_approvals = ?
-                    WHERE request_id = ? AND changed_field = ?
-                    ORDER BY change_timestamp DESC
-                    LIMIT 1
-                ");
-                $invalidationStmt->execute([
-                    json_encode($affectedApprovals),
-                    $requestId,
-                    $changedField
-                ]);
             }
 
             return $affectedApprovals;
