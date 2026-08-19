@@ -162,6 +162,37 @@ class AdminEditServiceTest {
     }
     
     /**
+     * Test SQL injection prevention
+     */
+    public function testSQLInjectionPrevention() {
+        $service = new AdminEditService(
+            $this->pdo, $this->testRequestId,
+            $this->adminUserId, $this->adminUserRole, $this->adminUserName
+        );
+        
+        $request = $service->loadRequest();
+        
+        // Test various SQL injection attempts
+        $maliciousFieldNames = [
+            'description; DROP TABLE procurement_requests; --',
+            'description\'; UPDATE procurement_requests SET estimated_value = 999999; --',
+            'description` OR 1=1 `',
+            'description) OR (1=1',
+            'invalid_field_name',
+            'non_existent_column'
+        ];
+        
+        foreach ($maliciousFieldNames as $maliciousField) {
+            $validation = $service->validateEdit($request, $maliciousField, 'test');
+            assert($validation['valid'] === false, "SQL injection attempt with '$maliciousField' should be rejected");
+            assert(strpos($validation['error'], 'not a valid field') !== false || strpos($validation['error'], 'cannot be edited') !== false, 
+                   "Error message should indicate invalid field for '$maliciousField'");
+        }
+        
+        echo "✓ SQL injection prevention test passed\n";
+    }
+    
+    /**
      * Test edit audit logging
      */
     public function testEditAuditLogging() {
@@ -263,6 +294,7 @@ class AdminEditServiceTest {
         $this->testEditableFieldsInDraft();
         $this->testFieldEditValidation();
         $this->testApprovalCriticalFields();
+        $this->testSQLInjectionPrevention();
         $this->testEditAuditLogging();
         $this->testEditHistoryRetrieval();
         $this->testInvalidatedApprovalsRetrieval();
