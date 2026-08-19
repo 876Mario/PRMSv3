@@ -3713,4 +3713,223 @@ HTML;
     }
 }
 
+/**
+ * Notify Procurement Officers when a reimbursement invoice copy is submitted (GC2)
+ * Notify Finance Officers when original invoice is submitted (GC10A)
+ */
+function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStage, float $invoiceAmount): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        // Invoice stage constants
+        $INVOICE_STAGE_COPY_TO_PROCUREMENT = 'COPY_TO_PROCUREMENT';
+        $INVOICE_STAGE_ORIGINAL_TO_FINANCE = 'ORIGINAL_TO_FINANCE';
+
+        // Get reimbursement request details
+        $stmt = $pdo->prepare("
+            SELECT pr.request_id, pr.request_number, pr.description, pr.currency,
+                   b.branch_name, u.full_name as requestor_name
+            FROM procurement_requests pr
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE pr.request_id = ? AND pr.request_type = 'REIMBURSEMENT'
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$request) {
+            error_log("NOTIFY REIMBURSEMENT INVOICE: Request not found for ID $requestId");
+            return false;
+        }
+
+        // Get raw URL (no encoding for href attribute) and normalize currency
+        $appUrl = getAppUrl();
+        $currency = normalizeCurrency($request['currency'] ?? 'JMD');
+        // Escape currency for HTML and format amount
+        $safeCurrency = he($currency);
+        $formattedAmount = $safeCurrency . ' ' . number_format($invoiceAmount, 2);
+
+        // Determine which role to notify based on invoice stage
+        if ($invoiceStage === $INVOICE_STAGE_COPY_TO_PROCUREMENT) {
+            // Notify Procurement Officers for GC2 (copy verification)
+            $targetRole = 'Procurement Officer';
+            $stageLabel = 'Copy to Procurement (GC2)';
+            $actionDescription = 'Please verify that the goods/services were received in satisfactory condition.';
+        } elseif ($invoiceStage === $INVOICE_STAGE_ORIGINAL_TO_FINANCE) {
+            // Notify Finance Officers for GC10A (original invoice)
+            $targetRole = 'Finance Officer';
+            $stageLabel = 'Original to Finance (GC10A)';
+            $actionDescription = 'Please review and approve the reimbursement invoice for payment processing.';
+        } else {
+            // Invalid or unrecognized invoice stage
+            error_log("Reimbursement invoice notification: Invalid invoice stage '{$invoiceStage}' for request {$requestId}");
+            return false;
+        }
+
+        // Get target role users
+        $targetUsers = getUsersByRole($targetRole);
+        if (empty($targetUsers)) {
+            error_log("NOTIFY REIMBURSEMENT INVOICE: No {$targetRole} found in the system");
+            return false;
+        }
+
+        // Prepare email template - HTML-escape all user-controlled data
+        $safeRequestNumber = he($request['request_number']);
+        $safeDescription = he($request['description']);
+        $safeBranchName = he($request['branch_name']);
+        $safeRequestorName = he($request['requestor_name']);
+        $safeStageLabel = he($stageLabel);
+        $safeActionDescription = he($actionDescription);
+        // Use htmlspecialchars for URL-in-HTML-attribute context (preserves & for query strings)
+        $safeAppUrl = htmlspecialchars($appUrl, ENT_QUOTES, 'UTF-8');
+        // Build review URL with encoded query parameters
+        $reviewUrl = htmlspecialchars($appUrl . '/reimbursement/view.php?request_id=' . urlencode((string)$requestId), ENT_QUOTES, 'UTF-8');
+
+        // Sanitize subject to prevent header injection (exclude control chars including \r, \n)
+        $subject = "Reimbursement Invoice Verification Required: " . preg_replace('/[\r\n\x00-\x1F\x7F]|[^\x20-\x7E]/', '', $request['request_number']);
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; color: #333; line-height: 1.6; }
+        .container { max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+        .header { background: linear-gradient(90deg, #0b5e2b, #c9a227); color: white; padding: 20px; text-align: center; }
+        .header h2 { margin: 0; font-size: 22px; }
+        .content { padding: 20px; }
+        .alert { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0; border-radius: 4px; }
+        .alert strong { color: #856404; }
+        .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .detail-row { margin: 10px 0; padding: 8px 0; border-bottom: 1px solid #e9ecef; }
+        .detail-row:last-child { border-bottom: none; }
+        .label { font-weight: bold; color: #495057; display: inline-block; width: 140px; }
+        .value { color: #212529; }
+        .action-box { background: #e7f3ff; border: 1px solid #0d6efd; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .button { display: inline-block; background: #0b5e2b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 15px; font-weight: bold; }
+        .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #ddd; }
+        .urgent { color: #dc3545; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>📋 Reimbursement Invoice Verification Required</h2>
+        </div>
+        <div class="content">
+            <p>Dear {$targetRole},</p>
+            
+            <div class="alert">
+                <strong>Action Required:</strong> A reimbursement invoice is awaiting your verification.
+                <br><span class="urgent">Stage: {$safeStageLabel}</span>
+            </div>
+
+            <p>{$safeActionDescription}</p>
+
+            <div class="details">
+                <div class="detail-row">
+                    <span class="label">Request #:</span>
+                    <span class="value">{$safeRequestNumber}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Requestor:</span>
+                    <span class="value">{$safeRequestorName}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Branch:</span>
+                    <span class="value">{$safeBranchName}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Description:</span>
+                    <span class="value">{$safeDescription}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Invoice Amount:</span>
+                    <span class="value">{$formattedAmount}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Stage:</span>
+                    <span class="value">{$safeStageLabel}</span>
+                </div>
+            </div>
+
+            <div class="action-box">
+                <strong>📌 Next Steps:</strong>
+                <ul style="margin: 10px 0; padding-left: 20px;">
+HTML;
+            if ($invoiceStage === $INVOICE_STAGE_COPY_TO_PROCUREMENT) {
+                $html .= <<<HTML
+                    <li>Review the attached invoice copy</li>
+                    <li>Verify goods were received in satisfactory condition</li>
+                    <li>Check that the quantity and quality meet requirements</li>
+                    <li>Mark as verified in the system to allow Finance processing</li>
+HTML;
+            } elseif ($invoiceStage === $INVOICE_STAGE_ORIGINAL_TO_FINANCE) {
+                $html .= <<<HTML
+                    <li>Review the original invoice amount</li>
+                    <li>Verify funds are available for processing</li>
+                    <li>Check that amount matches the pre-authorization</li>
+                    <li>Approve for reimbursement payment</li>
+HTML;
+            }
+            $html .= <<<HTML
+                </ul>
+            </div>
+
+            <p>
+                <a href="{$reviewUrl}" class="button">
+                    ✓ Review &amp; Verify Invoice
+                </a>
+            </p>
+
+            <p style="margin-top: 30px; font-size: 13px; color: #666;">
+                <strong>Reference:</strong> Request {$safeRequestNumber} | ID: {$requestId}
+            </p>
+        </div>
+        <div class="footer">
+            <p>This is an automated notification from the Procurement Request Management System (PRMS).</p>
+            <p>Please do not reply to this email. Log in to the system to take action.</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        // Send email and in-app notifications to all users in the target role
+        $notificationsSent = 0;
+        foreach ($targetUsers as $user) {
+            // In-app notification (always sent for active users)
+            $notificationType = ($invoiceStage === $INVOICE_STAGE_COPY_TO_PROCUREMENT) 
+                ? NotificationService::TYPE_APPROVAL_NEEDED
+                : NotificationService::TYPE_FINANCE_ACTION;
+            
+            if (NotificationService::createNotification($user['user_id'], $notificationType, [
+                'title'          => "Reimbursement Invoice Verification: {$request['request_number']}",
+                'body'           => "{$stageLabel} - Amount: {$formattedAmount}",
+                'request_id'     => $requestId,
+                'request_ref'    => $request['request_number'],
+                'action_url'     => "/reimbursement/view.php?request_id=" . urlencode((string)$requestId),
+                'stage'          => $stageLabel,
+                'requestor_name' => $request['requestor_name'] ?? null,
+                'priority'       => 'high',
+            ])) {
+                $notificationsSent++;
+            }
+
+            // Send email if user has email address
+            if (!empty($user['email'])) {
+                sendMail($user['email'], $subject, $html);
+            }
+        }
+
+        return $notificationsSent > 0;
+
+    } catch (Exception $e) {
+        error_log("Notify reimbursement invoice submitted error: {$e->getMessage()}");
+        return false;
+    }
+}
+
 ?>
