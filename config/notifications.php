@@ -3743,10 +3743,12 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
             return false;
         }
 
-        // Get raw URL (no encoding for href attribute)
+        // Get raw URL (no encoding for href attribute) and normalize currency
         $appUrl = getAppUrl();
         $currency = normalizeCurrency($request['currency'] ?? 'JMD');
-        $formattedAmount = $currency . ' ' . number_format($invoiceAmount, 2);
+        // Escape currency for HTML and format amount
+        $safeCurrency = he($currency);
+        $formattedAmount = $safeCurrency . ' ' . number_format($invoiceAmount, 2);
 
         // Determine which role to notify based on invoice stage
         if ($invoiceStage === $INVOICE_STAGE_COPY_TO_PROCUREMENT) {
@@ -3754,11 +3756,15 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
             $targetRole = 'Procurement Officer';
             $stageLabel = 'Copy to Procurement (GC2)';
             $actionDescription = 'Please verify that the goods/services were received in satisfactory condition.';
-        } else {
+        } elseif ($invoiceStage === $INVOICE_STAGE_ORIGINAL_TO_FINANCE) {
             // Notify Finance Officers for GC10A (original invoice)
             $targetRole = 'Finance Officer';
             $stageLabel = 'Original to Finance (GC10A)';
             $actionDescription = 'Please review and approve the reimbursement invoice for payment processing.';
+        } else {
+            // Invalid or unrecognized invoice stage
+            error_log("Reimbursement invoice notification: Invalid invoice stage '{$invoiceStage}' for request {$request_id}");
+            return false;
         }
 
         // Get target role users
@@ -3775,6 +3781,7 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
         $safeRequestorName = he($request['requestor_name']);
         $safeStageLabel = he($stageLabel);
         $safeActionDescription = he($actionDescription);
+        $safeAppUrl = he($appUrl);
 
         // Sanitize subject to prevent header injection
         $subject = "Reimbursement Invoice Verification Required: " . preg_replace('/[^\x20-\x7E]/', '', $request['request_number']);
@@ -3869,7 +3876,7 @@ HTML;
             </div>
 
             <p>
-                <a href="{$appUrl}/reimbursement/view.php?request_id={$requestId}" class="button">
+                <a href="{$safeAppUrl}/reimbursement/view.php?request_id={$requestId}" class="button">
                     ✓ Review &amp; Verify Invoice
                 </a>
             </p>
