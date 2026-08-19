@@ -32,19 +32,27 @@ CREATE INDEX IF NOT EXISTS `idx_users_branch_id`
 -- --------------------------------------------------------
 DROP PROCEDURE IF EXISTS `_add_fk_users_branch_id`;
 
+DELIMITER $$
+
 CREATE PROCEDURE `_add_fk_users_branch_id`()
 BEGIN
+  -- Check if constraint already exists using TABLE_CONSTRAINTS
   IF NOT EXISTS (
-    SELECT 1 FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS 
-    WHERE TABLE_NAME = 'users'
+    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
+    WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'users'
     AND CONSTRAINT_NAME = 'fk_users_branch_id'
+    AND CONSTRAINT_TYPE = 'FOREIGN KEY'
   ) THEN
     ALTER TABLE `users`
     ADD CONSTRAINT `fk_users_branch_id`
       FOREIGN KEY (`branch_id`) REFERENCES `branches`(`branch_id`)
-      ON DELETE SET NULL;
+      ON DELETE SET NULL
+      ON UPDATE CASCADE;
   END IF;
-END;
+END$$
+
+DELIMITER ;
 
 CALL `_add_fk_users_branch_id`();
 DROP PROCEDURE IF EXISTS `_add_fk_users_branch_id`;
