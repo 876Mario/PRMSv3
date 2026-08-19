@@ -89,6 +89,7 @@ class WorkflowResponsibilityService
         // For completed stages: resolve who actually completed it
         if ($isCompleted) {
             $completerData = $this->resolveCompleter(
+                $workflowType,
                 $stageStatus,
                 $requestApprovals,
                 $currentUserRole
@@ -420,36 +421,62 @@ class WorkflowResponsibilityService
     /**
      * Find who completed a given stage by looking at the request_approvals table.
      *
+     * For REGULAR / SERVICE_CONTRACT workflows the stage name encodes the
+     * approver role (HOD_APPROVED → HOD, DIRECTOR_APPROVED → Director HRM&A).
+     * For REIMBURSEMENT and PETTY_CASH a single Finance Officer role appears
+     * across all stages; we match any approved Finance Officer record rather
+     * than trying to derive a stage key from the role name.
+     *
+     * @param string $workflowType     REGULAR | REIMBURSEMENT | PETTY_CASH | SERVICE_CONTRACT
      * @param string $stageStatus      Stage status key to resolve
      * @param array  $requestApprovals All approval rows for the request
-     * @param string $currentUserRole  Viewer's role (for authorization gate)
+     * @param string $currentUserRole  Viewer's role (reserved for future stricter gates)
      *
      * @return array{name:string, role:string}|null
      */
     private function resolveCompleter(
+        string $workflowType,
         string $stageStatus,
         array  $requestApprovals,
         string $currentUserRole
     ): ?array {
 
-        // Anyone who can view the request may see who completed each stage.
-        // (Email addresses are deliberately excluded.)
+        // Map stage-status keys to the role(s) that drive that stage completion.
+        // Applies to REGULAR and SERVICE_CONTRACT where each approval stage maps
+        // to a distinct named role.
+        $stageToRoles = [
+            'HOD_APPROVED'      => ['HOD', 'Branch Head'],
+            'FUNDS_VERIFIED'    => ['Finance Officer'],
+            'DIRECTOR_APPROVED' => ['Director HRM&A'],
+            'GC_APPROVED'       => ['Deputy Government Chemist', 'Government Chemist'],
+            'AWARDED'           => ['Deputy Government Chemist', 'Government Chemist'],
+        ];
+
+        // For REIMBURSEMENT / PETTY_CASH Finance Officer owns every stage,
+        // so any approved Finance Officer record is the completer.
+        if (in_array($workflowType, ['REIMBURSEMENT', 'PETTY_CASH'], true)) {
+            $expectedRoles = ['Finance Officer'];
+        } else {
+            $expectedRoles = $stageToRoles[$stageStatus] ?? [];
+        }
+
+        if (empty($expectedRoles)) {
+            return null;
+        }
+
+        // Fetch completer name — no email or sensitive fields.
         foreach ($requestApprovals as $approval) {
             $approvalRole = $approval['role'] ?? '';
             $status       = strtolower($approval['status'] ?? '');
-            $approvedBy   = (int) ($approval['approved_by'] ?? 0);
+            $approvedBy   = (int)($approval['approved_by'] ?? 0);
 
-            // Match: this approval row's role corresponds to the stage we're resolving
             if ($status !== 'approved' || $approvedBy === 0) {
                 continue;
             }
-
-            $approvalStageStatus = self::roleToStageStatus($approvalRole);
-            if ($approvalStageStatus !== $stageStatus) {
+            if (!in_array($approvalRole, $expectedRoles, true)) {
                 continue;
             }
 
-            // Fetch only the full_name — no email, no sensitive fields
             $stmt = $this->pdo->prepare(
                 'SELECT u.full_name FROM users u WHERE u.user_id = ? LIMIT 1'
             );
@@ -465,23 +492,6 @@ class WorkflowResponsibilityService
         }
 
         return null;
-    }
-
-    /**
-     * Map an approval role string to the pipeline stage status it produces.
-     * Used to correlate request_approvals.role with a pipeline stageStatus key.
-     */
-    private static function roleToStageStatus(string $role): string
-    {
-        $map = [
-            'HOD'                        => 'HOD_APPROVED',
-            'Branch Head'                => 'HOD_APPROVED',
-            'Finance Officer'            => 'FUNDS_VERIFIED',
-            'Director HRM&A'             => 'DIRECTOR_APPROVED',
-            'Deputy Government Chemist'  => 'GC_APPROVED',
-            'Government Chemist'         => 'GC_APPROVED', // legacy
-        ];
-        return $map[$role] ?? '';
     }
 
     /**

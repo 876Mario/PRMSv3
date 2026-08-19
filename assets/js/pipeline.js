@@ -14,8 +14,16 @@
         var cells = document.querySelectorAll('.pipeline-stage-cell');
 
         cells.forEach(function (cell) {
-            cell.addEventListener('touchstart', function (e) {
-                e.preventDefault(); // prevent synthetic mouse events
+            cell.addEventListener('touchend', function (e) {
+                // Only act if the touch ended on the same cell it started on
+                // (i.e. it was a tap, not a scroll gesture)
+                var touch = e.changedTouches[0];
+                var target = document.elementFromPoint(touch.clientX, touch.clientY);
+                if (!cell.contains(target)) {
+                    return;
+                }
+
+                e.preventDefault(); // prevent synthetic click that would re-trigger
 
                 var isOpen = cell.classList.contains('wf-tooltip-open');
 
@@ -36,8 +44,10 @@
         });
 
         // Close tooltips when tapping anywhere outside a stage cell
-        document.addEventListener('touchstart', function (e) {
-            if (!e.target.closest('.pipeline-stage-cell')) {
+        document.addEventListener('touchend', function (e) {
+            var touch = e.changedTouches[0];
+            var target = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (!target || !target.closest('.pipeline-stage-cell')) {
                 cells.forEach(function (cell) {
                     cell.classList.remove('wf-tooltip-open');
                 });
