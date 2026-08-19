@@ -3722,6 +3722,10 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
 
     global $pdo;
     try {
+        // Invoice stage constants
+        $INVOICE_STAGE_COPY_TO_PROCUREMENT = 'COPY_TO_PROCUREMENT';
+        $INVOICE_STAGE_ORIGINAL_TO_FINANCE = 'ORIGINAL_TO_FINANCE';
+
         // Get reimbursement request details
         $stmt = $pdo->prepare("
             SELECT pr.request_id, pr.request_number, pr.description, pr.currency,
@@ -3745,7 +3749,7 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
         $safeAmount = $currency . ' ' . number_format($invoiceAmount, 2);
 
         // Determine which role to notify based on invoice stage
-        if ($invoiceStage === 'COPY_TO_PROCUREMENT') {
+        if ($invoiceStage === $INVOICE_STAGE_COPY_TO_PROCUREMENT) {
             // Notify Procurement Officers for GC2 (copy verification)
             $targetRole = 'Procurement Officer';
             $stageLabel = 'Copy to Procurement (GC2)';
@@ -3845,7 +3849,7 @@ function notifyReimbursementInvoiceSubmitted(int $requestId, string $invoiceStag
                 <strong>📌 Next Steps:</strong>
                 <ul style="margin: 10px 0; padding-left: 20px;">
 HTML;
-            if ($invoiceStage === 'COPY_TO_PROCUREMENT') {
+            if ($invoiceStage === $INVOICE_STAGE_COPY_TO_PROCUREMENT) {
                 $html .= <<<HTML
                     <li>Review the attached invoice copy</li>
                     <li>Verify goods were received in satisfactory condition</li>
@@ -3892,13 +3896,13 @@ HTML;
                 : NotificationService::TYPE_FINANCE_ACTION;
             
             if (NotificationService::createNotification($user['user_id'], $notificationType, [
-                'title'          => "Reimbursement Invoice Verification: {$request['request_number']}",
-                'body'           => "{$stageLabel} - Amount: {$safeAmount}",
+                'title'          => "Reimbursement Invoice Verification: {$safeRequestNumber}",
+                'body'           => "{$safeStageLabel} - Amount: {$safeAmount}",
                 'request_id'     => $requestId,
-                'request_ref'    => $request['request_number'],
+                'request_ref'    => $safeRequestNumber,
                 'action_url'     => "/reimbursement/view.php?request_id={$requestId}",
-                'stage'          => $stageLabel,
-                'requestor_name' => $request['requestor_name'] ?? null,
+                'stage'          => $safeStageLabel,
+                'requestor_name' => $safeRequestorName,
                 'priority'       => 'high',
             ])) {
                 $notificationsSent++;
