@@ -147,6 +147,7 @@ function buildResponsibilityTooltip(
     $role   = htmlspecialchars($responsibility['responsible_role']   ?? '');
     $source = htmlspecialchars($responsibility['source_type']        ?? '');
     $action = htmlspecialchars($responsibility['action_description'] ?? '');
+    $assignedUser = $responsibility['assigned_user'] ?? null;
 
     /** @var array<int, array{role: string, name: string|null}> $officers */
     $officers = $responsibility['responsible_officers'] ?? [];
@@ -172,7 +173,6 @@ function buildResponsibilityTooltip(
         $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Responsible role:</span> ' . $role . '</div>';
 
         // Assigned user (pending stage)
-        $assignedUser = $responsibility['assigned_user'] ?? null;
         if ($assignedUser !== null && $stateText !== 'Completed') {
             $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Assigned to:</span> '
                    . htmlspecialchars($assignedUser) . '</div>';
@@ -180,7 +180,6 @@ function buildResponsibilityTooltip(
     }
 
     // Source type label (skip for simple 'Assigned by job title' when no named user)
-    $assignedUser = $responsibility['assigned_user'] ?? null;
     if ($source !== '' && !($source === 'Assigned by job title' && $assignedUser === null)) {
         $html .= '<div class="wf-tooltip-row wf-tooltip-source">' . $source . '</div>';
     }

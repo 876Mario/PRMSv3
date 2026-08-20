@@ -84,8 +84,6 @@ class WorkflowResponsibilityOfficerMappingTest extends PHPUnit\Framework\TestCas
         $pdo->exec("INSERT INTO users VALUES (106, 'Pete Procurement', 'p@x.gov', 7, 1, null)"); // Procurement Officer (org-wide)
         $pdo->exec("INSERT INTO users VALUES (107, 'Debra DirProc',    'de@x.gov', 8, 1, null)"); // Director Procurement (org-wide)
         $pdo->exec("INSERT INTO users VALUES (108, 'Rachel Requestor', 'r@x.gov', 9, 1, 3)");    // Requestor, branch 3
-        // Requestor who is also the branch head of branch 3 (duplicate scenario)
-        $pdo->exec("UPDATE users SET full_name = 'Bella BranchHead' WHERE user_id = 101");
 
         return $pdo;
     }
