@@ -72,6 +72,7 @@ class WorkflowResponsibilityService
         $result = [
             'responsible_role'   => '',
             'assigned_user'      => null,
+            'assigned_users'     => [],
             'source_type'        => 'Awaiting system assignment',
             'action_description' => '',
             'completer_name'     => null,
@@ -98,20 +99,207 @@ class WorkflowResponsibilityService
                 $result['completer_name'] = $completerData['name'];
                 $result['completer_role'] = $completerData['role'];
             }
+            return $result;
+        }
+
+        // For pending/current stages: certain stages have dynamic, branch- or
+        // request-aware responsibility rules that override the static map.
+        // These take precedence over the generic single-role lookup below.
+        $officers = $this->resolveDynamicStageOfficers($stageStatus, $request, $branchId);
+
+        if ($officers !== null) {
+            [$roles, $names] = $this->splitOfficers($officers);
+
+            if (!empty($roles)) {
+                $result['responsible_role'] = implode(' / ', $roles);
+                $result['is_configured']    = true;
+            }
+
+            $result['assigned_users'] = $names;
+            if (!empty($names)) {
+                $result['assigned_user'] = implode(', ', $names);
+                $result['source_type']   = 'Assigned to';
+            } else {
+                $result['source_type'] = 'Assigned by job title';
+            }
         } elseif ($result['is_configured']) {
-            // For pending stages, try to find the unique role-holder in this branch
+            // Generic path: try to find the unique role-holder in this branch
             $assignedUser = $this->findRoleUser(
                 $result['responsible_role'],
                 $branchId,
                 $currentUserRole
             );
             if ($assignedUser !== null) {
-                $result['assigned_user'] = $assignedUser;
-                $result['source_type']   = 'Assigned to';
+                $result['assigned_user']  = $assignedUser;
+                $result['assigned_users'] = [$assignedUser];
+                $result['source_type']    = 'Assigned to';
             }
         }
 
         return $result;
+    }
+
+    /**
+     * Resolve the officer(s) responsible for stages whose ownership depends on
+     * the request's branch or on the requestor, rather than on a single fixed
+     * role.  Returns null when the stage has no dynamic rule (caller should
+     * fall back to the static single-role map).
+     *
+     * @return array<int, array{role:string, name:?string}>|null
+     */
+    private function resolveDynamicStageOfficers(string $stageStatus, array $request, int $branchId): ?array
+    {
+        switch ($stageStatus) {
+            case 'DIRECTOR_APPROVED':
+                return [$this->resolveDirectorApprovedOfficer($branchId)];
+
+            case 'HOD_APPROVED':
+                return [$this->resolveHodApprovedOfficer($branchId)];
+
+            case 'FUNDS_VERIFIED':
+            case 'COMMITMENTS_PENDING':
+            case 'INVOICE_RECEIVED':
+                return [$this->makeOfficer('Finance Officer', $this->findUserByRole(['Finance Officer'], $branchId))];
+
+            case 'QUOTE_REVIEW_PENDING':
+            case 'QUOTE_APPROVED':
+                return $this->resolveRequestorAndBranchHead($request, $branchId);
+
+            case 'RFQ_LETTER_AVAILABLE':
+            case 'PO_PENDING':
+            case 'PO_APPROVED':
+                return $this->resolveProcurementAndDirector();
+
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Split a list of ['role' => ..., 'name' => ...] officers into two
+     * deduplicated arrays: distinct role labels, and distinct resolved names.
+     *
+     * @param array<int, array{role:string, name:?string}> $officers
+     * @return array{0: string[], 1: string[]}
+     */
+    private function splitOfficers(array $officers): array
+    {
+        $roles = [];
+        $names = [];
+
+        foreach ($officers as $officer) {
+            $role = trim((string) ($officer['role'] ?? ''));
+            if ($role !== '' && !in_array($role, $roles, true)) {
+                $roles[] = $role;
+            }
+
+            $name = $officer['name'] ?? null;
+            if ($name !== null) {
+                $name = trim((string) $name);
+                if ($name !== '' && !in_array($name, $names, true)) {
+                    $names[] = $name;
+                }
+            }
+        }
+
+        return [$roles, $names];
+    }
+
+    /** @return array{role:string, name:?string} */
+    private function makeOfficer(string $role, ?string $name): array
+    {
+        return ['role' => $role, 'name' => $name];
+    }
+
+    /**
+     * DIRECTOR_APPROVED ("Director Approved") responsibility.
+     *
+     * Branch-based mapping (normalized branch name comparison):
+     *   - Analytical and Advisory Branch -> Deputy Government Chemist
+     *   - HRM&A Branch (incl. "HRMA" variant) -> Director HRM&A
+     *   - Executive Branch -> HOD
+     *   - Any other / unrecognized branch -> Director HRM&A (fallback)
+     */
+    private function resolveDirectorApprovedOfficer(int $branchId): array
+    {
+        $branchClass = self::classifyBranch($this->getBranchName($branchId));
+
+        switch ($branchClass) {
+            case 'ANALYTICAL_ADVISORY':
+                $role         = 'Deputy Government Chemist';
+                $scopeBranch  = null; // organisation-wide role
+                break;
+            case 'EXECUTIVE':
+                $role         = 'HOD';
+                $scopeBranch  = $branchId;
+                break;
+            case 'HRMA':
+            default:
+                $role         = 'Director HRM&A';
+                $scopeBranch  = null; // organisation-wide role
+                break;
+        }
+
+        $name = $this->findUserByRole([$role], $scopeBranch);
+
+        return $this->makeOfficer($role, $name);
+    }
+
+    /**
+     * HOD_APPROVED ("HOD Approved") responsibility.
+     *
+     * The Government Chemist acts directly as HOD for the Executive Branch;
+     * every other branch is approved by its own Government Chemist-designated
+     * HOD (equivalently, "Branch Head").
+     */
+    private function resolveHodApprovedOfficer(int $branchId): array
+    {
+        $branchClass = self::classifyBranch($this->getBranchName($branchId));
+
+        if ($branchClass === 'EXECUTIVE') {
+            $role = 'Government Chemist';
+            $name = $this->findUserByRole(['Government Chemist'], null);
+        } else {
+            $role = 'HOD';
+            $name = $this->findUserByRole(['HOD', 'Branch Head'], $branchId);
+        }
+
+        return $this->makeOfficer($role, $name);
+    }
+
+    /**
+     * QUOTE_REVIEW_PENDING ("Quote Review") and QUOTE_APPROVED ("Quote
+     * Selected") responsibility: the requestor together with the applicable
+     * branch head for the requestor's branch.
+     *
+     * @return array<int, array{role:string, name:?string}>
+     */
+    private function resolveRequestorAndBranchHead(array $request, int $branchId): array
+    {
+        $requestorId = (int) ($request['created_by'] ?? $request['requestor_id'] ?? $request['user_id'] ?? 0);
+        $requestorName = $requestorId > 0 ? $this->getUserFullNameById($requestorId) : null;
+
+        $branchHeadName = $this->findUserByRole(['HOD', 'Branch Head'], $branchId);
+
+        return [
+            $this->makeOfficer('Requestor', $requestorName),
+            $this->makeOfficer('Branch Head', $branchHeadName),
+        ];
+    }
+
+    /**
+     * RFQ_LETTER_AVAILABLE ("RFQ Letters") and PO_PENDING/PO_APPROVED
+     * ("Purchase Order") responsibility: Procurement Officer and Director of
+     * Procurement, organisation-wide roles.
+     *
+     * @return array<int, array{role:string, name:?string}>
+     */
+    private function resolveProcurementAndDirector(): array
+    {
+        return [
+            $this->makeOfficer('Procurement Officer', $this->findUserByRole(['Procurement Officer'], null)),
+            $this->makeOfficer('Director Procurement', $this->findUserByRole(['Director Procurement', 'Director of Procurement'], null)),
+        ];
     }
 
     /**
@@ -177,28 +365,28 @@ class WorkflowResponsibilityService
                     'action' => 'Review the request details and approve or decline.',
                 ],
                 'HOD_APPROVED' => [
+                    'role'   => 'HOD',
+                    'action' => 'Provide HOD-level approval for this request (the Government Chemist approves directly for the Executive Branch).',
+                ],
+                'FUNDS_VERIFIED' => [
                     'role'   => 'Finance Officer',
                     'action' => 'Verify that sufficient funds are available for this request.',
                 ],
-                'FUNDS_VERIFIED' => [
-                    'role'   => 'Director HRM&A',
-                    'action' => 'Review and approve this procurement request.',
-                ],
                 'DIRECTOR_APPROVED' => [
-                    'role'   => 'Deputy Government Chemist',
-                    'action' => 'Review and provide final approval for this request.',
+                    'role'   => 'Director HRM&A',
+                    'action' => 'Provide director-level approval for this request (Deputy Government Chemist for Analytical and Advisory Branch, Director HRM&A for HRM&A Branch, HOD for Executive Branch).',
                 ],
                 'GC_APPROVED' => [
                     'role'   => 'Procurement Officer',
                     'action' => 'Generate and issue the RFQ letter to shortlisted vendors.',
                 ],
                 'RFQ_LETTER_AVAILABLE' => [
-                    'role'   => 'Procurement Officer',
-                    'action' => 'Collect and record vendor quotations for this request.',
+                    'role'   => 'Procurement Officer / Director Procurement',
+                    'action' => 'Procurement Officer collects vendor quotations; Director of Procurement oversees the RFQ letters for this request.',
                 ],
                 'QUOTE_REVIEW_PENDING' => [
-                    'role'   => 'Branch Head / Procurement Officer',
-                    'action' => 'Review submitted quotations and select the preferred vendor.',
+                    'role'   => 'Requestor / Branch Head',
+                    'action' => 'Requestor and branch head review submitted quotations and select the preferred vendor.',
                 ],
                 'QUOTE_SPEC_REVIEW_PENDING' => [
                     'role'   => 'Procurement Officer',
@@ -213,8 +401,8 @@ class WorkflowResponsibilityService
                     'action' => 'Provide branch head approval for the selected quotation.',
                 ],
                 'QUOTE_APPROVED' => [
-                    'role'   => 'Finance Officer',
-                    'action' => 'Verify funds and create the financial commitment.',
+                    'role'   => 'Requestor / Branch Head',
+                    'action' => 'Requestor and branch head confirm the selected quotation.',
                 ],
                 'COMMITMENTS_PENDING' => [
                     'role'   => 'Finance Officer',
@@ -229,12 +417,12 @@ class WorkflowResponsibilityService
                     'action' => 'Resolve the funding issue and resubmit the commitment.',
                 ],
                 'PO_PENDING' => [
-                    'role'   => 'Accounts Officer',
-                    'action' => 'Upload and record the vendor invoice once goods are received.',
+                    'role'   => 'Procurement Officer / Director Procurement',
+                    'action' => 'Procurement Officer generates the purchase order; Director of Procurement provides approval.',
                 ],
                 'PO_APPROVED' => [
-                    'role'   => 'Accounts Officer',
-                    'action' => 'Upload and record the vendor invoice once goods are received.',
+                    'role'   => 'Procurement Officer / Director Procurement',
+                    'action' => 'Procurement Officer generates the purchase order; Director of Procurement provides approval.',
                 ],
                 'INVOICE_RECEIVED' => [
                     'role'   => 'Finance Officer',
@@ -379,12 +567,12 @@ class WorkflowResponsibilityService
                     'action' => 'Review and approve this service contract request.',
                 ],
                 'HOD_APPROVED' => [
-                    'role'   => 'Finance Officer',
-                    'action' => 'Verify that funds are available for this service contract.',
+                    'role'   => 'HOD',
+                    'action' => 'Provide HOD-level approval for this service contract (the Government Chemist approves directly for the Executive Branch).',
                 ],
                 'DIRECTOR_APPROVED' => [
-                    'role'   => 'Deputy Government Chemist',
-                    'action' => 'Provide final approval for this service contract.',
+                    'role'   => 'Director HRM&A',
+                    'action' => 'Provide director-level approval for this service contract (Deputy Government Chemist for Analytical and Advisory Branch, Director HRM&A for HRM&A Branch, HOD for Executive Branch).',
                 ],
                 'GC_APPROVED' => [
                     'role'   => 'Finance Officer',
@@ -392,7 +580,7 @@ class WorkflowResponsibilityService
                 ],
                 'FUNDS_VERIFIED' => [
                     'role'   => 'Finance Officer',
-                    'action' => 'Create the financial commitment for the service contract.',
+                    'action' => 'Verify that sufficient funds are available for this service contract.',
                 ],
                 'COMMITMENT_APPROVED' => [
                     'role'   => 'Finance Officer',
@@ -445,9 +633,9 @@ class WorkflowResponsibilityService
         // Applies to REGULAR and SERVICE_CONTRACT where each approval stage maps
         // to a distinct named role.
         $stageToRoles = [
-            'HOD_APPROVED'      => ['HOD', 'Branch Head'],
+            'HOD_APPROVED'      => ['HOD', 'Branch Head', 'Government Chemist'],
             'FUNDS_VERIFIED'    => ['Finance Officer'],
-            'DIRECTOR_APPROVED' => ['Director HRM&A'],
+            'DIRECTOR_APPROVED' => ['Director HRM&A', 'Deputy Government Chemist', 'HOD'],
             'GC_APPROVED'       => ['Deputy Government Chemist', 'Government Chemist'],
             'AWARDED'           => ['Deputy Government Chemist', 'Government Chemist'],
         ];
@@ -508,41 +696,161 @@ class WorkflowResponsibilityService
      */
     private function findRoleUser(string $role, int $branchId, string $currentUserRole): ?string
     {
-        if ($branchId === 0) {
-            return null;
-        }
-
         // Scope search: roles that are branch-specific should match on branch_id
         $branchScopedRoles = ['HOD', 'Head of Department', 'Branch Head', 'Finance Officer'];
 
-        if (in_array($role, $branchScopedRoles, true) && $branchId > 0) {
-            $stmt = $this->pdo->prepare(
-                'SELECT u.full_name
-                   FROM users u
-                   JOIN roles r ON r.id = u.role_id
-                  WHERE r.name = ?
-                    AND u.is_active = 1
-                    AND u.branch_id = ?
-                  LIMIT 2'
-            );
-            $stmt->execute([$role, $branchId]);
-        } else {
-            // Organisation-wide roles (Director, DGC, Procurement Officer, etc.)
-            $stmt = $this->pdo->prepare(
-                'SELECT u.full_name
-                   FROM users u
-                   JOIN roles r ON r.id = u.role_id
-                  WHERE r.name = ?
-                    AND u.is_active = 1
-                  LIMIT 2'
-            );
-            $stmt->execute([$role]);
+        $scopeBranch = (in_array($role, $branchScopedRoles, true) && $branchId > 0)
+            ? $branchId
+            : null;
+
+        return $this->findUserByRole([$role], $scopeBranch);
+    }
+
+    /**
+     * Find the unique active user holding one of the given (equivalent) role
+     * names, optionally scoped to a branch.  Returns the user's full name
+     * only when exactly one distinct active user matches; returns null when
+     * no user matches or when the match is ambiguous (more than one
+     * candidate) — callers must display the role alone in that case.
+     *
+     * Never returns e-mail or other sensitive fields.
+     *
+     * @param string[] $roleNames       One or more interchangeable role names
+     *                                  (e.g. ['HOD', 'Branch Head']).
+     * @param int|null  $branchId       Branch to scope the search to, or null
+     *                                  for organisation-wide roles.
+     */
+    private function findUserByRole(array $roleNames, ?int $branchId): ?string
+    {
+        $roleNames = array_values(array_unique(array_filter(
+            $roleNames,
+            static fn($r) => is_string($r) && $r !== ''
+        )));
+
+        if (empty($roleNames)) {
+            return null;
         }
 
-        $rows = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $placeholders = implode(',', array_fill(0, count($roleNames), '?'));
 
-        // Only return a name when there is exactly one match — ambiguous
-        // assignments fall back to role-based display.
-        return (count($rows) === 1) ? $rows[0] : null;
+        $sql = 'SELECT DISTINCT u.user_id, u.full_name
+                  FROM users u
+                  JOIN roles r ON r.id = u.role_id
+                 WHERE r.name IN (' . $placeholders . ')
+                   AND u.is_active = 1';
+        $params = $roleNames;
+
+        if ($branchId !== null && $branchId > 0) {
+            $sql .= ' AND u.branch_id = ?';
+            $params[] = $branchId;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            return null;
+        }
+
+        // Deduplicate by user_id in case multiple equivalent role rows match
+        // the same person.
+        $byUser = [];
+        foreach ($rows as $row) {
+            $byUser[$row['user_id']] = $row['full_name'];
+        }
+
+        // Only return a name when there is exactly one distinct match —
+        // ambiguous assignments fall back to role-based display.
+        return (count($byUser) === 1) ? (string) reset($byUser) : null;
+    }
+
+    /**
+     * Look up a user's full name by ID.  Returns null when the user does not
+     * exist or is inactive (a deleted/deactivated requestor, for example).
+     */
+    private function getUserFullNameById(int $userId): ?string
+    {
+        if ($userId <= 0) {
+            return null;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT full_name FROM users WHERE user_id = ? AND is_active = 1 LIMIT 1'
+            );
+            $stmt->execute([$userId]);
+            $name = $stmt->fetchColumn();
+        } catch (Exception $e) {
+            return null;
+        }
+
+        return ($name !== false) ? (string) $name : null;
+    }
+
+    /**
+     * Resolve a branch's display name from its ID.  Returns null when the
+     * branch cannot be found (e.g. a deleted branch or missing table in a
+     * lightweight test double), so callers gracefully fall back to the
+     * default classification.
+     */
+    private function getBranchName(int $branchId): ?string
+    {
+        if ($branchId <= 0) {
+            return null;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare('SELECT branch_name FROM branches WHERE branch_id = ? LIMIT 1');
+            $stmt->execute([$branchId]);
+            $name = $stmt->fetchColumn();
+        } catch (Exception $e) {
+            return null;
+        }
+
+        return ($name !== false) ? (string) $name : null;
+    }
+
+    /**
+     * Normalize a branch name for comparison: lower-cased, "&" expanded to
+     * "and", punctuation collapsed to single spaces, trimmed.  This makes
+     * comparisons resilient to capitalization, spacing, and the "HRM&A" /
+     * "HRMA" / "HRM and A" family of variants.
+     */
+    public static function normalizeBranchName(?string $name): string
+    {
+        $name = strtolower(trim((string) $name));
+        $name = str_replace('&', ' and ', $name);
+        $name = preg_replace('/[^a-z0-9]+/', ' ', $name) ?? '';
+        return trim(preg_replace('/\s+/', ' ', $name) ?? '');
+    }
+
+    /**
+     * Classify a branch name into one of the categories used by the
+     * branch-dependent responsibility rules.
+     *
+     * @return string One of: ANALYTICAL_ADVISORY | HRMA | EXECUTIVE | OTHER
+     */
+    public static function classifyBranch(?string $branchName): string
+    {
+        $normalized = self::normalizeBranchName($branchName);
+
+        if ($normalized === '') {
+            return 'OTHER';
+        }
+
+        if (str_contains($normalized, 'hrm')) {
+            return 'HRMA';
+        }
+
+        if (str_contains($normalized, 'analytical') && str_contains($normalized, 'advisory')) {
+            return 'ANALYTICAL_ADVISORY';
+        }
+
+        if (str_contains($normalized, 'executive')) {
+            return 'EXECUTIVE';
+        }
+
+        return 'OTHER';
     }
 }

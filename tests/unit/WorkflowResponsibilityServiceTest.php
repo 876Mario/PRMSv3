@@ -70,10 +70,53 @@ class WorkflowResponsibilityServiceTest extends PHPUnit\Framework\TestCase
                 approved_at DATETIME DEFAULT NULL
             )
         ");
+        $pdo->exec("
+            CREATE TABLE branches (
+                branch_id   INTEGER PRIMARY KEY,
+                branch_name TEXT NOT NULL,
+                is_active   INTEGER NOT NULL DEFAULT 1
+            )
+        ");
 
         // Seed a Finance Officer user in branch 1
         $pdo->exec("INSERT INTO roles VALUES (3, 'Finance Officer')");
         $pdo->exec("INSERT INTO users VALUES (10, 'Jane Smith', 'jane@example.com', 3, 1, 1)");
+
+        return $pdo;
+    }
+
+    /**
+     * Extended fixture used by the branch/officer-resolution test group:
+     * seeds branches 1 (Executive), 5 (HRM&A), 6 (Analytical & Advisory),
+     * 7 (Registry — an "other" branch), plus one user per relevant role.
+     */
+    private function makeFullPdo(): PDO
+    {
+        $pdo = $this->makePdo();
+
+        $pdo->exec("
+            INSERT INTO branches (branch_id, branch_name, is_active) VALUES
+                (1, 'Executive Branch', 1),
+                (5, 'HRM&A', 1),
+                (6, 'Analytical & Advisory', 1),
+                (7, 'Registry', 1)
+        ");
+
+        $pdo->exec("INSERT INTO roles VALUES (4, 'HOD')");
+        $pdo->exec("INSERT INTO roles VALUES (9, 'Deputy Government Chemist')");
+        $pdo->exec("INSERT INTO roles VALUES (10, 'Director HRM&A')");
+        $pdo->exec("INSERT INTO roles VALUES (2, 'Procurement Officer')");
+        $pdo->exec("INSERT INTO roles VALUES (11, 'Director Procurement')");
+        $pdo->exec("INSERT INTO roles VALUES (12, 'Requestor')");
+        $pdo->exec("INSERT INTO roles VALUES (13, 'Government Chemist')");
+
+        $pdo->exec("INSERT INTO users VALUES (20, 'Hazel HOD', 'hazel@example.com', 4, 1, 1)");        // HOD, Executive branch
+        $pdo->exec("INSERT INTO users VALUES (21, 'Rita RegistryHOD', 'rita@example.com', 4, 1, 7)");  // HOD, Registry branch
+        $pdo->exec("INSERT INTO users VALUES (22, 'Derek DGC', 'derek@example.com', 9, 1, null)");     // Deputy Government Chemist
+        $pdo->exec("INSERT INTO users VALUES (23, 'Diana Director', 'diana@example.com', 10, 1, null)"); // Director HRM&A
+        $pdo->exec("INSERT INTO users VALUES (24, 'Pat Procurement', 'pat@example.com', 2, 1, null)"); // Procurement Officer
+        $pdo->exec("INSERT INTO users VALUES (25, 'Debra DirProc', 'debra@example.com', 11, 1, null)"); // Director Procurement
+        $pdo->exec("INSERT INTO users VALUES (26, 'Rachel Requestor', 'rachel@example.com', 12, 1, 7)"); // Requestor, Registry branch
 
         return $pdo;
     }
@@ -107,6 +150,18 @@ class WorkflowResponsibilityServiceTest extends PHPUnit\Framework\TestCase
             'request_id'   => 10,
             'request_type' => 'REGULAR',
             'branch_id'    => 1,
+            'status'       => 'SUBMITTED',
+        ];
+    }
+
+    /** REGULAR request row with a specific branch and requestor id */
+    private function makeRequest(int $branchId, int $createdBy = 0): array
+    {
+        return [
+            'request_id'   => 100,
+            'request_type' => 'REGULAR',
+            'branch_id'    => $branchId,
+            'created_by'   => $createdBy,
             'status'       => 'SUBMITTED',
         ];
     }
@@ -204,8 +259,10 @@ class WorkflowResponsibilityServiceTest extends PHPUnit\Framework\TestCase
         );
         $this->assertTrue($resp['is_configured'], 'HOD_APPROVED must be configured for REGULAR');
         $this->assertNotEmpty($resp['responsible_role']);
-        $this->assertStringContainsStringIgnoringCase('Finance', $resp['responsible_role'],
-            'Finance Officer should own the FUNDS_VERIFIED gate after HOD approval');
+        // Branch 1 has no seeded branches table row in this minimal fixture,
+        // so it falls back to the generic HOD rule (not the Executive-branch
+        // Government Chemist special case).
+        $this->assertStringContainsStringIgnoringCase('HOD', $resp['responsible_role']);
     }
 
     public function testReimbursementSubmittedReturnsFinanceOfficer(): void
@@ -460,5 +517,293 @@ class WorkflowResponsibilityServiceTest extends PHPUnit\Framework\TestCase
                 "getPipelineResponsibility() must return an entry for stage {$stageKey}"
             );
         }
+    }
+
+    // =========================================================================
+    // Branch-aware / multi-officer responsibility rules
+    // (Director Approved, HOD Approved, Quote Review, Quote Selected,
+    //  Funds Verified, Commitment Form, Purchase Order, RFQ Letters, Invoice)
+    // =========================================================================
+
+    // -----------------------------------------------------------------------
+    // Director Approved: branch-dependent officer
+    // -----------------------------------------------------------------------
+
+    public function testDirectorApprovedAnalyticalAdvisoryBranchIsDeputyGovernmentChemist(): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        $resp = $svc->getStageResponsibility($this->makeRequest(6), 'DIRECTOR_APPROVED', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertSame('Deputy Government Chemist', $resp['responsible_role']);
+        $this->assertSame('Derek DGC', $resp['assigned_user']);
+    }
+
+    public function testDirectorApprovedHrmaBranchIsDirectorHrma(): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        $resp = $svc->getStageResponsibility($this->makeRequest(5), 'DIRECTOR_APPROVED', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertSame('Director HRM&A', $resp['responsible_role']);
+        $this->assertSame('Diana Director', $resp['assigned_user']);
+    }
+
+    public function testDirectorApprovedExecutiveBranchIsHod(): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        $resp = $svc->getStageResponsibility($this->makeRequest(1), 'DIRECTOR_APPROVED', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertSame('HOD', $resp['responsible_role']);
+        $this->assertSame('Hazel HOD', $resp['assigned_user']);
+    }
+
+    public function testDirectorApprovedUnknownBranchFallsBackToDirectorHrma(): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        // Branch 7 ("Registry") is not one of the three named branches.
+        $resp = $svc->getStageResponsibility($this->makeRequest(7), 'DIRECTOR_APPROVED', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertSame('Director HRM&A', $resp['responsible_role']);
+        $this->assertSame('Diana Director', $resp['assigned_user']);
+    }
+
+    public function testDirectorApprovedHandlesHrmaVariantSpellings(): void
+    {
+        $pdo = $this->makeFullPdo();
+        // Replace branch 5's name with a differently-formatted variant.
+        $pdo->exec("UPDATE branches SET branch_name = 'HRMA' WHERE branch_id = 5");
+        $svc  = new WorkflowResponsibilityService($pdo);
+        $resp = $svc->getStageResponsibility($this->makeRequest(5), 'DIRECTOR_APPROVED', [], 'Admin');
+        $this->assertSame('Director HRM&A', $resp['responsible_role']);
+
+        $pdo2 = $this->makeFullPdo();
+        $pdo2->exec("UPDATE branches SET branch_name = '  hrm & a branch ' WHERE branch_id = 5");
+        $svc2  = new WorkflowResponsibilityService($pdo2);
+        $resp2 = $svc2->getStageResponsibility($this->makeRequest(5), 'DIRECTOR_APPROVED', [], 'Admin');
+        $this->assertSame('Director HRM&A', $resp2['responsible_role']);
+    }
+
+    public function testDirectorApprovedHandlesAnalyticalAdvisoryVariantSpellings(): void
+    {
+        $pdo = $this->makeFullPdo();
+        $pdo->exec("UPDATE branches SET branch_name = 'Analytical and Advisory Branch' WHERE branch_id = 6");
+        $svc  = new WorkflowResponsibilityService($pdo);
+        $resp = $svc->getStageResponsibility($this->makeRequest(6), 'DIRECTOR_APPROVED', [], 'Admin');
+        $this->assertSame('Deputy Government Chemist', $resp['responsible_role']);
+    }
+
+    public function testDirectorApprovedMissingBranchNameFallsBackGracefully(): void
+    {
+        // Branch id that has no row at all in the branches table.
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        $resp = $svc->getStageResponsibility($this->makeRequest(999), 'DIRECTOR_APPROVED', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertSame('Director HRM&A', $resp['responsible_role']);
+        // Director HRM&A is an organisation-wide role, so the unique
+        // Director HRM&A user is still resolved even though branch 999
+        // doesn't exist — only branch-scoped roles depend on a valid branch.
+        $this->assertSame('Diana Director', $resp['assigned_user']);
+    }
+
+    public function testDirectorApprovedMissingAssignedUserHandledGracefully(): void
+    {
+        $pdo = $this->makeFullPdo();
+        $pdo->exec("DELETE FROM users WHERE user_id = 23"); // remove Director HRM&A user
+        $svc  = new WorkflowResponsibilityService($pdo);
+        $resp = $svc->getStageResponsibility($this->makeRequest(5), 'DIRECTOR_APPROVED', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured'], 'Role must remain configured even when no user matches');
+        $this->assertSame('Director HRM&A', $resp['responsible_role']);
+        $this->assertNull($resp['assigned_user']);
+        $this->assertSame([], $resp['assigned_users']);
+    }
+
+    // -----------------------------------------------------------------------
+    // HOD Approved: Government Chemist for Executive Branch, HOD elsewhere
+    // -----------------------------------------------------------------------
+
+    public function testHodApprovedExecutiveBranchIsGovernmentChemist(): void
+    {
+        $pdo = $this->makeFullPdo();
+        $pdo->exec("INSERT INTO users VALUES (30, 'Greg GC', 'greg@example.com', 13, 1, null)");
+        $svc  = new WorkflowResponsibilityService($pdo);
+        $resp = $svc->getStageResponsibility($this->makeRequest(1), 'HOD_APPROVED', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertSame('Government Chemist', $resp['responsible_role']);
+        $this->assertSame('Greg GC', $resp['assigned_user']);
+    }
+
+    public function testHodApprovedNonExecutiveBranchIsHod(): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        $resp = $svc->getStageResponsibility($this->makeRequest(7), 'HOD_APPROVED', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertSame('HOD', $resp['responsible_role']);
+        $this->assertSame('Rita RegistryHOD', $resp['assigned_user']);
+    }
+
+    public function testHodApprovedMissingGovernmentChemistUserHandledGracefully(): void
+    {
+        // No 'Government Chemist' user seeded in this fixture.
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        $resp = $svc->getStageResponsibility($this->makeRequest(1), 'HOD_APPROVED', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertSame('Government Chemist', $resp['responsible_role']);
+        $this->assertNull($resp['assigned_user']);
+    }
+
+    // -----------------------------------------------------------------------
+    // Quote Review / Quote Selected: Requestor + Branch Head
+    // -----------------------------------------------------------------------
+
+    /** @dataProvider quoteStageProvider */
+    public function testQuoteStageReturnsRequestorAndBranchHead(string $stage): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        $resp = $svc->getStageResponsibility($this->makeRequest(7, 26), $stage, [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertStringContainsString('Requestor', $resp['responsible_role']);
+        $this->assertStringContainsString('Branch Head', $resp['responsible_role']);
+        $this->assertContains('Rachel Requestor', $resp['assigned_users']);
+        $this->assertContains('Rita RegistryHOD', $resp['assigned_users']);
+        $this->assertCount(2, $resp['assigned_users'], 'Requestor and branch head must not be duplicated');
+    }
+
+    public static function quoteStageProvider(): array
+    {
+        return [
+            'Quote Review'   => ['QUOTE_REVIEW_PENDING'],
+            'Quote Selected' => ['QUOTE_APPROVED'],
+        ];
+    }
+
+    public function testQuoteStageDedupesWhenRequestorIsAlsoBranchHead(): void
+    {
+        $pdo = $this->makeFullPdo();
+        // Rachel Requestor (26) is also the HOD for branch 7 in this scenario:
+        // update the HOD user's name to match the requestor's, simulating the
+        // same physical person filling both roles.
+        $pdo->exec("UPDATE users SET full_name = 'Rachel Requestor' WHERE user_id = 21");
+
+        $svc  = new WorkflowResponsibilityService($pdo);
+        $resp = $svc->getStageResponsibility($this->makeRequest(7, 26), 'QUOTE_REVIEW_PENDING', [], 'Admin');
+
+        $this->assertCount(1, $resp['assigned_users'], 'Duplicate officer names must not be repeated');
+        $this->assertSame('Rachel Requestor', $resp['assigned_user']);
+    }
+
+    public function testQuoteStageMissingRequestorHandledGracefully(): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        // No created_by supplied (0) — requestor cannot be resolved.
+        $resp = $svc->getStageResponsibility($this->makeRequest(7, 0), 'QUOTE_APPROVED', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertStringContainsString('Requestor', $resp['responsible_role']);
+        $this->assertStringContainsString('Branch Head', $resp['responsible_role']);
+        // Only the branch head could be resolved to a name.
+        $this->assertSame(['Rita RegistryHOD'], $resp['assigned_users']);
+    }
+
+    public function testQuoteStageMissingBranchHeadHandledGracefully(): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        // Branch 6 (Analytical & Advisory) has no seeded HOD/Branch Head user.
+        $resp = $svc->getStageResponsibility($this->makeRequest(6, 26), 'QUOTE_REVIEW_PENDING', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertSame(['Rachel Requestor'], $resp['assigned_users']);
+    }
+
+    // -----------------------------------------------------------------------
+    // Funds Verified / Commitment Form / Invoice: Finance Officer
+    // -----------------------------------------------------------------------
+
+    /** @dataProvider financeOfficerStageProvider */
+    public function testFinanceOfficerOwnsStage(string $stage): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        $resp = $svc->getStageResponsibility($this->makeRequest(1), $stage, [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertSame('Finance Officer', $resp['responsible_role']);
+    }
+
+    public static function financeOfficerStageProvider(): array
+    {
+        return [
+            'Funds Verified'  => ['FUNDS_VERIFIED'],
+            'Commitment Form' => ['COMMITMENTS_PENDING'],
+            'Invoice'         => ['INVOICE_RECEIVED'],
+        ];
+    }
+
+    // -----------------------------------------------------------------------
+    // Purchase Order / RFQ Letters: Procurement Officer + Director Procurement
+    // -----------------------------------------------------------------------
+
+    /** @dataProvider procurementDirectorStageProvider */
+    public function testProcurementAndDirectorOwnStage(string $stage): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makeFullPdo());
+        $resp = $svc->getStageResponsibility($this->makeRequest(1), $stage, [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertStringContainsString('Procurement Officer', $resp['responsible_role']);
+        $this->assertStringContainsString('Director Procurement', $resp['responsible_role']);
+        $this->assertContains('Pat Procurement', $resp['assigned_users']);
+        $this->assertContains('Debra DirProc', $resp['assigned_users']);
+        $this->assertCount(2, $resp['assigned_users']);
+    }
+
+    public static function procurementDirectorStageProvider(): array
+    {
+        return [
+            'RFQ Letters'    => ['RFQ_LETTER_AVAILABLE'],
+            'Purchase Order' => ['PO_PENDING'],
+        ];
+    }
+
+    public function testProcurementAndDirectorHandleMissingDirectorGracefully(): void
+    {
+        $pdo = $this->makeFullPdo();
+        $pdo->exec("DELETE FROM users WHERE user_id = 25"); // remove Director Procurement
+        $svc  = new WorkflowResponsibilityService($pdo);
+        $resp = $svc->getStageResponsibility($this->makeRequest(1), 'PO_PENDING', [], 'Admin');
+
+        $this->assertTrue($resp['is_configured']);
+        $this->assertStringContainsString('Director Procurement', $resp['responsible_role']);
+        $this->assertSame(['Pat Procurement'], $resp['assigned_users']);
+    }
+
+    // -----------------------------------------------------------------------
+    // Branch name normalization
+    // -----------------------------------------------------------------------
+
+    public function testClassifyBranchHandlesKnownVariants(): void
+    {
+        $this->assertSame('HRMA', WorkflowResponsibilityService::classifyBranch('HRM&A'));
+        $this->assertSame('HRMA', WorkflowResponsibilityService::classifyBranch('HRMA'));
+        $this->assertSame('HRMA', WorkflowResponsibilityService::classifyBranch('  hrm & a  Branch '));
+        $this->assertSame(
+            'ANALYTICAL_ADVISORY',
+            WorkflowResponsibilityService::classifyBranch('Analytical & Advisory')
+        );
+        $this->assertSame(
+            'ANALYTICAL_ADVISORY',
+            WorkflowResponsibilityService::classifyBranch('analytical and advisory branch')
+        );
+        $this->assertSame('EXECUTIVE', WorkflowResponsibilityService::classifyBranch('Executive Branch'));
+        $this->assertSame('OTHER', WorkflowResponsibilityService::classifyBranch('Registry'));
+        $this->assertSame('OTHER', WorkflowResponsibilityService::classifyBranch(null));
+        $this->assertSame('OTHER', WorkflowResponsibilityService::classifyBranch(''));
     }
 }
