@@ -198,14 +198,14 @@ class WorkflowResponsibilityServiceTest extends PHPUnit\Framework\TestCase
         $svc  = new WorkflowResponsibilityService($this->makePdo());
         $resp = $svc->getStageResponsibility(
             $this->makeRegularRequest(),
-            'HOD_APPROVED',
+            'FUNDS_VERIFIED',
             [],
             'Admin'
         );
-        $this->assertTrue($resp['is_configured'], 'HOD_APPROVED must be configured for REGULAR');
+        $this->assertTrue($resp['is_configured'], 'FUNDS_VERIFIED must be configured for REGULAR');
         $this->assertNotEmpty($resp['responsible_role']);
         $this->assertStringContainsStringIgnoringCase('Finance', $resp['responsible_role'],
-            'Finance Officer should own the FUNDS_VERIFIED gate after HOD approval');
+            'Finance Officer should own the FUNDS_VERIFIED gate');
     }
 
     public function testReimbursementSubmittedReturnsFinanceOfficer(): void

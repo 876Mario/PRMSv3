@@ -148,18 +148,39 @@ function buildResponsibilityTooltip(
     $source = htmlspecialchars($responsibility['source_type']        ?? '');
     $action = htmlspecialchars($responsibility['action_description'] ?? '');
 
-    if ($role !== '') {
-        $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Responsible role:</span> ' . $role . '</div>';
-    }
+    /** @var array<int, array{role: string, name: string|null}> $officers */
+    $officers = $responsibility['responsible_officers'] ?? [];
 
-    // Assigned user (pending stage)
-    $assignedUser = $responsibility['assigned_user'] ?? null;
-    if ($assignedUser !== null && $stateText !== 'Completed') {
-        $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Assigned to:</span> '
-               . htmlspecialchars($assignedUser) . '</div>';
+    if ($stateText !== 'Completed' && !empty($officers)) {
+        // Render each responsible officer as its own row (role + resolved
+        // name, or a clear "not yet assigned" fallback when the holder of
+        // that role cannot be uniquely identified). Rows already arrive
+        // de-duplicated from WorkflowResponsibilityService.
+        foreach ($officers as $officer) {
+            $officerRole = htmlspecialchars((string)($officer['role'] ?? ''));
+            $officerName = $officer['name'] ?? null;
+
+            if ($officerRole === '') {
+                continue;
+            }
+
+            $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">' . $officerRole . ':</span> '
+                   . ($officerName !== null ? htmlspecialchars($officerName) : '<em>Not yet assigned</em>')
+                   . '</div>';
+        }
+    } elseif ($role !== '') {
+        $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Responsible role:</span> ' . $role . '</div>';
+
+        // Assigned user (pending stage)
+        $assignedUser = $responsibility['assigned_user'] ?? null;
+        if ($assignedUser !== null && $stateText !== 'Completed') {
+            $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Assigned to:</span> '
+                   . htmlspecialchars($assignedUser) . '</div>';
+        }
     }
 
     // Source type label (skip for simple 'Assigned by job title' when no named user)
+    $assignedUser = $responsibility['assigned_user'] ?? null;
     if ($source !== '' && !($source === 'Assigned by job title' && $assignedUser === null)) {
         $html .= '<div class="wf-tooltip-row wf-tooltip-source">' . $source . '</div>';
     }
