@@ -144,24 +144,44 @@ function buildResponsibilityTooltip(
         return $html;
     }
 
-    $role   = htmlspecialchars($responsibility['responsible_role']   ?? '');
-    $source = htmlspecialchars($responsibility['source_type']        ?? '');
-    $action = htmlspecialchars($responsibility['action_description'] ?? '');
+    $role             = htmlspecialchars($responsibility['responsible_role']   ?? '');
+    $source           = htmlspecialchars($responsibility['source_type']        ?? '');
+    $action           = htmlspecialchars($responsibility['action_description'] ?? '');
+    $responsibleRoles = $responsibility['responsible_roles'] ?? [];
 
-    if ($role !== '') {
-        $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Responsible role:</span> ' . $role . '</div>';
-    }
+    if (!empty($responsibleRoles)) {
+        // Multi-officer display
+        $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Responsible officers:</span></div>';
+        foreach ($responsibleRoles as $officer) {
+            $officerRole = htmlspecialchars($officer['role'] ?? '');
+            $officerUser = ($officer['user'] !== null)
+                ? htmlspecialchars((string) $officer['user'])
+                : null;
+            if ($officerUser !== null && $officerUser !== '') {
+                $html .= '<div class="wf-tooltip-row wf-tooltip-officer">'
+                       . $officerUser
+                       . ' <span class="wf-tooltip-role-tag">(' . $officerRole . ')</span></div>';
+            } elseif ($officerRole !== '') {
+                $html .= '<div class="wf-tooltip-row wf-tooltip-officer">' . $officerRole . '</div>';
+            }
+        }
+    } else {
+        // Single-officer display (existing behaviour)
+        if ($role !== '') {
+            $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Responsible officer:</span> ' . $role . '</div>';
+        }
 
-    // Assigned user (pending stage)
-    $assignedUser = $responsibility['assigned_user'] ?? null;
-    if ($assignedUser !== null && $stateText !== 'Completed') {
-        $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Assigned to:</span> '
-               . htmlspecialchars($assignedUser) . '</div>';
-    }
+        // Assigned user (pending stage)
+        $assignedUser = $responsibility['assigned_user'] ?? null;
+        if ($assignedUser !== null && $stateText !== 'Completed') {
+            $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Assigned to:</span> '
+                   . htmlspecialchars($assignedUser) . '</div>';
+        }
 
-    // Source type label (skip for simple 'Assigned by job title' when no named user)
-    if ($source !== '' && !($source === 'Assigned by job title' && $assignedUser === null)) {
-        $html .= '<div class="wf-tooltip-row wf-tooltip-source">' . $source . '</div>';
+        // Source type label (skip for simple 'Assigned by job title' when no named user)
+        if ($source !== '' && !($source === 'Assigned by job title' && $assignedUser === null)) {
+            $html .= '<div class="wf-tooltip-row wf-tooltip-source">' . $source . '</div>';
+        }
     }
 
     // Completer info (completed stage)
