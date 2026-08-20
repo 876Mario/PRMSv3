@@ -3933,3 +3933,332 @@ HTML;
 }
 
 ?>
+
+/**
+ * RFQ Vendor-Award Workflow Notifications
+ * ======================================
+ */
+
+/**
+ * Notify Branch Head that RFQ quote approval is needed
+ * @param int $rfqId RFQ ID
+ * @param int $quoteId Quote ID
+ * @param string $vendorName Vendor name
+ * @param float $quoteAmount Quote amount
+ * @return bool Success status
+ */
+function notifyBranchHeadQuoteApprovalNeeded(int $rfqId, int $quoteId, string $vendorName, float $quoteAmount): bool {
+    try {
+        global $pdo;
+        
+        // Get RFQ details
+        $stmt = $pdo->prepare("
+            SELECT r.*, pr.request_number, pr.description, pr.branch_id,
+                   u.display_name as requestor_name
+            FROM rfqs r
+            JOIN procurement_requests pr ON r.request_id = pr.request_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE r.rfq_id = ?
+        ");
+        $stmt->execute([$rfqId]);
+        $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$rfq) {
+            return false;
+        }
+        
+        // Get branch head for this branch
+        $branchHead = resolveBranchApprover($rfq['branch_id'], 'BRANCH_HEAD_APPROVAL');
+        
+        if (!$branchHead || !$branchHead['user_id']) {
+            error_log("Cannot resolve branch head for branch {$rfq['branch_id']}");
+            return false;
+        }
+        
+        // Get branch head user details
+        $stmt = $pdo->prepare("SELECT email, display_name FROM users WHERE user_id = ?");
+        $stmt->execute([$branchHead['user_id']]);
+        $branchHeadUser = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Create in-app notification
+        $notificationService = new NotificationService($pdo);
+        $notificationService->createNotification($branchHead['user_id'], NotificationService::TYPE_APPROVAL_NEEDED, [
+            'title'          => "RFQ Quote Approval Required: {$rfq['request_number']}",
+            'body'           => "{$vendorName} - Amount: $" . number_format($quoteAmount, 2),
+            'request_id'     => $rfq['request_id'],
+            'request_ref'    => $rfq['request_number'],
+            'action_url'     => "/rfq/branch_head_approve.php?id=" . urlencode((string)$rfqId),
+            'stage'          => 'Branch Head Quote Approval',
+            'priority'       => 'high',
+        ]);
+        
+        // Send email notification
+        if (!empty($branchHeadUser['email'])) {
+            $subject = "Action Required: RFQ Quote Approval - {$rfq['request_number']}";
+            $html = "
+                <p>Dear {$branchHeadUser['display_name']},</p>
+                <p>A quotation has been evaluated and meets specifications. Your final approval is required before vendor award.</p>
+                <p><strong>RFQ Details:</strong></p>
+                <ul>
+                    <li>Request Number: {$rfq['request_number']}</li>
+                    <li>Description: {$rfq['description']}</li>
+                    <li>Selected Vendor: {$vendorName}</li>
+                    <li>Quote Amount: $" . number_format($quoteAmount, 2) . "</li>
+                    <li>Requestor: {$rfq['requestor_name']}</li>
+                </ul>
+                <p><a href='{$_SERVER['HTTP_HOST']}/rfq/branch_head_approve.php?id={$rfqId}' style='padding:10px 20px;background-color:#007bff;color:white;text-decoration:none;border-radius:4px;display:inline-block;'>Review & Approve Quote</a></p>
+                <p>This approval is required for the RFQ to proceed to vendor award.</p>
+            ";
+            sendMail($branchHeadUser['email'], $subject, $html);
+        }
+        
+        return true;
+        
+    } catch (Exception $e) {
+        error_log("Error notifying branch head: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Resolve branch approver based on branch routing rules
+ * @param int $branchId Branch ID
+ * @param string $stage Workflow stage
+ * @return array|null Approver info with user_id, role, routing_reason
+ */
+function resolveBranchApprover(int $branchId, string $stage): ?array {
+    try {
+        global $pdo;
+        
+        // Get branch info
+        $stmt = $pdo->prepare("SELECT dept_name FROM departments WHERE dept_id = ?");
+        $stmt->execute([$branchId]);
+        $branch = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$branch) {
+            return null;
+        }
+        
+        $branchName = strtolower($branch['dept_name']);
+        
+        // Apply routing rules
+        if (strpos($branchName, 'analytical') !== false || strpos($branchName, 'advisory') !== false) {
+            return findUserByRoleForNotification('Deputy Government Chemist', 'Branch routing: Analytical & Advisory');
+        }
+        
+        if (strpos($branchName, 'hrm') !== false || strpos($branchName, 'hr&a') !== false) {
+            return findUserByRoleForNotification('Director HRM&A', 'Branch routing: HRM&A');
+        }
+        
+        if (strpos($branchName, 'executive') !== false) {
+            return findUserByRoleForNotification('Government Chemist', 'Branch routing: Executive - HOD');
+        }
+        
+        // Default to Director HRM&A
+        return findUserByRoleForNotification('Director HRM&A', 'Branch routing: Default');
+        
+    } catch (Exception $e) {
+        error_log("Error resolving branch approver: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Find user by role for notification purposes
+ * @param string $roleName Role name
+ * @param string $reason Routing reason
+ * @return array|null User info with user_id, role, routing_reason
+ */
+function findUserByRoleForNotification(string $roleName, string $reason = ''): ?array {
+    try {
+        global $pdo;
+        
+        $stmt = $pdo->prepare("
+            SELECT u.user_id, r.name
+            FROM users u
+            JOIN roles r ON u.role_id = r.id
+            WHERE r.name = ? AND u.is_active = 1
+            LIMIT 1
+        ");
+        $stmt->execute([$roleName]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$user) {
+            return null;
+        }
+        
+        return [
+            'user_id'        => $user['user_id'],
+            'role'           => $user['name'],
+            'routing_reason' => $reason
+        ];
+        
+    } catch (Exception $e) {
+        error_log("Error finding user by role: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Notify Finance Officer that funds verification is needed
+ * @param int $rfqId RFQ ID
+ * @param string $vendorName Vendor name
+ * @param float $quoteAmount Quote amount
+ * @return bool Success status
+ */
+function notifyFinanceFundsVerificationNeeded(int $rfqId, string $vendorName, float $quoteAmount): bool {
+    try {
+        global $pdo;
+        
+        // Get RFQ details
+        $stmt = $pdo->prepare("
+            SELECT r.*, pr.request_number, pr.description,
+                   u.display_name as requestor_name
+            FROM rfqs r
+            JOIN procurement_requests pr ON r.request_id = pr.request_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE r.rfq_id = ?
+        ");
+        $stmt->execute([$rfqId]);
+        $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$rfq) {
+            return false;
+        }
+        
+        // Get all Finance Officers
+        $stmt = $pdo->prepare("
+            SELECT u.user_id, u.email, u.display_name
+            FROM users u
+            JOIN roles r ON u.role_id = r.id
+            WHERE r.name = 'Finance Officer' AND u.is_active = 1
+        ");
+        $stmt->execute();
+        $financeOfficers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        if (empty($financeOfficers)) {
+            return false;
+        }
+        
+        $notificationService = new NotificationService($pdo);
+        $subject = "Action Required: RFQ Funds Verification - {$rfq['request_number']}";
+        
+        foreach ($financeOfficers as $officer) {
+            // Create in-app notification
+            $notificationService->createNotification($officer['user_id'], NotificationService::TYPE_APPROVAL_NEEDED, [
+                'title'          => "RFQ Funds Verification Required: {$rfq['request_number']}",
+                'body'           => "{$vendorName} - Quote: $" . number_format($quoteAmount, 2),
+                'request_id'     => $rfq['request_id'],
+                'request_ref'    => $rfq['request_number'],
+                'action_url'     => "/rfq/funds_verify.php?id=" . urlencode((string)$rfqId),
+                'stage'          => 'Funds Verification',
+                'priority'       => 'high',
+            ]);
+            
+            // Send email
+            if (!empty($officer['email'])) {
+                $html = "
+                    <p>Dear {$officer['display_name']},</p>
+                    <p>Branch Head approval has been received for an RFQ quotation. Please verify fund availability before proceeding.</p>
+                    <p><strong>RFQ Details:</strong></p>
+                    <ul>
+                        <li>Request Number: {$rfq['request_number']}</li>
+                        <li>Description: {$rfq['description']}</li>
+                        <li>Selected Vendor: {$vendorName}</li>
+                        <li>Quote Amount: $" . number_format($quoteAmount, 2) . "</li>
+                    </ul>
+                    <p><a href='{$_SERVER['HTTP_HOST']}/rfq/funds_verify.php?id={$rfqId}' style='padding:10px 20px;background-color:#007bff;color:white;text-decoration:none;border-radius:4px;display:inline-block;'>Verify Funds</a></p>
+                ";
+                sendMail($officer['email'], $subject, $html);
+            }
+        }
+        
+        return true;
+        
+    } catch (Exception $e) {
+        error_log("Error notifying finance officer: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Notify Finance Officer that commitment form is needed
+ * @param int $rfqId RFQ ID
+ * @param float $quoteAmount Quote amount for commitment
+ * @return bool Success status
+ */
+function notifyFinanceCommitmentFormNeeded(int $rfqId, float $quoteAmount): bool {
+    try {
+        global $pdo;
+        
+        // Get RFQ details
+        $stmt = $pdo->prepare("
+            SELECT r.*, pr.request_number, pr.description,
+                   u.display_name as requestor_name
+            FROM rfqs r
+            JOIN procurement_requests pr ON r.request_id = pr.request_id
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            WHERE r.rfq_id = ?
+        ");
+        $stmt->execute([$rfqId]);
+        $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$rfq) {
+            return false;
+        }
+        
+        // Get all Finance Officers
+        $stmt = $pdo->prepare("
+            SELECT u.user_id, u.email, u.display_name
+            FROM users u
+            JOIN roles r ON u.role_id = r.id
+            WHERE r.name = 'Finance Officer' AND u.is_active = 1
+        ");
+        $stmt->execute();
+        $financeOfficers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        if (empty($financeOfficers)) {
+            return false;
+        }
+        
+        $notificationService = new NotificationService($pdo);
+        $subject = "Action Required: Prepare Commitment Form - {$rfq['request_number']}";
+        
+        foreach ($financeOfficers as $officer) {
+            // Create in-app notification
+            $notificationService->createNotification($officer['user_id'], NotificationService::TYPE_APPROVAL_NEEDED, [
+                'title'          => "Commitment Form Required: {$rfq['request_number']}",
+                'body'           => "Amount: $" . number_format($quoteAmount, 2),
+                'request_id'     => $rfq['request_id'],
+                'request_ref'    => $rfq['request_number'],
+                'action_url'     => "/rfq/commitment_manage.php?id=" . urlencode((string)$rfqId),
+                'stage'          => 'Commitment Form Preparation',
+                'priority'       => 'medium',
+            ]);
+            
+            // Send email
+            if (!empty($officer['email'])) {
+                $html = "
+                    <p>Dear {$officer['display_name']},</p>
+                    <p>Fund verification has been completed. Please prepare the commitment form for this RFQ.</p>
+                    <p><strong>RFQ Details:</strong></p>
+                    <ul>
+                        <li>Request Number: {$rfq['request_number']}</li>
+                        <li>Description: {$rfq['description']}</li>
+                        <li>Commitment Amount: $" . number_format($quoteAmount, 2) . "</li>
+                    </ul>
+                    <p><a href='{$_SERVER['HTTP_HOST']}/rfq/commitment_manage.php?id={$rfqId}' style='padding:10px 20px;background-color:#007bff;color:white;text-decoration:none;border-radius:4px;display:inline-block;'>Prepare Commitment</a></p>
+                ";
+                sendMail($officer['email'], $subject, $html);
+            }
+        }
+        
+        return true;
+        
+    } catch (Exception $e) {
+        error_log("Error notifying commitment form needed: " . $e->getMessage());
+        return false;
+    }
+}
+
+?>
