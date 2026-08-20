@@ -96,16 +96,19 @@ class RFQQuoteApprovalService {
         try {
             $this->pdo->beginTransaction();
 
-            // Update RFQ spec review status
+            // Update RFQ spec review status and lock quotes
             $stmt = $this->pdo->prepare("
                 UPDATE rfqs
                 SET spec_review_status = 'APPROVED',
                     spec_reviewer_id = ?,
                     spec_reviewed_at = NOW(),
-                    spec_review_comments = ?
+                    spec_review_comments = ?,
+                    quotes_locked = 1,
+                    quotes_locked_at = NOW(),
+                    quotes_locked_by = ?
                 WHERE rfq_id = ?
             ");
-            $stmt->execute([$this->user_id, $comments, $rfq_id]);
+            $stmt->execute([$this->user_id, $comments, $this->user_id, $rfq_id]);
 
             // Log in approval audit trail
             $this->logApproval($rfq_id, 'SPEC_REVIEW', 'APPROVED', $comments);
@@ -139,10 +142,25 @@ class RFQQuoteApprovalService {
                 SET spec_review_status = 'REJECTED',
                     spec_reviewer_id = ?,
                     spec_reviewed_at = NOW(),
-                    spec_review_comments = ?
+                    spec_review_comments = ?,
+                    quotes_locked = 0,
+                    quotes_locked_at = NULL,
+                    quotes_locked_by = NULL
                 WHERE rfq_id = ?
             ");
             $stmt->execute([$this->user_id, $reason, $rfq_id]);
+
+            // Return the procurement request to RFQ_LETTER_AVAILABLE for resolution
+            $stmt = $this->pdo->prepare("SELECT request_id FROM rfqs WHERE rfq_id = ?");
+            $stmt->execute([$rfq_id]);
+            $requestId = $stmt->fetchColumn();
+            if ($requestId) {
+                $this->pdo->prepare("
+                    UPDATE procurement_requests
+                    SET status = 'RFQ_LETTER_AVAILABLE'
+                    WHERE request_id = ?
+                ")->execute([$requestId]);
+            }
 
             // Log in approval audit trail
             $this->logApproval($rfq_id, 'SPEC_REVIEW', 'REJECTED', $reason);
@@ -171,7 +189,7 @@ class RFQQuoteApprovalService {
             $this->pdo->beginTransaction();
 
             // Verify spec review is approved
-            $stmt = $this->pdo->prepare("SELECT spec_review_status FROM rfqs WHERE rfq_id = ?");
+            $stmt = $this->pdo->prepare("SELECT spec_review_status, request_id FROM rfqs WHERE rfq_id = ?");
             $stmt->execute([$rfq_id]);
             $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -189,6 +207,23 @@ class RFQQuoteApprovalService {
                 WHERE rfq_id = ?
             ");
             $stmt->execute([$this->user_id, $comments, $rfq_id]);
+
+            // Transition procurement request status to QUOTE_APPROVED (ready for PO/commitment)
+            $stmt = $this->pdo->prepare("
+                UPDATE procurement_requests
+                SET status = 'QUOTE_APPROVED'
+                WHERE request_id = ? AND status IN ('QUOTE_REVIEW_PENDING', 'QUOTE_SPEC_REVIEW_PENDING', 'QUOTE_SPEC_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING')
+            ");
+            $stmt->execute([$rfq['request_id']]);
+
+            // Mark the selected quotation as approved
+            $stmt = $this->pdo->prepare("
+                UPDATE rfq_quotes q
+                JOIN rfq_vendors rv ON q.rfq_vendor_id = rv.rfq_vendor_id
+                SET q.review_status = 'MEETS_REQUIREMENTS'
+                WHERE rv.rfq_id = ? AND q.is_selected = 1
+            ");
+            $stmt->execute([$rfq_id]);
 
             // Log in approval audit trail
             $this->logApproval($rfq_id, 'BRANCH_HEAD_APPROVAL', 'APPROVED', $comments);
@@ -254,13 +289,16 @@ class RFQQuoteApprovalService {
             $this->pdo->beginTransaction();
 
             if ($stage === 'SPEC_REVIEW') {
-                // Reset spec review
+                // Reset spec review and unlock quotes
                 $stmt = $this->pdo->prepare("
                     UPDATE rfqs
                     SET spec_review_status = 'REJECTED',
                         spec_reviewer_id = ?,
                         spec_reviewed_at = NOW(),
-                        spec_review_comments = ?
+                        spec_review_comments = ?,
+                        quotes_locked = 0,
+                        quotes_locked_at = NULL,
+                        quotes_locked_by = NULL
                     WHERE rfq_id = ?
                 ");
                 $stmt->execute([$this->user_id, $clarification_needed, $rfq_id]);
@@ -268,13 +306,16 @@ class RFQQuoteApprovalService {
                 $action = 'RETURNED_FOR_CLARIFICATION';
                 $this->sendRequestorNotification($rfq_id, 'spec_review_returned', $clarification_needed);
             } elseif ($stage === 'BRANCH_HEAD_APPROVAL') {
-                // Reset branch head approval
+                // Reset branch head approval and unlock quotes
                 $stmt = $this->pdo->prepare("
                     UPDATE rfqs
                     SET branch_head_approval_status = 'REJECTED',
                         branch_head_approver_id = ?,
                         branch_head_approved_at = NOW(),
-                        branch_head_comments = ?
+                        branch_head_comments = ?,
+                        quotes_locked = 0,
+                        quotes_locked_at = NULL,
+                        quotes_locked_by = NULL
                     WHERE rfq_id = ?
                 ");
                 $stmt->execute([$this->user_id, $clarification_needed, $rfq_id]);
@@ -349,6 +390,41 @@ class RFQQuoteApprovalService {
         return $status && 
                $status['spec_review_status'] === 'APPROVED' && 
                $status['branch_head_approval_status'] === 'APPROVED';
+    }
+
+    /**
+     * Reset approval stages when the selected vendor/quotation changes.
+     * Per business rules: any change to the selected vendor or quotation after
+     * requestor approval must restart the requestor-review and Branch Head-approval stages.
+     * @param int $rfq_id RFQ ID
+     * @return bool Success
+     */
+    public function resetApprovalStages($rfq_id) {
+        try {
+            $stmt = $this->pdo->prepare("
+                UPDATE rfqs
+                SET spec_review_status = 'PENDING',
+                    spec_reviewer_id = NULL,
+                    spec_reviewed_at = NULL,
+                    spec_review_comments = NULL,
+                    branch_head_approval_status = 'PENDING',
+                    branch_head_approver_id = NULL,
+                    branch_head_approved_at = NULL,
+                    branch_head_comments = NULL,
+                    quotes_locked = 0,
+                    quotes_locked_at = NULL,
+                    quotes_locked_by = NULL
+                WHERE rfq_id = ?
+            ");
+            $stmt->execute([$rfq_id]);
+
+            // Log the reset in audit trail
+            $this->logApproval($rfq_id, 'SPEC_REVIEW', 'RETURNED_FOR_CLARIFICATION', 'Approval stages reset due to quotation change');
+            return true;
+        } catch (Exception $e) {
+            error_log("Error resetting approval stages for RFQ {$rfq_id}: " . $e->getMessage());
+            return false;
+        }
     }
 
     /**

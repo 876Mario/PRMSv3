@@ -71,8 +71,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     
-    if (strlen($review_comments) < 5 && strlen($review_comments) > 0) {
-        pop('Comments must be at least 5 characters or empty', '/rfq/review_quote.php?quote_id=' . $quote_id . '&rfq_id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+    // Comments are mandatory when "Does Not Meet Specifications" is selected
+    if ($review_status === 'DOES_NOT_MEET' && strlen($review_comments) < 5) {
+        pop('Comments are required when selecting "Does Not Meet Specifications" (minimum 5 characters)', '/rfq/review_quote.php?quote_id=' . $quote_id . '&rfq_id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+        exit;
+    }
+    
+    if ($review_status === 'MEETS_REQUIREMENTS' && strlen($review_comments) > 0 && strlen($review_comments) < 5) {
+        pop('Comments must be at least 5 characters', '/rfq/review_quote.php?quote_id=' . $quote_id . '&rfq_id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');
         exit;
     }
     

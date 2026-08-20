@@ -52,6 +52,38 @@ if (!$assignment && !hasPermission('admin_override_approvals')) {
     exit;
 }
 
+// Prevent requestor from approving their own RFQ as Branch Head
+$stmtRequestor = $pdo->prepare("
+    SELECT pr.created_by FROM rfqs r
+    JOIN procurement_requests pr ON r.request_id = pr.request_id
+    WHERE r.rfq_id = ?
+");
+$stmtRequestor->execute([$rfq_id]);
+$requestCreator = $stmtRequestor->fetchColumn();
+if ((int)$requestCreator === (int)$_SESSION['user_id']) {
+    pop('You cannot approve your own RFQ as Branch Head. A different Branch Head must provide approval.', '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
+// Prevent approval of cancelled or expired RFQs
+$stmtStatus = $pdo->prepare("
+    SELECT pr.status FROM rfqs r
+    JOIN procurement_requests pr ON r.request_id = pr.request_id
+    WHERE r.rfq_id = ?
+");
+$stmtStatus->execute([$rfq_id]);
+$requestStatus = $stmtStatus->fetchColumn();
+if (in_array($requestStatus, ['CANCELLED', 'EXPIRED', 'COMPLETED'])) {
+    pop('Cannot approve a cancelled, expired, or completed RFQ.', '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
+// Prevent duplicate approval (already approved)
+if ($rfq['branch_head_approval_status'] === 'APPROVED') {
+    pop('This RFQ has already been approved by a Branch Head.', '/rfq/view.php?id='.$rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
 // Verify that spec review has been approved (prerequisite)
 if ($rfq['spec_review_status'] !== 'APPROVED') {
     pop(

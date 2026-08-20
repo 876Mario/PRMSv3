@@ -49,6 +49,40 @@ if (!$assignment && !hasPermission('admin_override_approvals')) {
     exit;
 }
 
+// Prevent approval of cancelled or expired RFQs
+$stmtReqStatus = $pdo->prepare("
+    SELECT pr.status FROM procurement_requests pr
+    JOIN rfqs r ON r.request_id = pr.request_id
+    WHERE r.rfq_id = ?
+");
+$stmtReqStatus->execute([$rfq_id]);
+$reqStatus = $stmtReqStatus->fetchColumn();
+if (in_array($reqStatus, ['CANCELLED', 'EXPIRED', 'COMPLETED'])) {
+    pop('Cannot review a cancelled, expired, or completed RFQ.', '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
+// Prevent duplicate approval - check if already approved
+$approvalCheckStatus = $pdo->prepare("SELECT spec_review_status FROM rfqs WHERE rfq_id = ?");
+$approvalCheckStatus->execute([$rfq_id]);
+$currentSpecStatus = $approvalCheckStatus->fetchColumn();
+if ($currentSpecStatus === 'APPROVED') {
+    pop('This RFQ specification review has already been approved.', '/rfq/view.php?id='.$rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
+// Prevent review if no valid quotations have been recorded
+$stmtQuoteCheck = $pdo->prepare("
+    SELECT COUNT(*) FROM rfq_quotes q
+    JOIN rfq_vendors rv ON q.rfq_vendor_id = rv.rfq_vendor_id
+    WHERE rv.rfq_id = ?
+");
+$stmtQuoteCheck->execute([$rfq_id]);
+if ((int)$stmtQuoteCheck->fetchColumn() === 0) {
+    pop('Cannot proceed: at least one valid quotation must be recorded before specification review.', '/rfq/view.php?id='.$rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
 // Fetch all quotes for this RFQ
 $stmt = $pdo->prepare("
     SELECT 

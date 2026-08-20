@@ -32,11 +32,23 @@ if ($vendor['rfq_status'] === 'AWARDED') {
 
 $rfq_id = $vendor['rfq_id'];
 
+// Check if quotes are locked during approval stage
+$stmtLock = $pdo->prepare("SELECT quotes_locked, spec_review_status, branch_head_approval_status FROM rfqs WHERE rfq_id = ?");
+$stmtLock->execute([$rfq_id]);
+$rfqLockStatus = $stmtLock->fetch(PDO::FETCH_ASSOC);
+if ($rfqLockStatus && $rfqLockStatus['quotes_locked']) {
+    pop('Quotes are locked while approval is in progress. The workflow must be formally returned before changes can be made.', '/rfq/view.php?id='.$rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $amount = $_POST['quote_amount'] ?? 0;
     $gct    = $_POST['gct_amount'] ?? 0;
     $quoteCurrency = in_array(($_POST['quote_currency'] ?? ''), ['JMD', 'USD']) ? $_POST['quote_currency'] : 'JMD';
+    $deliveryTimeline = trim($_POST['delivery_timeline'] ?? '');
+    $vendorSpecifications = trim($_POST['vendor_specifications'] ?? '');
+    $validityDate = !empty($_POST['validity_date']) ? $_POST['validity_date'] : null;
     $quoteUsdRate = null;
     if ($quoteCurrency === 'USD') {
         $rateStmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'usd_to_jmd_rate'");
@@ -84,13 +96,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
     $stmt = $pdo->prepare("
         INSERT INTO rfq_quotes 
-        (rfq_vendor_id, quote_amount, gct_amount, validity_days, quote_file, currency, usd_rate)
-        VALUES (?, ?, ?, 30, ?, ?, ?)
+        (rfq_vendor_id, quote_amount, gct_amount, validity_days, validity_date, delivery_timeline, vendor_specifications, quote_file, currency, usd_rate)
+        VALUES (?, ?, ?, 30, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $vendor_id,
         $amount,
         $gct,
+        $validityDate,
+        $deliveryTimeline ?: null,
+        $vendorSpecifications ?: null,
         $fileName,
         $quoteCurrency,
         $quoteUsdRate
@@ -164,20 +179,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // Stage 2 (Final Approval) is performed by the assigned Branch Head.
-        // Without an assignment here, rfq_branch_head_approvers stays empty and
-        // the RFQ can never be routed to/approved by a Branch Head. Auto-assign a
-        // default Branch Head approver (HOD / Director HRM&A) so the workflow can
-        // proceed once the spec review is approved. Admins can reassign this via
-        // the assign_rfq_branch_head_approver permission.
-        $stmtDefaultBranchHead = $pdo->prepare("
-            SELECT u.user_id, r.name as role_name FROM users u
-            INNER JOIN roles r ON u.role_id = r.id
-            WHERE r.name IN ('HOD', 'Director HRM&A')
-            AND u.is_active = 1
-            ORDER BY FIELD(r.name, 'HOD', 'Director HRM&A')
-            LIMIT 1
+        // Determine the Branch Head from the RFQ's branch/organizational unit.
+        // This ensures the correct Branch Head is assigned based on organizational
+        // structure, not a generic role lookup.
+        $stmtBranchHead = $pdo->prepare("
+            SELECT b.branch_head_id as user_id, r.name as role_name
+            FROM rfqs rf
+            JOIN procurement_requests pr ON rf.request_id = pr.request_id
+            JOIN branches b ON pr.branch_id = b.branch_id
+            JOIN users u ON b.branch_head_id = u.user_id AND u.is_active = 1
+            LEFT JOIN roles r ON u.role_id = r.id
+            WHERE rf.rfq_id = ? AND b.branch_head_id IS NOT NULL
         ");
-        $stmtDefaultBranchHead->execute();
+        $stmtBranchHead->execute([$rfq_id]);
+        $defaultBranchHead = $stmtBranchHead->fetch(PDO::FETCH_ASSOC);
+
+        // Fallback: If no branch_head_id set on the branch, find HOD/Director
+        if (!$defaultBranchHead) {
+            $stmtDefaultBranchHead = $pdo->prepare("
+                SELECT u.user_id, r.name as role_name FROM users u
+                INNER JOIN roles r ON u.role_id = r.id
+                WHERE r.name IN ('HOD', 'Director HRM&A')
+                AND u.is_active = 1
+                ORDER BY FIELD(r.name, 'HOD', 'Director HRM&A')
+                LIMIT 1
+            ");
+            $stmtDefaultBranchHead->execute();
+            $defaultBranchHead = $stmtDefaultBranchHead->fetch(PDO::FETCH_ASSOC);
+        }
         $defaultBranchHead = $stmtDefaultBranchHead->fetch(PDO::FETCH_ASSOC);
 
         if ($defaultBranchHead) {
@@ -314,10 +343,38 @@ $vendorName = htmlspecialchars($vendor['vendor_name'] ?? '');
                         </div>
                     </div>
 
+                    <!-- Additional Quote Fields -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-sm-6">
+                            <label class="form-label fw-semibold small">
+                                <i class="bi bi-calendar-check me-1 text-info"></i>Validity Date
+                            </label>
+                            <input type="date" name="validity_date" class="form-control"
+                                   min="<?= date('Y-m-d') ?>" placeholder="Quote expiry date">
+                            <small class="form-text text-muted">When does this quote expire?</small>
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label fw-semibold small">
+                                <i class="bi bi-truck me-1 text-primary"></i>Delivery Timeline
+                            </label>
+                            <input type="text" name="delivery_timeline" class="form-control"
+                                   placeholder="e.g. 2-3 weeks" maxlength="255">
+                            <small class="form-text text-muted">Vendor's proposed delivery time</small>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold small">
+                            <i class="bi bi-list-check me-1 text-success"></i>Vendor Specifications / Notes
+                        </label>
+                        <textarea name="vendor_specifications" class="form-control" rows="3"
+                                  placeholder="Any specifications, conditions, or notes provided by the vendor..."></textarea>
+                    </div>
+
                     <!-- Info box -->
                     <div class="alert alert-light border rounded-3 py-2 px-3 mb-4">
                         <i class="bi bi-info-circle text-primary me-1"></i>
-                        <small class="text-muted">Quotation will remain valid for <strong>30 days</strong> from the date of submission.</small>
+                        <small class="text-muted">Quotation will remain valid for <strong>30 days</strong> from the date of submission unless a different validity date is specified.</small>
                     </div>
 
                     <div class="d-flex gap-2">
