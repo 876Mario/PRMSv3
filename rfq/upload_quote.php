@@ -207,7 +207,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmtDefaultBranchHead->execute();
             $defaultBranchHead = $stmtDefaultBranchHead->fetch(PDO::FETCH_ASSOC);
         }
-        $defaultBranchHead = $stmtDefaultBranchHead->fetch(PDO::FETCH_ASSOC);
 
         if ($defaultBranchHead) {
             try {
