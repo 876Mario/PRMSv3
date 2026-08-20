@@ -147,34 +147,36 @@ function buildResponsibilityTooltip(
     $role   = htmlspecialchars($responsibility['responsible_role']   ?? '');
     $source = htmlspecialchars($responsibility['source_type']        ?? '');
     $action = htmlspecialchars($responsibility['action_description'] ?? '');
-
-    if ($role !== '') {
-        $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Responsible role:</span> ' . $role . '</div>';
-    }
-
-    // Multiple named officers (e.g. Requestor + Branch Head, or Procurement
-    // Officer + Director of Procurement). Rendered one row per officer so
-    // duplicates already removed by the service are never shown twice.
-    $officers     = $responsibility['assigned_officers'] ?? [];
     $assignedUser = $responsibility['assigned_user'] ?? null;
 
-    if (!empty($officers) && $stateText !== 'Completed') {
+    /** @var array<int, array{role: string, name: string|null}> $officers */
+    $officers = $responsibility['responsible_officers'] ?? [];
+
+    if ($stateText !== 'Completed' && !empty($officers)) {
+        // Render each responsible officer as its own row (role + resolved
+        // name, or a clear "not yet assigned" fallback when the holder of
+        // that role cannot be uniquely identified). Rows already arrive
+        // de-duplicated from WorkflowResponsibilityService.
         foreach ($officers as $officer) {
-            $officerRole = htmlspecialchars($officer['role'] ?? '');
+            $officerRole = htmlspecialchars((string)($officer['role'] ?? ''));
             $officerName = $officer['name'] ?? null;
 
-            if ($officerName !== null) {
-                $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">' . $officerRole . ':</span> '
-                       . htmlspecialchars($officerName) . '</div>';
-            } else {
-                $html .= '<div class="wf-tooltip-row wf-tooltip-fallback"><span class="wf-tooltip-key">'
-                       . $officerRole . ':</span> Not yet assigned</div>';
+            if ($officerRole === '') {
+                continue;
             }
+
+            $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">' . $officerRole . ':</span> '
+                   . ($officerName !== null ? htmlspecialchars($officerName) : '<em>Not yet assigned</em>')
+                   . '</div>';
         }
-    } elseif ($assignedUser !== null && $stateText !== 'Completed') {
-        // Assigned user (pending stage, single-officer legacy path)
-        $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Assigned to:</span> '
-               . htmlspecialchars($assignedUser) . '</div>';
+    } elseif ($role !== '') {
+        $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Responsible role:</span> ' . $role . '</div>';
+
+        // Assigned user (pending stage)
+        if ($assignedUser !== null && $stateText !== 'Completed') {
+            $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Assigned to:</span> '
+                   . htmlspecialchars($assignedUser) . '</div>';
+        }
     }
 
     // Source type label (skip for simple 'Assigned by job title' when no named user)
