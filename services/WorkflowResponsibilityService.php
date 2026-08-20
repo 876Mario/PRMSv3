@@ -21,9 +21,54 @@ class WorkflowResponsibilityService
 {
     private PDO $pdo;
 
+    /** Normalized (compacted, lower-case, no punctuation) branch name keys. */
+    private const BRANCH_ANALYTICAL_ADVISORY = 'analyticaladvisory';
+    private const BRANCH_HRMA                = 'hrma';
+    private const BRANCH_EXECUTIVE           = 'executive';
+
     public function __construct(PDO $pdo)
     {
         $this->pdo = $pdo;
+    }
+
+    // -----------------------------------------------------------------------
+    // Branch-name normalization
+    // -----------------------------------------------------------------------
+
+    /**
+     * Normalize a branch name into a compact comparison key so that
+     * capitalization, spacing, "&" vs "and", and a trailing "Branch" word
+     * do not cause a mismatch. Examples that all normalize to the same key:
+     *   "Analytical & Advisory", "Analytical and Advisory Branch"
+     *   "HRM&A", "HRMA", "HRM & A Branch"
+     *   "Executive Branch", "Executive"
+     */
+    public static function normalizeBranchName(?string $name): string
+    {
+        $lower = strtolower(trim((string) $name));
+        preg_match_all('/[a-z0-9]+/', $lower, $matches);
+        $tokens = array_filter($matches[0], static fn(string $t) => !in_array($t, ['and', 'branch'], true));
+
+        return implode('', $tokens);
+    }
+
+    /**
+     * Resolve the responsible role for the DIRECTOR_APPROVED stage based on
+     * the requestor's branch. Unrecognized/unknown branches fall back to
+     * Director HRM&A per the SOP default.
+     */
+    public static function resolveDirectorApprovedRole(?string $branchName): string
+    {
+        switch (self::normalizeBranchName($branchName)) {
+            case self::BRANCH_ANALYTICAL_ADVISORY:
+                return 'Deputy Government Chemist';
+            case self::BRANCH_HRMA:
+                return 'Director HRM&A';
+            case self::BRANCH_EXECUTIVE:
+                return 'HOD';
+            default:
+                return 'Director HRM&A';
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -46,6 +91,7 @@ class WorkflowResponsibilityService
      * @return array{
      *   responsible_role:    string,
      *   assigned_user:       string|null,
+     *   assigned_officers:   array<int, array{role:string, name:?string}>,
      *   source_type:         string,
      *   action_description:  string,
      *   completer_name:      string|null,
@@ -72,6 +118,7 @@ class WorkflowResponsibilityService
         $result = [
             'responsible_role'   => '',
             'assigned_user'      => null,
+            'assigned_officers'  => [],
             'source_type'        => 'Awaiting system assignment',
             'action_description' => '',
             'completer_name'     => null,
@@ -86,6 +133,22 @@ class WorkflowResponsibilityService
             $result['source_type']        = 'Assigned by job title';
         }
 
+        // Some stages have a responsible-officer set that cannot be expressed
+        // as a single static role (it depends on the requestor's branch, or
+        // it legitimately involves more than one officer). Resolve those here.
+        $specs = $this->getDynamicOfficerSpecs($workflowType, $stageStatus, $branchId);
+
+        if (!empty($specs)) {
+            $result['is_configured'] = true;
+
+            $officers = $this->resolveOfficers($specs, $request, $branchId, $currentUserRole);
+            $result['assigned_officers'] = $officers;
+            $result['responsible_role']  = implode(', ', array_values(array_unique(array_column($officers, 'role'))));
+
+            $names = array_values(array_filter(array_column($officers, 'name'), static fn($n) => $n !== null));
+            $result['assigned_user'] = $names !== [] ? implode(', ', array_unique($names)) : null;
+        }
+
         // For completed stages: resolve who actually completed it
         if ($isCompleted) {
             $completerData = $this->resolveCompleter(
@@ -98,8 +161,9 @@ class WorkflowResponsibilityService
                 $result['completer_name'] = $completerData['name'];
                 $result['completer_role'] = $completerData['role'];
             }
-        } elseif ($result['is_configured']) {
-            // For pending stages, try to find the unique role-holder in this branch
+        } elseif ($result['is_configured'] && empty($specs)) {
+            // For pending stages with a single static role, try to find the
+            // unique role-holder in this branch.
             $assignedUser = $this->findRoleUser(
                 $result['responsible_role'],
                 $branchId,
@@ -109,9 +173,126 @@ class WorkflowResponsibilityService
                 $result['assigned_user'] = $assignedUser;
                 $result['source_type']   = 'Assigned to';
             }
+        } elseif (!empty($specs)) {
+            $result['source_type'] = $result['assigned_user'] !== null ? 'Assigned to' : 'Assigned by job title';
         }
 
         return $result;
+    }
+
+    // -----------------------------------------------------------------------
+    // Dynamic (branch-based / multi-officer) responsibility resolution
+    // -----------------------------------------------------------------------
+
+    /**
+     * Return the officer "specs" that must be resolved dynamically for a
+     * given workflow type + stage, instead of using a fixed static role.
+     *
+     * Each spec may contain:
+     *   role           Role name to search for (roles.name)
+     *   label          Display label (defaults to role)
+     *   requestor      true => resolve via request['created_by'] instead of role lookup
+     *   branch_scoped  true => restrict the role lookup to the request's branch
+     *   fallback_role  Role to try when the primary role/user cannot be found
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function getDynamicOfficerSpecs(string $workflowType, string $stageStatus, int $branchId): array
+    {
+        $isProcurementLike = in_array($workflowType, ['REGULAR', 'SERVICE_CONTRACT'], true);
+
+        if ($stageStatus === 'DIRECTOR_APPROVED' && $isProcurementLike) {
+            $branchName = $this->getBranchName($branchId);
+            $role       = self::resolveDirectorApprovedRole($branchName);
+
+            return [[
+                'role'          => $role,
+                'branch_scoped' => ($role === 'HOD'),
+            ]];
+        }
+
+        if ($stageStatus === 'HOD_APPROVED' && $isProcurementLike) {
+            // Normally the branch's own HOD approves. Branches without a
+            // dedicated HOD (e.g. the Government Chemist's own department)
+            // fall back to the Government Chemist (Deputy Government Chemist).
+            return [[
+                'role'          => 'HOD',
+                'label'         => 'HOD',
+                'branch_scoped' => true,
+                'fallback_role' => 'Deputy Government Chemist',
+            ]];
+        }
+
+        if ($stageStatus === 'FUNDS_VERIFIED' && $isProcurementLike) {
+            return [[
+                'role'          => 'Finance Officer',
+                'branch_scoped' => true,
+            ]];
+        }
+
+        if (in_array($stageStatus, ['QUOTE_REVIEW_PENDING', 'QUOTE_APPROVED'], true) && $workflowType === 'REGULAR') {
+            return [
+                ['role' => 'Requestor', 'requestor' => true],
+                ['role' => 'HOD', 'label' => 'Branch Head', 'branch_scoped' => true],
+            ];
+        }
+
+        if (in_array($stageStatus, ['RFQ_LETTER_AVAILABLE', 'PO_PENDING'], true) && $workflowType === 'REGULAR') {
+            return [
+                ['role' => 'Procurement Officer', 'branch_scoped' => false],
+                ['role' => 'Director Procurement', 'label' => 'Director of Procurement', 'branch_scoped' => false],
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * Resolve a list of officer specs into concrete (role label, user name)
+     * pairs, de-duplicating officers who resolve to the same person.
+     *
+     * @param array<int, array<string, mixed>> $specs
+     * @return array<int, array{role:string, name:?string}>
+     */
+    private function resolveOfficers(array $specs, array $request, int $branchId, string $currentUserRole): array
+    {
+        $officers = [];
+        $seenNames = [];
+
+        foreach ($specs as $spec) {
+            $label = $spec['label'] ?? $spec['role'];
+            $name  = null;
+
+            if (!empty($spec['requestor'])) {
+                $requestorId = (int) ($request['created_by'] ?? $request['requested_by'] ?? 0);
+                $name = $requestorId > 0 ? $this->getUserNameById($requestorId) : null;
+            } else {
+                $branchScoped = (bool) ($spec['branch_scoped'] ?? false);
+                $name = $this->findRoleUser($spec['role'], $branchId, $currentUserRole, $branchScoped);
+
+                if ($name === null && !empty($spec['fallback_role'])) {
+                    $fallbackName = $this->findRoleUser($spec['fallback_role'], 0, $currentUserRole, false);
+                    if ($fallbackName !== null) {
+                        $label = $spec['fallback_role'];
+                        $name  = $fallbackName;
+                    }
+                }
+            }
+
+            // Avoid showing the same person twice under two different labels
+            // (e.g. a requestor who is also the branch head).
+            if ($name !== null) {
+                $key = strtolower($name);
+                if (isset($seenNames[$key])) {
+                    continue;
+                }
+                $seenNames[$key] = true;
+            }
+
+            $officers[] = ['role' => $label, 'name' => $name];
+        }
+
+        return $officers;
     }
 
     /**
@@ -177,15 +358,23 @@ class WorkflowResponsibilityService
                     'action' => 'Review the request details and approve or decline.',
                 ],
                 'HOD_APPROVED' => [
+                    // Approved by the branch's HOD; falls back to the Government
+                    // Chemist for branches (e.g. the GC's own department) that
+                    // have no dedicated HOD. Resolved dynamically per branch.
+                    'role'   => 'HOD',
+                    'action' => 'Review the request as branch head and approve or decline.',
+                ],
+                'FUNDS_VERIFIED' => [
                     'role'   => 'Finance Officer',
                     'action' => 'Verify that sufficient funds are available for this request.',
                 ],
-                'FUNDS_VERIFIED' => [
-                    'role'   => 'Director HRM&A',
-                    'action' => 'Review and approve this procurement request.',
-                ],
                 'DIRECTOR_APPROVED' => [
-                    'role'   => 'Deputy Government Chemist',
+                    // Final approver depends on the requestor's branch:
+                    // Analytical & Advisory -> Deputy Government Chemist,
+                    // HRM&A -> Director HRM&A, Executive -> HOD,
+                    // any other branch -> Director HRM&A (default). Resolved
+                    // dynamically per branch.
+                    'role'   => 'Director HRM&A',
                     'action' => 'Review and provide final approval for this request.',
                 ],
                 'GC_APPROVED' => [
@@ -193,11 +382,11 @@ class WorkflowResponsibilityService
                     'action' => 'Generate and issue the RFQ letter to shortlisted vendors.',
                 ],
                 'RFQ_LETTER_AVAILABLE' => [
-                    'role'   => 'Procurement Officer',
-                    'action' => 'Collect and record vendor quotations for this request.',
+                    'role'   => 'Procurement Officer, Director of Procurement',
+                    'action' => 'Generate and issue the RFQ letter to shortlisted vendors.',
                 ],
                 'QUOTE_REVIEW_PENDING' => [
-                    'role'   => 'Branch Head / Procurement Officer',
+                    'role'   => 'Requestor, Branch Head',
                     'action' => 'Review submitted quotations and select the preferred vendor.',
                 ],
                 'QUOTE_SPEC_REVIEW_PENDING' => [
@@ -213,8 +402,8 @@ class WorkflowResponsibilityService
                     'action' => 'Provide branch head approval for the selected quotation.',
                 ],
                 'QUOTE_APPROVED' => [
-                    'role'   => 'Finance Officer',
-                    'action' => 'Verify funds and create the financial commitment.',
+                    'role'   => 'Requestor, Branch Head',
+                    'action' => 'Quote selected; awaiting finance to verify funds and create the commitment.',
                 ],
                 'COMMITMENTS_PENDING' => [
                     'role'   => 'Finance Officer',
@@ -229,8 +418,8 @@ class WorkflowResponsibilityService
                     'action' => 'Resolve the funding issue and resubmit the commitment.',
                 ],
                 'PO_PENDING' => [
-                    'role'   => 'Accounts Officer',
-                    'action' => 'Upload and record the vendor invoice once goods are received.',
+                    'role'   => 'Procurement Officer, Director of Procurement',
+                    'action' => 'Generate and issue the purchase order to the awarded vendor.',
                 ],
                 'PO_APPROVED' => [
                     'role'   => 'Accounts Officer',
@@ -379,11 +568,16 @@ class WorkflowResponsibilityService
                     'action' => 'Review and approve this service contract request.',
                 ],
                 'HOD_APPROVED' => [
-                    'role'   => 'Finance Officer',
-                    'action' => 'Verify that funds are available for this service contract.',
+                    // Approved by the branch's HOD; falls back to the Government
+                    // Chemist for branches without a dedicated HOD. Resolved
+                    // dynamically per branch.
+                    'role'   => 'HOD',
+                    'action' => 'Review the request as branch head and approve or decline.',
                 ],
                 'DIRECTOR_APPROVED' => [
-                    'role'   => 'Deputy Government Chemist',
+                    // Final approver depends on the requestor's branch (see
+                    // REGULAR workflow docblock above). Resolved dynamically.
+                    'role'   => 'Director HRM&A',
                     'action' => 'Provide final approval for this service contract.',
                 ],
                 'GC_APPROVED' => [
@@ -502,20 +696,25 @@ class WorkflowResponsibilityService
      * Authorization: role-holder lookup is permitted for any authenticated
      * viewer of the request.  E-mail addresses are never returned.
      *
-     * @param string $role            Job title / role name from the static map
-     * @param int    $branchId        Branch to scope the search
-     * @param string $currentUserRole Viewer role (reserved for future stricter gates)
+     * @param string    $role            Job title / role name from the static map
+     * @param int       $branchId        Branch to scope the search
+     * @param string    $currentUserRole Viewer role (reserved for future stricter gates)
+     * @param bool|null $branchScoped    true = restrict to $branchId, false = organisation-wide,
+     *                                   null = auto-detect from a legacy fixed role list
      */
-    private function findRoleUser(string $role, int $branchId, string $currentUserRole): ?string
+    private function findRoleUser(string $role, int $branchId, string $currentUserRole, ?bool $branchScoped = null): ?string
     {
-        if ($branchId === 0) {
-            return null;
+        if ($branchScoped === null) {
+            // Legacy auto-detection, kept for callers that do not specify scope explicitly.
+            $branchScopedRoles = ['HOD', 'Head of Department', 'Branch Head', 'Finance Officer'];
+            $branchScoped = in_array($role, $branchScopedRoles, true);
         }
 
-        // Scope search: roles that are branch-specific should match on branch_id
-        $branchScopedRoles = ['HOD', 'Head of Department', 'Branch Head', 'Finance Officer'];
+        if ($branchScoped) {
+            if ($branchId <= 0) {
+                return null;
+            }
 
-        if (in_array($role, $branchScopedRoles, true) && $branchId > 0) {
             $stmt = $this->pdo->prepare(
                 'SELECT u.full_name
                    FROM users u
@@ -544,5 +743,49 @@ class WorkflowResponsibilityService
         // Only return a name when there is exactly one match — ambiguous
         // assignments fall back to role-based display.
         return (count($rows) === 1) ? $rows[0] : null;
+    }
+
+    /**
+     * Resolve a user's full name by user_id. Returns null when the user does
+     * not exist, is inactive, or the id is invalid. No e-mail is returned.
+     */
+    private function getUserNameById(int $userId): ?string
+    {
+        if ($userId <= 0) {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT full_name FROM users WHERE user_id = ? AND is_active = 1 LIMIT 1'
+        );
+        $stmt->execute([$userId]);
+        $name = $stmt->fetchColumn();
+
+        return $name !== false ? (string) $name : null;
+    }
+
+    /**
+     * Resolve a branch's display name by branch_id. Returns null when the
+     * branch cannot be found or the branches table is unavailable.
+     */
+    private function getBranchName(int $branchId): ?string
+    {
+        if ($branchId <= 0) {
+            return null;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT branch_name FROM branches WHERE branch_id = ? LIMIT 1'
+            );
+            $stmt->execute([$branchId]);
+            $name = $stmt->fetchColumn();
+
+            return $name !== false ? (string) $name : null;
+        } catch (\Throwable $e) {
+            // Table may not exist in some contexts (e.g. tests); resolve to
+            // null so callers fall back to the default responsibility.
+            return null;
+        }
     }
 }
