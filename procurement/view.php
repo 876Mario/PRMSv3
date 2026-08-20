@@ -462,6 +462,18 @@ $badgeMap = [
 ];
 $badge = $badgeMap[$status] ?? ['secondary', 'bi-question-circle'];
 
+// Workflow responsibility tooltips
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/WorkflowResponsibilityService.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/workflow_pipeline.php';
+$wfRespService = new WorkflowResponsibilityService($pdo);
+$wfResponsibilities = $wfRespService->getPipelineResponsibility(
+    $pipelineStages,
+    $request,
+    $current,
+    $approvals,
+    $role
+);
+
 ?>
 
 <!-- ═══════════════════════════════════════════════════════
@@ -766,39 +778,18 @@ if (!empty($quickActions)): ?>
             </div>
         </div>
 
-        <div class="row g-2">
+        <div class="row g-2 pipeline-stages-row">
             <?php foreach ($pipelineStages as $stageKey => $stageInfo):
                 $idx = array_search($stageKey, $stageKeys);
-                $isCompleted = ($currentIdx !== false && $idx < $currentIdx);
-                $isCurrent   = ($stageKey === $current);
-                $isPending   = !$isCompleted && !$isCurrent;
-
-                if ($isCompleted) {
-                    $borderClass = 'border-success bg-success bg-opacity-10';
-                    $circleClass = 'bg-success text-white';
-                    $circleContent = '<i class="bi bi-check-lg"></i>';
-                } elseif ($isCurrent) {
-                    $borderClass = 'border-primary bg-primary bg-opacity-10';
-                    $circleClass = 'bg-primary text-white';
-                    $circleContent = '<i class="bi bi-arrow-right"></i>';
-                } else {
-                    $borderClass = 'border-light bg-light';
-                    $circleClass = 'bg-secondary bg-opacity-25 text-muted';
-                    $circleContent = ($idx + 1);
-                }
-            ?>
-            <div class="col-lg col-md-3 col-sm-4 col-6">
-                <div class="text-center p-2 rounded-3 border <?= $borderClass ?> h-100">
-                    <div class="rounded-circle d-inline-flex align-items-center justify-content-center fw-bold <?= $circleClass ?> mb-1"
-                         style="width: 32px; height: 32px; font-size: .85rem;">
-                        <?= $circleContent ?>
-                    </div>
-                    <div class="small fw-semibold <?= $isPending ? 'text-muted' : '' ?>" style="line-height:1.2">
-                        <?= $stageInfo['label'] ?>
-                    </div>
-                </div>
-            </div>
-            <?php endforeach; ?>
+                echo renderWorkflowPipelineStage(
+                    $stageKey,
+                    $stageInfo,
+                    (int)$idx,
+                    $totalStagesW,
+                    $currentIdx !== false ? (int)$currentIdx : -1,
+                    $wfResponsibilities[$stageKey] ?? []
+                );
+            endforeach; ?>
         </div>
     </div>
 </div>

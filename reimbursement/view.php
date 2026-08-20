@@ -96,6 +96,16 @@ $histStmt = $pdo->prepare("
 $histStmt->execute([$request_id]);
 $statusHistory = $histStmt->fetchAll(PDO::FETCH_ASSOC);
 
+/* Fetch approval records for responsibility tooltip */
+$approvalsStmt = $pdo->prepare(
+    'SELECT id, role, stage_order, status, approved_by
+       FROM request_approvals
+      WHERE request_id = ?
+      ORDER BY stage_order ASC'
+);
+$approvalsStmt->execute([$request_id]);
+$approvals = $approvalsStmt->fetchAll(PDO::FETCH_ASSOC);
+
 require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 
 // Initialize SignedRequestService
@@ -135,51 +145,42 @@ if (empty($_SESSION['csrf_token'])) {
       <h5 class="mb-0">📊 Workflow Progress</h5>
     </div>
     <div class="card-body">
-      <div class="row g-2">
+      <div class="row g-2 pipeline-stages-row">
         <?php
-        // Get reimbursement pipeline stages from centralized workflow config
-        $pipelineStages = getReimbursementPipeline();
-        $currentStatusIdx = -1;
-        
-        // Find current status index in pipeline
-        foreach ($pipelineStages as $idx => $stage) {
-            if ($stage['status'] === $request['status']) {
-                $currentStatusIdx = $idx;
-                break;
-            }
+        require_once $_SERVER['DOCUMENT_ROOT'] . '/services/WorkflowResponsibilityService.php';
+        require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/workflow_pipeline.php';
+
+        // Get reimbursement pipeline stages and convert to keyed format
+        $pipelineRaw = getReimbursementPipeline();
+        $pipelineStagesKeyed = [];
+        foreach ($pipelineRaw as $s) {
+            $pipelineStagesKeyed[$s['status']] = ['label' => $s['label'], 'icon' => $s['icon']];
         }
-        
-        // Display each stage
-        foreach ($pipelineStages as $idx => $stage):
-            $isCompleted = ($currentStatusIdx !== -1 && $idx < $currentStatusIdx);
-            $isCurrent = ($stage['status'] === $request['status']);
-            
-            if ($isCompleted) {
-                $borderClass = 'border-success bg-success bg-opacity-10';
-                $circleClass = 'bg-success text-white';
-                $circleContent = '<i class="bi bi-check-lg"></i>';
-            } elseif ($isCurrent) {
-                $borderClass = 'border-primary bg-primary bg-opacity-10';
-                $circleClass = 'bg-primary text-white';
-                $circleContent = '<i class="bi bi-arrow-right"></i>';
-            } else {
-                $borderClass = 'border-light bg-light';
-                $circleClass = 'bg-secondary bg-opacity-25 text-muted';
-                $circleContent = ($idx + 1);
-            }
+
+        $wfRespService = new WorkflowResponsibilityService($pdo);
+        $wfResponsibilities = $wfRespService->getPipelineResponsibility(
+            $pipelineStagesKeyed,
+            $request,
+            $request['status'],
+            $approvals,
+            $_SESSION['role_name'] ?? ''
+        );
+
+        $stageKeys = array_keys($pipelineStagesKeyed);
+        $currentIdx = array_search($request['status'], $stageKeys, true);
+        $totalStages = count($stageKeys);
+
+        foreach ($stageKeys as $idx => $stageKey):
+            echo renderWorkflowPipelineStage(
+                $stageKey,
+                $pipelineStagesKeyed[$stageKey],
+                $idx,
+                $totalStages,
+                $currentIdx !== false ? (int)$currentIdx : -1,
+                $wfResponsibilities[$stageKey] ?? []
+            );
+        endforeach;
         ?>
-        <div class="col-lg col-md-3 col-sm-4 col-6">
-          <div class="text-center p-2 rounded-3 border <?= $borderClass ?> h-100">
-            <div class="rounded-circle d-inline-flex align-items-center justify-content-center fw-bold <?= $circleClass ?> mb-1"
-                 style="width: 32px; height: 32px; font-size: .85rem;">
-              <?= $circleContent ?>
-            </div>
-            <div class="small fw-semibold <?= !$isCompleted && !$isCurrent ? 'text-muted' : '' ?>" style="line-height:1.2">
-              <?= htmlspecialchars($stage['label']) ?>
-            </div>
-          </div>
-        </div>
-        <?php endforeach; ?>
       </div>
     </div>
   </div>

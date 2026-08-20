@@ -93,6 +93,16 @@ if ($reconciliation) {
     }
 }
 
+/* Fetch approval records for responsibility tooltip */
+$pcApprovalsStmt = $pdo->prepare(
+    'SELECT id, role, stage_order, status, approved_by
+       FROM request_approvals
+      WHERE request_id = ?
+      ORDER BY stage_order ASC'
+);
+$pcApprovalsStmt->execute([$request_id]);
+$approvals = $pcApprovalsStmt->fetchAll(PDO::FETCH_ASSOC);
+
 require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 
 // Initialize SignedRequestService
@@ -358,34 +368,45 @@ if (empty($_SESSION['csrf_token'])) {
           <h5 class="mb-0">📊 Process Steps</h5>
         </div>
         <div class="card-body">
-          <div class="list-group list-group-flush">
+          <div class="row g-2 pipeline-stages-row">
            <?php
-           // Get pipeline stages from centralized workflow config
-           $pipelineStages = getPettyCashPipeline();
-           $currentStatusIdx = -1;
-            
-           // Find current status index in pipeline
-           foreach ($pipelineStages as $idx => $stage) {
-               if ($stage['status'] === $request['status']) {
-                   $currentStatusIdx = $idx;
-                   break;
-               }
+           require_once $_SERVER['DOCUMENT_ROOT'] . '/services/WorkflowResponsibilityService.php';
+           require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/workflow_pipeline.php';
+
+           // Convert petty cash pipeline to keyed format
+           $pcPipelineRaw = getPettyCashPipeline();
+           $pcPipelineKeyed = [];
+           foreach ($pcPipelineRaw as $s) {
+               $pcPipelineKeyed[$s['status']] = ['label' => $s['label'], 'icon' => $s['icon']];
            }
-            
-           // Display each stage
-           foreach ($pipelineStages as $idx => $stage):
-               $isCompleted = ($currentStatusIdx !== -1 && $idx < $currentStatusIdx);
-               $isCurrent = ($stage['status'] === $request['status']);
-               $stageNum = $idx + 1;
+
+           $wfRespService = new WorkflowResponsibilityService($pdo);
+           $wfResponsibilities = $wfRespService->getPipelineResponsibility(
+               $pcPipelineKeyed,
+               $request,
+               $request['status'],
+               $approvals,
+               $_SESSION['role_name'] ?? ''
+           );
+
+           $pcStageKeys = array_keys($pcPipelineKeyed);
+           $pcCurrentIdx = array_search($request['status'], $pcStageKeys, true);
+           $pcTotalStages = count($pcStageKeys);
+
+           foreach ($pcStageKeys as $idx => $stageKey):
+               echo renderWorkflowPipelineStage(
+                   $stageKey,
+                   $pcPipelineKeyed[$stageKey],
+                   $idx,
+                   $pcTotalStages,
+                   $pcCurrentIdx !== false ? (int)$pcCurrentIdx : -1,
+                   $wfResponsibilities[$stageKey] ?? []
+               );
+           endforeach;
            ?>
-           <div class="list-group-item d-flex justify-content-between align-items-center">
-             <span><?= $stageNum ?>. <?= htmlspecialchars($stage['label']) ?></span>
-             <i class="bi <?= $isCompleted ? 'bi-check-circle-fill text-success' : ($isCurrent ? 'bi-arrow-right text-primary' : 'bi-circle text-muted') ?>"></i>
-           </div>
-           <?php endforeach; ?>
-         </div>
-       </div>
-     </div>
+          </div>
+        </div>
+      </div>
 
       <!-- Signed Request Management -->
       <div class="card shadow-sm mb-4">

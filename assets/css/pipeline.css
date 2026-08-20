@@ -1,0 +1,146 @@
+/* ============================================================
+   Workflow Pipeline Stage Tooltips
+   ============================================================
+   Provides accessible hover / focus / touch tooltips for
+   every pipeline stage cell rendered by
+   includes/workflow_pipeline.php.
+
+   Dependencies: Bootstrap 5 (for existing stage border/bg
+   classes), Bootstrap Icons (bi-*).  No extra JS library
+   required — touch activation is handled by pipeline.js.
+   ============================================================ */
+
+/* ── Stage cell wrapper ───────────────────────────────────── */
+.pipeline-stage-cell {
+    position: relative;
+    cursor: help;
+    /* Ensure the tooltip is not clipped by a parent with overflow:hidden */
+    overflow: visible !important;
+}
+
+/* ── Tooltip panel ────────────────────────────────────────── */
+.stage-responsibility-tooltip {
+    /* Hidden by default */
+    display: none;
+    position: absolute;
+    z-index: 1080;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+
+    /* Visual */
+    background: #1a1a2e;
+    color: #f0f0f0;
+    border-radius: 8px;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    text-align: left;
+    white-space: normal;
+    min-width: 210px;
+    max-width: 300px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+
+    /* Prevent selection glow during keyboard focus */
+    outline: none;
+}
+
+/* Arrow pointing down */
+.stage-responsibility-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 7px solid transparent;
+    border-top-color: #1a1a2e;
+}
+
+/* ── Tooltip visibility triggers ─────────────────────────── */
+
+/* Desktop: hover */
+.pipeline-stage-cell:hover .stage-responsibility-tooltip {
+    display: block;
+}
+
+/* Keyboard: focus (the cell itself is focusable via tabindex="0") */
+.pipeline-stage-cell:focus .stage-responsibility-tooltip,
+.pipeline-stage-cell:focus-within .stage-responsibility-tooltip {
+    display: block;
+}
+
+/* Touch / JS toggle */
+.pipeline-stage-cell.wf-tooltip-open .stage-responsibility-tooltip {
+    display: block;
+}
+
+/* ── Tooltip typography ───────────────────────────────────── */
+.wf-tooltip-title {
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: #ffffff;
+    margin-bottom: 0.2rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    padding-bottom: 0.25rem;
+}
+
+.wf-tooltip-state {
+    font-size: 0.72rem;
+    color: #adb5bd;
+    margin-bottom: 0.35rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.wf-tooltip-row {
+    margin-bottom: 0.2rem;
+    color: #dee2e6;
+}
+
+.wf-tooltip-key {
+    color: #adb5bd;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-right: 0.2rem;
+}
+
+.wf-tooltip-source {
+    font-size: 0.72rem;
+    color: #6ea8fe;
+    margin-bottom: 0.2rem;
+}
+
+.wf-tooltip-action {
+    margin-top: 0.45rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 0.75rem;
+    color: #ced4da;
+    font-style: italic;
+}
+
+.wf-tooltip-fallback {
+    color: #ffc107;
+    font-size: 0.75rem;
+}
+
+/* ── Responsive: on very small screens, pin to viewport edges ─ */
+@media (max-width: 576px) {
+    .stage-responsibility-tooltip {
+        left: 0;
+        transform: none;
+        min-width: 180px;
+        max-width: calc(100vw - 2rem);
+    }
+    .stage-responsibility-tooltip::after {
+        left: 1.5rem;
+        transform: none;
+    }
+}
+
+/* ── Ensure pipeline rows don't clip tooltips (Bootstrap row) ─ */
+.row.g-2.pipeline-stages-row {
+    overflow: visible;
+}
