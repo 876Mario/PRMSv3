@@ -126,8 +126,7 @@ class WorkflowResponsibilityService
             // Generic path: try to find the unique role-holder in this branch
             $assignedUser = $this->findRoleUser(
                 $result['responsible_role'],
-                $branchId,
-                $currentUserRole
+                $branchId
             );
             if ($assignedUser !== null) {
                 $result['assigned_user']  = $assignedUser;
@@ -249,8 +248,8 @@ class WorkflowResponsibilityService
      * HOD_APPROVED ("HOD Approved") responsibility.
      *
      * The Government Chemist acts directly as HOD for the Executive Branch;
-     * every other branch is approved by its own Government Chemist-designated
-     * HOD (equivalently, "Branch Head").
+     * every other branch is approved by its own branch HOD (equivalently,
+     * "Branch Head").
      */
     private function resolveHodApprovedOfficer(int $branchId): array
     {
@@ -690,11 +689,10 @@ class WorkflowResponsibilityService
      * Authorization: role-holder lookup is permitted for any authenticated
      * viewer of the request.  E-mail addresses are never returned.
      *
-     * @param string $role            Job title / role name from the static map
-     * @param int    $branchId        Branch to scope the search
-     * @param string $currentUserRole Viewer role (reserved for future stricter gates)
+     * @param string $role     Job title / role name from the static map
+     * @param int    $branchId Branch to scope the search
      */
-    private function findRoleUser(string $role, int $branchId, string $currentUserRole): ?string
+    private function findRoleUser(string $role, int $branchId): ?string
     {
         // Scope search: roles that are branch-specific should match on branch_id
         $branchScopedRoles = ['HOD', 'Head of Department', 'Branch Head', 'Finance Officer'];
@@ -839,16 +837,19 @@ class WorkflowResponsibilityService
             return 'OTHER';
         }
 
-        if (str_contains($normalized, 'hrm')) {
-            return 'HRMA';
-        }
-
+        // Check the more specific/named branches first so a name that
+        // happens to also contain "hrm" (e.g. a hypothetical
+        // "Executive & HRM" branch) is not misclassified as HRMA.
         if (str_contains($normalized, 'analytical') && str_contains($normalized, 'advisory')) {
             return 'ANALYTICAL_ADVISORY';
         }
 
         if (str_contains($normalized, 'executive')) {
             return 'EXECUTIVE';
+        }
+
+        if (str_contains($normalized, 'hrm')) {
+            return 'HRMA';
         }
 
         return 'OTHER';
