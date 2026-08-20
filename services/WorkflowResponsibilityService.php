@@ -258,6 +258,7 @@ class WorkflowResponsibilityService
     {
         $officers = [];
         $seenNames = [];
+        $seenUnresolvedLabels = [];
 
         foreach ($specs as $spec) {
             $label = $spec['label'] ?? $spec['role'];
@@ -279,14 +280,22 @@ class WorkflowResponsibilityService
                 }
             }
 
-            // Avoid showing the same person twice under two different labels
-            // (e.g. a requestor who is also the branch head).
             if ($name !== null) {
+                // Avoid showing the same person twice under two different
+                // labels (e.g. a requestor who is also the branch head).
                 $key = strtolower($name);
                 if (isset($seenNames[$key])) {
                     continue;
                 }
                 $seenNames[$key] = true;
+            } else {
+                // Avoid repeating an identical "not yet assigned" row for the
+                // same unresolved role label.
+                $labelKey = strtolower($label);
+                if (isset($seenUnresolvedLabels[$labelKey])) {
+                    continue;
+                }
+                $seenUnresolvedLabels[$labelKey] = true;
             }
 
             $officers[] = ['role' => $label, 'name' => $name];

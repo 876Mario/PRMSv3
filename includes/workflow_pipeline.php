@@ -155,7 +155,8 @@ function buildResponsibilityTooltip(
     // Multiple named officers (e.g. Requestor + Branch Head, or Procurement
     // Officer + Director of Procurement). Rendered one row per officer so
     // duplicates already removed by the service are never shown twice.
-    $officers = $responsibility['assigned_officers'] ?? [];
+    $officers     = $responsibility['assigned_officers'] ?? [];
+    $assignedUser = $responsibility['assigned_user'] ?? null;
 
     if (!empty($officers) && $stateText !== 'Completed') {
         foreach ($officers as $officer) {
@@ -170,16 +171,11 @@ function buildResponsibilityTooltip(
                        . $officerRole . ':</span> Not yet assigned</div>';
             }
         }
-    } else {
-        // Assigned user (pending stage)
-        $assignedUser = $responsibility['assigned_user'] ?? null;
-        if ($assignedUser !== null && $stateText !== 'Completed') {
-            $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Assigned to:</span> '
-                   . htmlspecialchars($assignedUser) . '</div>';
-        }
+    } elseif ($assignedUser !== null && $stateText !== 'Completed') {
+        // Assigned user (pending stage, single-officer legacy path)
+        $html .= '<div class="wf-tooltip-row"><span class="wf-tooltip-key">Assigned to:</span> '
+               . htmlspecialchars($assignedUser) . '</div>';
     }
-
-    $assignedUser = $responsibility['assigned_user'] ?? null;
 
     // Source type label (skip for simple 'Assigned by job title' when no named user)
     if ($source !== '' && !($source === 'Assigned by job title' && $assignedUser === null)) {
