@@ -117,6 +117,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         logAudit($pdo, 'reimbursement_invoices', $reimb_invoice_id, 'CREATE', 'Invoice submitted for reimbursement request #' . $request_id);
 
+        /* Move request into the invoice-verification stage so Procurement/Finance
+           know an invoice is pending their review */
+        if ($request['status'] === 'FUNDS_VERIFIED') {
+            $statusStmt = $pdo->prepare("
+                UPDATE procurement_requests
+                SET status = 'INVOICE_SUBMITTED', updated_at = NOW()
+                WHERE request_id = ?
+            ");
+            $statusStmt->execute([$request_id]);
+
+            $historyStmt = $pdo->prepare("
+                INSERT INTO reimbursement_status_history
+                (request_id, old_status, new_status, changed_by, change_notes)
+                VALUES (?, 'FUNDS_VERIFIED', 'INVOICE_SUBMITTED', ?, ?)
+            ");
+            $historyStmt->execute([
+                $request_id,
+                $_SESSION['user_id'],
+                'Invoice submitted for the "' . $invoice_stage . '" stage.',
+            ]);
+        }
+
         /* Now process the file attachment that was already validated */
         if (isset($file) && $_FILES['attachment_file']['error'] !== UPLOAD_ERR_NO_FILE) {
             // Use shared helper function for file upload (already validated)

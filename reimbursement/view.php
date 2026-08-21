@@ -280,6 +280,9 @@ if (empty($_SESSION['csrf_token'])) {
                     <th>Submitted Date</th>
                     <th>Verified By</th>
                     <th>Status</th>
+                    <?php if (has_permission('verify_reimbursement_goods')): ?>
+                      <th>Actions</th>
+                    <?php endif; ?>
                   </tr>
                 </thead>
                 <tbody>
@@ -297,6 +300,17 @@ if (empty($_SESSION['csrf_token'])) {
                           <span class="badge bg-warning">Pending Verification</span>
                         <?php endif; ?>
                       </td>
+                      <?php if (has_permission('verify_reimbursement_goods')): ?>
+                        <td>
+                          <?php if (!$inv['goods_service_verified']): ?>
+                            <a href="/reimbursement/verify_invoice.php?id=<?= (int)$inv['reimb_invoice_id'] ?>" class="btn btn-sm btn-outline-success">
+                              <i class="bi bi-check2-circle"></i> Verify
+                            </a>
+                          <?php else: ?>
+                            <span class="text-muted small">—</span>
+                          <?php endif; ?>
+                        </td>
+                      <?php endif; ?>
                     </tr>
                   <?php endforeach; ?>
                 </tbody>
@@ -328,7 +342,7 @@ if (empty($_SESSION['csrf_token'])) {
                               </div>
                             </div>
                             <div class="ms-2">
-                              <?php if ($request['created_by'] == $_SESSION['user_id'] || has_permission('manage_users')): ?>
+                              <?php if ($request['created_by'] == $_SESSION['user_id'] || has_permission('manage_users') || has_permission('verify_reimbursement_goods')): ?>
                                 <a href="/reimbursement/download_attachment.php?id=<?= (int)$att['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Download">
                                   <i class="bi bi-download"></i>
                                 </a>
