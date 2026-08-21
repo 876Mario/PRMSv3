@@ -1,8 +1,13 @@
 <?php
 /**
  * Reimbursement Invoice Attachment Download Handler
+ *
+ * No single $REQUIRE_PERMISSION is declared here because this endpoint is
+ * shared by multiple roles with different permissions (the requestor via
+ * 'view_own_requests', and Procurement/Finance verifiers via
+ * 'view_reimbursement_requests' / 'verify_reimbursement_goods'). Access is
+ * instead enforced below on a per-attachment basis.
  */
-$REQUIRE_PERMISSION = 'view_own_requests';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
@@ -29,8 +34,12 @@ if (!$att) {
     exit;
 }
 
-// Verify user has access to the request
-if ($att['created_by'] != $_SESSION['user_id'] && !has_permission('manage_users')) {
+// Verify user has access to the request: the requestor, an admin, or a
+// Procurement/Finance user responsible for verifying the invoice
+if ($att['created_by'] != $_SESSION['user_id']
+    && !has_permission('manage_users')
+    && !has_permission('verify_reimbursement_goods')
+) {
     pop('You are not authorized to download this attachment.', '/reimbursement/list.php', POP_DEFAULT_DELAY_MS, 'error');
     exit;
 }
