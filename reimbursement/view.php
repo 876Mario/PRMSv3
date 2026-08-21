@@ -602,6 +602,9 @@ if (empty($_SESSION['csrf_token'])) {
           // Finance approval actions
           $isFinanceOfficer = ($_SESSION['role_name'] ?? '') === 'Finance Officer';
           $canApprove = in_array($request['status'], ['SUBMITTED']) && $isFinanceOfficer;
+          // Final approval once the invoice has cleared verification (or the
+          // request bypassed the invoice stages while funds were verified).
+          $canFinalApprove = in_array($request['status'], ['FUNDS_VERIFIED', 'INVOICE_VERIFIED']) && $isFinanceOfficer;
           ?>
           
           <?php if ($canApprove): ?>
@@ -613,6 +616,26 @@ if (empty($_SESSION['csrf_token'])) {
               <input type="hidden" name="action" value="approve">
               <button type="submit" class="btn btn-success btn-sm w-100 mb-2">
                 <i class="bi bi-check-circle"></i> Verify Funds & Approve
+              </button>
+            </form>
+            <form method="post" action="/reimbursement/approve.php" class="d-inline">
+              <input type="hidden" name="request_id" value="<?= $request_id ?>">
+              <input type="hidden" name="action" value="decline">
+              <button type="submit" class="btn btn-danger btn-sm w-100">
+                <i class="bi bi-x-circle"></i> Decline
+              </button>
+            </form>
+          <?php endif; ?>
+
+          <?php if ($canFinalApprove): ?>
+            <div class="alert alert-info py-2 mb-2">
+              <small><strong>Action Required:</strong> Approve this reimbursement request for payment.</small>
+            </div>
+            <form method="post" action="/reimbursement/approve.php" class="d-inline">
+              <input type="hidden" name="request_id" value="<?= $request_id ?>">
+              <input type="hidden" name="action" value="approve">
+              <button type="submit" class="btn btn-success btn-sm w-100 mb-2">
+                <i class="bi bi-check-circle"></i> Approve Reimbursement
               </button>
             </form>
             <form method="post" action="/reimbursement/approve.php" class="d-inline">
