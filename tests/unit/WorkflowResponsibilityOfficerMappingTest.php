@@ -221,6 +221,20 @@ class WorkflowResponsibilityOfficerMappingTest extends PHPUnit\Framework\TestCas
         $this->assertContains('Branch Head', $roles);
     }
 
+    public function testRequestorReviewStageRoutesToOriginalRequestor(): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makePdo());
+        $resp = $svc->getStageResponsibility(
+            $this->makeRequest(),
+            'QUOTE_REQUESTOR_REVIEW_PENDING',
+            [],
+            'Admin'
+        );
+
+        $this->assertSame('Requestor', $resp['responsible_role']);
+        $this->assertSame('Rachel Requestor', $resp['assigned_user']);
+    }
+
     public function testQuoteReviewDeduplicatesWhenRequestorIsBranchHead(): void
     {
         $svc  = new WorkflowResponsibilityService($this->makePdo());

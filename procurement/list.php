@@ -282,6 +282,9 @@ function reqBadgeClass(string $status): string {
         'COMMITMENT_DECLINED'   => 'danger',
         'RFQ_LETTER_AVAILABLE'  => 'info',
         'QUOTE_REVIEW_PENDING'  => 'warning text-dark',
+        'QUOTE_REQUESTOR_REVIEW_PENDING' => 'warning text-dark',
+        'QUOTE_REQUESTOR_REVIEW_APPROVED' => 'info',
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => 'info',
         'QUOTE_APPROVED'        => 'info',
         'PO_PENDING'            => 'success',
         'PROCUREMENT_STAGE', 'EVALUATION_STAGE' => 'dark',
@@ -305,6 +308,9 @@ function reqLabel(string $status): string {
         'COMMITMENT_DECLINED'   => 'Declined (Funds)',
         'RFQ_LETTER_AVAILABLE'  => 'RFQ Letters',
         'QUOTE_REVIEW_PENDING'  => 'Quote Review',
+        'QUOTE_REQUESTOR_REVIEW_PENDING' => 'Requestor Review',
+        'QUOTE_REQUESTOR_REVIEW_APPROVED' => 'Requestor Review Approved',
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => 'Branch Head Approval',
         'QUOTE_APPROVED'        => 'Quote Selected',
         'PO_PENDING'            => 'PO Created',
         'PROCUREMENT_STAGE'     => 'Procurement',
@@ -365,6 +371,9 @@ $statusOptions = [
     'GC_APPROVED'           => 'GC Approved',
     'RFQ_LETTER_AVAILABLE'  => 'RFQ Letters',
     'QUOTE_REVIEW_PENDING'  => 'Quote Review',
+    'QUOTE_REQUESTOR_REVIEW_PENDING' => 'Requestor Review',
+    'QUOTE_REQUESTOR_REVIEW_APPROVED' => 'Requestor Review Approved',
+    'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => 'Branch Head Approval',
     'QUOTE_APPROVED'        => 'Quote Selected',
     'COMMITMENTS_PENDING'   => 'Commitment Form',
     'COMMITMENT_APPROVED'   => 'Committed',
@@ -829,4 +838,4 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 
-<?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
+<?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>

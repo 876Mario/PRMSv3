@@ -16,6 +16,12 @@ $userId   = (int)($_SESSION['user_id'] ?? 0);
 if (!isset($pdo)) {
     require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 }
+$userBranchId = 0;
+try {
+    $userBranchStmt = $pdo->prepare("SELECT branch_id FROM users WHERE user_id = ?");
+    $userBranchStmt->execute([$userId]);
+    $userBranchId = (int)($userBranchStmt->fetchColumn() ?: 0);
+} catch (Throwable $_e) { /* leave as 0 */ }
 if (!function_exists('stageOwner')) {
     require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
 }
@@ -107,7 +113,7 @@ if (!function_exists('isMonitoringRole') ||
     $allWorkflowStatuses = [
         'PROCUREMENT_STAGE', 'EVALUATION_STAGE',
         'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING',
-        'QUOTE_SPEC_REVIEW_PENDING', 'QUOTE_SPEC_REVIEW_APPROVED',
+        'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED',
         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING',
         'QUOTE_APPROVED',
         'COMMITTEE_RECOMMENDED', 'GC_APPROVED',
@@ -135,6 +141,7 @@ if (!function_exists('isMonitoringRole') ||
         $workflowStmt = $pdo->prepare("
             SELECT
                 pr.request_id,
+                r.rfq_id AS rfq_id,
                 pr.request_number,
                 pr.request_type,
                 pr.description,
@@ -142,9 +149,12 @@ if (!function_exists('isMonitoringRole') ||
                 pr.currency,
                 pr.status  AS request_status,
                 pr.created_at,
+                pr.created_by,
+                pr.branch_id,
                 b.branch_name,
                 u.full_name AS requestor_name
             FROM procurement_requests pr
+            LEFT JOIN rfqs r     ON r.request_id = pr.request_id
             LEFT JOIN branches b ON pr.branch_id = b.branch_id
             LEFT JOIN users u    ON pr.created_by = u.user_id
             WHERE UPPER(pr.status) IN ({$placeholders})
@@ -155,6 +165,26 @@ if (!function_exists('isMonitoringRole') ||
         $params = array_merge($myStatuses, $branchParams);
         $workflowStmt->execute($params);
         $workflowActions = $workflowStmt->fetchAll(PDO::FETCH_ASSOC);
+        $canOverrideRequestor = function_exists('hasPermission') && (hasPermission('override_requestor_review') || hasPermission('admin_override_approvals'));
+        $canOverrideBranchHead = function_exists('hasPermission') && (hasPermission('override_branch_head_approval') || hasPermission('admin_override_approvals'));
+        $workflowActions = array_values(array_filter($workflowActions, static function (array $row) use ($userId, $userRole, $userBranchId, $canOverrideRequestor, $canOverrideBranchHead): bool {
+            $status = strtoupper((string)($row['request_status'] ?? ''));
+            if ($status === 'QUOTE_REQUESTOR_REVIEW_PENDING') {
+                return $canOverrideRequestor || (int)($row['created_by'] ?? 0) === $userId;
+            }
+            if ($status === 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' || $status === 'QUOTE_REQUESTOR_REVIEW_APPROVED') {
+                if ($canOverrideBranchHead) {
+                    return true;
+                }
+                $branchId = (int)($row['branch_id'] ?? 0);
+                $isHrmaBranch = $branchId === 5;
+                if ($isHrmaBranch && $userRole === 'Director HRM&A') {
+                    return true;
+                }
+                return in_array($userRole, ['HOD', 'Branch Head'], true) && $userBranchId > 0 && $userBranchId === $branchId;
+            }
+            return true;
+        }));
     }
 }
 
@@ -165,10 +195,10 @@ $statusActionMap = [
     'PROCUREMENT_STAGE'                  => ['label' => 'Create RFQ',              'color' => '#6c757d', 'icon' => 'bi-cart-plus',          'href_tpl' => '/rfq/create.php?request_id={id}'],
     'EVALUATION_STAGE'                   => ['label' => 'Evaluate RFQ',            'color' => '#fd7e14', 'icon' => 'bi-clipboard-check',     'href_tpl' => '/rfq/list.php?request_id={id}'],
     'RFQ_LETTER_AVAILABLE'               => ['label' => 'Generate RFQ Letters',    'color' => '#4facfe', 'icon' => 'bi-envelope-open',       'href_tpl' => '/rfq/view.php?request_id={id}'],
-    'QUOTE_REVIEW_PENDING'               => ['label' => 'Review Quotes',           'color' => '#fa709a', 'icon' => 'bi-search',              'href_tpl' => '/rfq/review_quote.php?request_id={id}'],
-    'QUOTE_SPEC_REVIEW_PENDING'          => ['label' => 'Spec Review',             'color' => '#e67e22', 'icon' => 'bi-file-earmark-check',  'href_tpl' => '/rfq/spec_review_approve.php?request_id={id}'],
-    'QUOTE_SPEC_REVIEW_APPROVED'         => ['label' => 'Branch Head Review',      'color' => '#9b59b6', 'icon' => 'bi-person-check',        'href_tpl' => '/rfq/branch_head_approve.php?request_id={id}'],
-    'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['label' => 'Branch Head Approval',    'color' => '#8e44ad', 'icon' => 'bi-shield-check',        'href_tpl' => '/rfq/branch_head_approve.php?request_id={id}'],
+    'QUOTE_REVIEW_PENDING'               => ['label' => 'Review Quotes',           'color' => '#fa709a', 'icon' => 'bi-search',              'href_tpl' => '/rfq/view.php?id={id}'],
+    'QUOTE_REQUESTOR_REVIEW_PENDING'    => ['label' => 'Pending Requestor Review','color' => '#e67e22', 'icon' => 'bi-file-earmark-check',  'href_tpl' => '/rfq/requestor_spec_review.php?id={id}'],
+    'QUOTE_REQUESTOR_REVIEW_APPROVED'    => ['label' => 'Branch Head Review',      'color' => '#9b59b6', 'icon' => 'bi-person-check',        'href_tpl' => '/rfq/branch_head_approve.php?id={id}'],
+    'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['label' => 'Pending Branch Head Approval', 'color' => '#8e44ad', 'icon' => 'bi-shield-check',   'href_tpl' => '/rfq/branch_head_approve.php?id={id}'],
     'QUOTE_APPROVED'                     => ['label' => 'Create Commitment',       'color' => '#43e97b', 'icon' => 'bi-plus-circle',         'href_tpl' => '/commitments/add.php?request_id={id}'],
     'COMMITTEE_RECOMMENDED'              => ['label' => 'GC Approval Required',    'color' => '#f093fb', 'icon' => 'bi-shield-check',        'href_tpl' => '/rfq/gc_approve.php?request_id={id}'],
     'GC_APPROVED'                        => ['label' => 'Ready for Award',         'color' => '#20c997', 'icon' => 'bi-trophy',              'href_tpl' => '/rfq/award.php?request_id={id}'],
@@ -183,10 +213,14 @@ $statusActionMap = [
 /**
  * Build the direct-action URL for a given status and request_id.
  */
-function actionHref(string $status, int $requestId, array $actionMap): string
+function actionHref(string $status, int $requestId, array $actionMap, ?int $rfqId = null): string
 {
     $tpl = $actionMap[$status]['href_tpl'] ?? '/procurement/view.php?id={id}';
-    return str_replace('{id}', (string)$requestId, $tpl);
+    $targetId = $requestId;
+    if (in_array($status, ['QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING'], true) && $rfqId) {
+        $targetId = $rfqId;
+    }
+    return str_replace('{id}', (string)$targetId, $tpl);
 }
 
 /**
@@ -301,7 +335,7 @@ function ageDays(string $createdAt): int
                 <?php foreach ($workflowActions as $action):
                     $status     = strtoupper($action['request_status']);
                     $actionInfo = $statusActionMap[$status] ?? ['label' => 'View', 'color' => '#6c757d', 'icon' => 'bi-eye', 'href_tpl' => '/procurement/view.php?id={id}'];
-                    $href       = actionHref($status, (int)$action['request_id'], $statusActionMap);
+                    $href       = actionHref($status, (int)$action['request_id'], $statusActionMap, isset($action['rfq_id']) ? (int)$action['rfq_id'] : null);
                     $age        = ageDays($action['created_at']);
                     $slaDate    = date('d M Y', strtotime($action['created_at'] . ' +' . $slaDefaultDays . ' days'));
                     $ageStyle   = $age > $slaDefaultDays ? 'color:#e74c3c;font-weight:700;' : 'color:#555;';

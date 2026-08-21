@@ -62,3 +62,10 @@ if (!function_exists('has_permission')) {
 if (!function_exists('require_permission')) {
     function require_permission(string $perm): void {}
 }
+
+if (!function_exists('hasPermission')) {
+    function hasPermission(string $perm): bool
+    {
+        return has_permission($perm);
+    }
+}

@@ -4,6 +4,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/includes/pagination.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/services/RFQSearchService.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/RFQQuoteApprovalService.php';
 
 // Branch filtering: Director HRM&A sees only branch 5, Deputy GC sees only branch 6
 $currentRole = $_SESSION['role'] ?? $_SESSION['role_name'] ?? '';
@@ -81,6 +82,10 @@ if ($isSearching) {
     $searchDisplayTerm = '';
 }
 
+$approvalService = new RFQQuoteApprovalService($pdo, $userId, $currentRole);
+$pendingRequestorReviews = hasPermission('submit_requestor_spec_review') ? $approvalService->getPendingRequestorReviews() : [];
+$pendingBranchHeadApprovals = hasPermission('approve_branch_head_award') ? $approvalService->getPendingBranchHeadApprovals() : [];
+
 require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 ?>
 
@@ -128,6 +133,41 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
         <?php endif; ?>
     </div>
 </div>
+
+<?php if (!empty($pendingRequestorReviews) || !empty($pendingBranchHeadApprovals)): ?>
+<div class="row g-3 mb-4">
+    <?php if (!empty($pendingRequestorReviews)): ?>
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm rounded-4" style="border-left:4px solid #ffc107 !important;">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="text-muted small">Pending Requestor Review</div>
+                        <div class="fs-4 fw-bold text-warning"><?= count($pendingRequestorReviews) ?></div>
+                    </div>
+                    <a href="/rfq/approval_pending.php" class="btn btn-sm btn-outline-warning rounded-pill">Open Queue</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+    <?php if (!empty($pendingBranchHeadApprovals)): ?>
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm rounded-4" style="border-left:4px solid #0dcaf0 !important;">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="text-muted small">Pending Branch Head Approval</div>
+                        <div class="fs-4 fw-bold text-info"><?= count($pendingBranchHeadApprovals) ?></div>
+                    </div>
+                    <a href="/rfq/approval_pending.php" class="btn btn-sm btn-outline-info rounded-pill">Open Queue</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <!-- KPI Cards -->
 <div class="row g-3 mb-4">

@@ -1,35 +1,32 @@
 <?php
 /**
- * RFQ Branch Head Final Approval
- * Allows branch heads to provide final approval for RFQ quotes
- * after specification review has been approved
+ * Branch Head final approval for the selected RFQ quote.
  */
 
-$REQUIRE_PERMISSION = 'approve_rfq_branch_head';
+$REQUIRE_PERMISSION = 'approve_branch_head_award';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/services/RFQQuoteApprovalService.php';
 
-// Get RFQ ID from URL
 $rfq_id = (int)($_GET['id'] ?? 0);
-
 if ($rfq_id <= 0) {
     pop('Invalid RFQ ID', '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'error');
     exit;
 }
 
-// Fetch RFQ details
-$stmt = $pdo->prepare("
-    SELECT r.*, pr.request_number, pr.description, pr.estimated_value, pr.branch_id,
-           u.display_name as created_by_name,
-           sr.display_name as spec_reviewer_name
-    FROM rfqs r
-    JOIN procurement_requests pr ON r.request_id = pr.request_id
-    LEFT JOIN users u ON r.created_by = u.user_id
-    LEFT JOIN users sr ON r.spec_reviewer_id = sr.user_id
-    WHERE r.rfq_id = ?
-");
+$stmt = $pdo->prepare(
+    "SELECT r.*, pr.request_id, pr.request_number, pr.description, pr.estimated_value,
+            pr.status AS request_status, pr.created_by AS requestor_user_id, pr.branch_id,
+            req.full_name AS requestor_name, rr.full_name AS requestor_reviewer_name,
+            b.branch_name
+     FROM rfqs r
+     JOIN procurement_requests pr ON pr.request_id = r.request_id
+     LEFT JOIN users req ON req.user_id = pr.created_by
+     LEFT JOIN users rr ON rr.user_id = r.requestor_reviewer_id
+     LEFT JOIN branches b ON b.branch_id = pr.branch_id
+     WHERE r.rfq_id = ?"
+);
 $stmt->execute([$rfq_id]);
 $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -38,178 +35,118 @@ if (!$rfq) {
     exit;
 }
 
-// Check if user can approve this RFQ at branch head level
-// Should either be assigned as branch head approver or have override permission
-$stmt = $pdo->prepare("
-    SELECT * FROM rfq_branch_head_approvers
-    WHERE rfq_id = ? AND approver_id = ? AND is_active = 1
-");
-$stmt->execute([$rfq_id, $_SESSION['user_id']]);
-$assignment = $stmt->fetch(PDO::FETCH_ASSOC);
-
-if (!$assignment && !hasPermission('admin_override_approvals')) {
-    pop('You are not assigned as a branch head approver for this RFQ', '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'error');
+$isHrmaBranch = (int)($rfq['branch_id'] ?? 0) === 5 || stripos((string)($rfq['branch_name'] ?? ''), 'HRM') !== false;
+$branchHeadStmt = $pdo->prepare(
+    $isHrmaBranch
+        ? "SELECT u.user_id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.name = 'Director HRM&A' AND u.is_active = 1"
+        : "SELECT u.user_id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.name IN ('HOD','Branch Head') AND u.branch_id = ? AND u.is_active = 1"
+);
+$branchHeadStmt->execute($isHrmaBranch ? [] : [(int)$rfq['branch_id']]);
+$allowedUserIds = array_map('intval', $branchHeadStmt->fetchAll(PDO::FETCH_COLUMN));
+$canOverride = hasPermission('override_branch_head_approval') || hasPermission('admin_override_approvals');
+if (!in_array((int)($_SESSION['user_id'] ?? 0), $allowedUserIds, true) && !$canOverride) {
+    pop('Only the auto-routed Branch Head may act on this approval.', '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'error');
     exit;
 }
 
-// Verify that spec review has been approved (prerequisite)
-if ($rfq['spec_review_status'] !== 'APPROVED') {
-    pop(
-        'Specification review must be approved before branch head approval can proceed.',
-        '/rfq/view.php?id='.$rfq_id,
-        POP_DEFAULT_DELAY_MS,
-        'error'
-    );
-    exit;
+$quoteStmt = $pdo->prepare(
+    "SELECT q.quote_id, q.quote_amount, q.gct_amount, q.quote_file, q.review_status,
+            q.review_comments, q.submitted_at, q.is_selected,
+            v.vendor_name, v.contact_person, v.email
+     FROM rfq_quotes q
+     JOIN rfq_vendors rv ON rv.rfq_vendor_id = q.rfq_vendor_id
+     JOIN vendors v ON v.vendor_id = rv.vendor_id
+     WHERE rv.rfq_id = ?
+       AND COALESCE(q.is_deleted, 0) = 0
+     ORDER BY q.is_selected DESC, q.quote_amount ASC"
+);
+$quoteStmt->execute([$rfq_id]);
+$quotes = $quoteStmt->fetchAll(PDO::FETCH_ASSOC);
+$selectedQuote = null;
+foreach ($quotes as $quoteRow) {
+    if ((int)($quoteRow['is_selected'] ?? 0) === 1) {
+        $selectedQuote = $quoteRow;
+        break;
+    }
 }
 
-// Fetch all quotes for this RFQ
-$stmt = $pdo->prepare("
-    SELECT 
-        q.quote_id,
-        q.quote_amount,
-        q.gct_amount,
-        q.quote_file,
-        q.review_status,
-        q.review_comments,
-        q.submitted_at,
-        q.is_selected,
-        rv.rfq_vendor_id,
-        v.vendor_name,
-        v.contact_person,
-        v.email
-    FROM rfq_quotes q
-    JOIN rfq_vendors rv ON q.rfq_vendor_id = rv.rfq_vendor_id
-    JOIN vendors v ON rv.vendor_id = v.vendor_id
-    WHERE rv.rfq_id = ?
-    ORDER BY q.quote_amount ASC
-");
-$stmt->execute([$rfq_id]);
-$quotes = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Get approval status and history
-$approvalService = new RFQQuoteApprovalService($pdo, $_SESSION['user_id'], $_SESSION['role_name'] ?? '');
+$approvalService = new RFQQuoteApprovalService($pdo, (int)$_SESSION['user_id'], $_SESSION['role_name'] ?? '');
 $approvalStatus = $approvalService->getApprovalStatus($rfq_id);
 $approvalHistory = $approvalService->getApprovalHistory($rfq_id);
+$requestorReviewHistory = $approvalService->getRequestorReviewHistory($rfq_id);
 
-// Handle POST - Approve or Reject
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
-    $comments = trim($_POST['comments'] ?? '');
+    $decision = strtoupper(trim((string)($_POST['decision'] ?? '')));
+    $comments = trim((string)($_POST['comments'] ?? ''));
+    $confirmApproval = isset($_POST['confirm_independent_decision']) && $_POST['confirm_independent_decision'] === '1';
+    $overrideReason = trim((string)($_POST['override_reason'] ?? ''));
 
-    // Validate inputs
-    if (!in_array($action, ['approve', 'reject', 'clarify'])) {
-        pop('Invalid action', '/rfq/branch_head_approve.php?id='.$rfq_id, POP_DEFAULT_DELAY_MS, 'error');
-        exit;
-    }
-
-    if ($action !== 'approve' && strlen($comments) < 5) {
-        pop('Reason/comments must be at least 5 characters for reject or clarification request', 
-            '/rfq/branch_head_approve.php?id='.$rfq_id, POP_DEFAULT_DELAY_MS, 'error');
-        exit;
-    }
-
-    // Execute approval
     try {
-        $success = false;
-        if ($action === 'approve') {
-            $success = $approvalService->approveBranchHeadApproval($rfq_id, $comments);
-            if ($success) {
-                pop('RFQ approved! Quotes are ready for supplier selection.', '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'success');
-            }
-        } elseif ($action === 'reject') {
-            $success = $approvalService->rejectBranchHeadApproval($rfq_id, $comments);
-            if ($success) {
-                pop('RFQ has been rejected. Requestor and specification reviewer have been notified.', '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'success');
-            }
-        } elseif ($action === 'clarify') {
-            $success = $approvalService->returnForClarification($rfq_id, 'BRANCH_HEAD_APPROVAL', $comments);
-            if ($success) {
-                pop('RFQ has been returned for clarification. Requestor has been notified.', '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'success');
-            }
-        }
+        $success = $approvalService->decideBranchHeadApproval(
+            $rfq_id,
+            $decision,
+            $comments,
+            $selectedQuote['quote_id'] ?? null,
+            $confirmApproval,
+            $overrideReason
+        );
 
-        if (!$success) {
-            pop('An error occurred while processing your approval', '/rfq/branch_head_approve.php?id='.$rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+        if ($success) {
+            $message = match ($decision) {
+                'APPROVE' => 'Branch Head approval recorded. The RFQ is now fully approved.',
+                'RETURN_FOR_CLARIFICATION' => 'RFQ returned to the requestor for clarification.',
+                default => 'RFQ rejected and returned to procurement review.',
+            };
+            pop($message, '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'success');
+            exit;
         }
-        exit;
-    } catch (Exception $e) {
-        pop('Error: ' . $e->getMessage(), '/rfq/branch_head_approve.php?id='.$rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+    } catch (Throwable $e) {
+        pop('Error: ' . $e->getMessage(), '/rfq/branch_head_approve.php?id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');
         exit;
     }
 }
-
 ?>
 <?php require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php'; ?>
 
 <div class="container-fluid my-4">
-    <div class="row">
+    <div class="row mb-4">
         <div class="col-md-12">
-            <h2 class="mb-4">
-                <i class="bi bi-clipboard-check"></i> Branch Head Final Approval - RFQ <?= he($rfq['rfq_number']) ?>
-            </h2>
+            <h2 class="mb-1"><i class="bi bi-shield-check"></i> Branch Head Final Approval - RFQ <?= he($rfq['rfq_number']) ?></h2>
+            <p class="text-muted mb-0">Review the requestor's specification confirmation and record the final Branch Head decision.</p>
         </div>
     </div>
 
-    <!-- RFQ Summary -->
-    <div class="row mb-4">
-        <div class="col-md-8">
+    <div class="row g-4 mb-4">
+        <div class="col-lg-8">
             <div class="card">
-                <div class="card-header bg-light">
-                    <h5 class="mb-0">Request Details</h5>
-                </div>
+                <div class="card-header bg-light"><h5 class="mb-0">Request Details</h5></div>
                 <div class="card-body">
                     <table class="table table-sm mb-0">
-                        <tr>
-                            <th width="30%">Request Number:</th>
-                            <td><?= he($rfq['request_number']) ?></td>
-                        </tr>
-                        <tr>
-                            <th>Description:</th>
-                            <td><?= he($rfq['description']) ?></td>
-                        </tr>
-                        <tr>
-                            <th>Estimated Value:</th>
-                            <td><?= formatCurrency($rfq['estimated_value']) ?></td>
-                        </tr>
-                        <tr>
-                            <th>Request Created By:</th>
-                            <td><?= he($rfq['created_by_name']) ?></td>
-                        </tr>
-                        <tr>
-                            <th>Specification Reviewer:</th>
-                            <td><?= he($rfq['spec_reviewer_name']) ?></td>
-                        </tr>
-                        <tr>
-                            <th>Spec Review Completed:</th>
-                            <td><?= formatDate($rfq['spec_reviewed_at']) ?></td>
-                        </tr>
-                        <tr>
-                            <th>Submission Deadline:</th>
-                            <td><?= he($rfq['submission_deadline']) ?></td>
-                        </tr>
+                        <tr><th width="30%">Request Number</th><td><?= he($rfq['request_number']) ?></td></tr>
+                        <tr><th>Requestor</th><td><?= he($rfq['requestor_name'] ?? 'N/A') ?></td></tr>
+                        <tr><th>Branch</th><td><?= he($rfq['branch_name'] ?? 'N/A') ?></td></tr>
+                        <tr><th>Description</th><td><?= nl2br(he($rfq['description'])) ?></td></tr>
+                        <tr><th>Estimated Value</th><td><?= formatCurrency((float)$rfq['estimated_value']) ?></td></tr>
+                        <tr><th>Selected Vendor</th><td><?= he($selectedQuote['vendor_name'] ?? 'No quote selected') ?></td></tr>
+                        <tr><th>Selected Quote</th><td><?= $selectedQuote ? formatCurrency((float)$selectedQuote['quote_amount']) : '—' ?></td></tr>
                     </table>
                 </div>
             </div>
         </div>
-
-        <!-- Approval Status -->
-        <div class="col-md-4">
+        <div class="col-lg-4">
             <div class="card">
-                <div class="card-header bg-light">
-                    <h5 class="mb-0">Approval Status</h5>
-                </div>
+                <div class="card-header bg-light"><h5 class="mb-0">Approval Status</h5></div>
                 <div class="card-body">
                     <div class="mb-3">
-                        <strong>Specification Review:</strong>
-                        <span class="badge bg-success">
-                            <i class="bi bi-check-circle"></i> APPROVED
+                        <strong>Requestor Review:</strong>
+                        <span class="badge <?= ($approvalStatus['requestor_spec_review_status'] ?? 'PENDING') === 'APPROVED' ? 'bg-success' : ((($approvalStatus['requestor_spec_review_status'] ?? 'PENDING') === 'REJECTED') ? 'bg-danger' : 'bg-warning text-dark') ?>">
+                            <?= he($approvalStatus['requestor_spec_review_status'] ?? 'PENDING') ?>
                         </span>
                     </div>
                     <div>
                         <strong>Branch Head Approval:</strong>
-                        <span class="badge <?= $approvalStatus['branch_head_approval_status'] === 'APPROVED' ? 'bg-success' : ($approvalStatus['branch_head_approval_status'] === 'REJECTED' ? 'bg-danger' : 'bg-warning') ?>">
-                            <?= he($approvalStatus['branch_head_approval_status']) ?>
+                        <span class="badge <?= ($approvalStatus['branch_head_approval_status'] ?? 'PENDING') === 'APPROVED' ? 'bg-success' : ((($approvalStatus['branch_head_approval_status'] ?? 'PENDING') === 'REJECTED') ? 'bg-danger' : 'bg-warning text-dark') ?>">
+                            <?= he($approvalStatus['branch_head_approval_status'] ?? 'PENDING') ?>
                         </span>
                     </div>
                 </div>
@@ -217,245 +154,175 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- Quotes Review Summary -->
     <div class="row mb-4">
         <div class="col-md-12">
-            <div class="card">
-                <div class="card-header bg-light">
-                    <h5 class="mb-0">Vendor Quotes Summary (<?= count($quotes) ?> received)</h5>
-                </div>
+            <div class="card border-info">
+                <div class="card-header bg-info text-white"><h5 class="mb-0">Requestor Specification Confirmation</h5></div>
                 <div class="card-body">
-                    <?php if (!empty($quotes)): ?>
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Vendor</th>
-                                        <th>Quote Amount</th>
-                                        <th>GCT</th>
-                                        <th>Submitted</th>
-                                        <th>Spec Review</th>
-                                        <th>Spec Comments</th>
-                                        <th>Document</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($quotes as $quote): ?>
-                                        <tr class="<?= $quote['review_status'] === 'MEETS_REQUIREMENTS' ? 'table-success' : 'table-warning' ?>">
-                                            <td>
-                                                <strong><?= he($quote['vendor_name']) ?></strong><br>
-                                                <small class="text-muted"><?= he($quote['contact_person']) ?></small><br>
-                                                <small class="text-muted"><?= he($quote['email']) ?></small>
-                                            </td>
-                                            <td><?= formatCurrency($quote['quote_amount']) ?></td>
-                                            <td><?= formatCurrency($quote['gct_amount']) ?></td>
-                                            <td><small><?= formatDate($quote['submitted_at']) ?></small></td>
-                                            <td>
-                                                <span class="badge <?= $quote['review_status'] === 'MEETS_REQUIREMENTS' ? 'bg-success' : 'bg-warning' ?>">
-                                                    <?= str_replace('_', ' ', $quote['review_status']) ?>
-                                                </span>
-                                            </td>
-                                            <td><small><?= he(substr($quote['review_comments'] ?? '', 0, 50)) ?></small></td>
-                                            <td>
-                                                <?php if ($quote['quote_file']): ?>
-                                                    <a href="/uploads/quotes/<?= urlencode($quote['quote_file']) ?>" target="_blank" class="btn btn-sm btn-outline-primary">
-                                                        <i class="bi bi-download"></i>
-                                                    </a>
-                                                <?php endif; ?>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
+                    <?php $latestRequestorReview = $requestorReviewHistory[0] ?? null; ?>
+                    <?php if ($latestRequestorReview): ?>
+                        <p class="mb-2"><strong>Outcome:</strong> <?= he(str_replace('_', ' ', $latestRequestorReview['review_outcome'])) ?></p>
+                        <p class="mb-2"><strong>Comments:</strong><br><?= nl2br(he($latestRequestorReview['comments'] ?? '')) ?></p>
+                        <small class="text-muted">Submitted by <?= he($latestRequestorReview['reviewer_name'] ?? $rfq['requestor_reviewer_name'] ?? 'N/A') ?> on <?= formatDate($latestRequestorReview['review_date']) ?></small>
                     <?php else: ?>
-                        <p class="text-muted">No quotes have been submitted yet.</p>
+                        <p class="text-muted mb-0">No requestor review history has been recorded yet.</p>
                     <?php endif; ?>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Specification Review Comments -->
-    <?php if ($rfq['spec_review_comments']): ?>
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="card border-info">
-                    <div class="card-header bg-info text-white">
-                        <h5 class="mb-0">Specification Reviewer's Assessment</h5>
-                    </div>
-                    <div class="card-body">
-                        <p><?= nl2br(he($rfq['spec_review_comments'])) ?></p>
-                        <small class="text-muted">
-                            Reviewed by: <?= he($rfq['spec_reviewer_name']) ?> on <?= formatDate($rfq['spec_reviewed_at']) ?>
-                        </small>
-                    </div>
-                </div>
-            </div>
-        </div>
-    <?php endif; ?>
-
-    <!-- Approval History -->
-    <?php if (!empty($approvalHistory)): ?>
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="card">
-                    <div class="card-header bg-light">
-                        <h5 class="mb-0">Approval History</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="timeline">
-                            <?php foreach ($approvalHistory as $history): ?>
-                                <div class="timeline-item mb-3">
-                                    <div class="timeline-marker <?= $history['action'] === 'APPROVED' ? 'bg-success' : 'bg-danger' ?>"></div>
-                                    <div class="timeline-content">
-                                        <h6 class="mb-1">
-                                            <?= he($history['approver_name']) ?>
-                                            <span class="badge <?= $history['action'] === 'APPROVED' ? 'bg-success' : 'bg-danger' ?>">
-                                                <?= str_replace('_', ' ', $history['action']) ?>
-                                            </span>
-                                        </h6>
-                                        <p class="text-muted mb-1"><small><?= formatDate($history['created_at']) ?></small></p>
-                                        <p class="mb-0"><?= he($history['comments'] ?? $history['rejection_reason'] ?? '') ?></p>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
+    <div class="row g-4 mb-4">
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header bg-light"><h5 class="mb-0">Vendor Quotations</h5></div>
+                <div class="card-body">
+                    <?php if (!empty($quotes)): ?>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle">
+                                <thead class="table-light"><tr><th>Vendor</th><th>Amount</th><th>Review</th><th>Document</th></tr></thead>
+                                <tbody>
+                                <?php foreach ($quotes as $quote): ?>
+                                    <tr class="<?= (int)($quote['is_selected'] ?? 0) === 1 ? 'table-success' : '' ?>">
+                                        <td>
+                                            <strong><?= he($quote['vendor_name']) ?></strong>
+                                            <?php if ((int)($quote['is_selected'] ?? 0) === 1): ?><span class="badge bg-success ms-1">Selected</span><?php endif; ?>
+                                        </td>
+                                        <td><?= formatCurrency((float)$quote['quote_amount']) ?></td>
+                                        <td><?= he(str_replace('_', ' ', $quote['review_status'] ?? 'PENDING')) ?></td>
+                                        <td>
+                                            <?php if (!empty($quote['quote_file'])): ?>
+                                                <a href="/uploads/quotes/<?= urlencode($quote['quote_file']) ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i></a>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
                         </div>
-                    </div>
+                    <?php else: ?>
+                        <p class="text-muted mb-0">No quotations found for this RFQ.</p>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
-    <?php endif; ?>
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header bg-light"><h5 class="mb-0">Approval History</h5></div>
+                <div class="card-body">
+                    <?php if (!empty($approvalHistory)): ?>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead class="table-light"><tr><th>Date</th><th>Stage</th><th>Decision</th><th>By</th><th>Comments</th></tr></thead>
+                                <tbody>
+                                <?php foreach ($approvalHistory as $history): ?>
+                                    <tr>
+                                        <td><?= formatDate($history['created_at']) ?></td>
+                                        <td><?= he(str_replace('_', ' ', $history['approval_stage'])) ?></td>
+                                        <td><?= he(str_replace('_', ' ', $history['action'])) ?></td>
+                                        <td><?= he($history['approver_name'] ?? 'N/A') ?></td>
+                                        <td><?= nl2br(he($history['comments'] ?? $history['rejection_reason'] ?? '')) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <p class="text-muted mb-0">No approval history recorded yet.</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    <!-- Approval Form -->
-    <?php if ($approvalStatus['branch_head_approval_status'] === 'PENDING'): ?>
+    <?php if (($rfq['request_status'] ?? '') === 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING'): ?>
         <div class="row">
-            <div class="col-md-8 offset-md-2">
+            <div class="col-lg-8 offset-lg-2">
                 <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">Provide Branch Head Final Approval Decision</h5>
-                    </div>
+                    <div class="card-header bg-primary text-white"><h5 class="mb-0">Record Branch Head Decision</h5></div>
                     <div class="card-body">
-                        <form method="POST" action="/rfq/branch_head_approve.php?id=<?= (int)$rfq_id ?>">
-                            <div class="form-group mb-3">
-                                <label for="action" class="form-label"><strong>Action</strong></label>
-                                <div class="btn-group-vertical w-100" role="group">
-                                    <input type="radio" class="btn-check" name="action" id="action_approve" value="approve" required>
-                                    <label class="btn btn-outline-success text-start" for="action_approve">
-                                        <i class="bi bi-check-circle"></i> <strong>Approve</strong> - Grant final approval for supplier selection
-                                    </label>
-                                    
-                                    <input type="radio" class="btn-check" name="action" id="action_clarify" value="clarify">
-                                    <label class="btn btn-outline-warning text-start" for="action_clarify">
-                                        <i class="bi bi-question-circle"></i> <strong>Request Clarification</strong> - Return for clarification
-                                    </label>
-                                    
-                                    <input type="radio" class="btn-check" name="action" id="action_reject" value="reject">
-                                    <label class="btn btn-outline-danger text-start" for="action_reject">
-                                        <i class="bi bi-x-circle"></i> <strong>Reject</strong> - Reject entire RFQ process
-                                    </label>
+                        <form method="POST" action="/rfq/branch_head_approve.php?id=<?= (int)$rfq_id ?>" id="branchHeadDecisionForm">
+                            <div class="mb-3">
+                                <label class="form-label"><strong>Decision</strong></label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="decision" id="decision_approve" value="APPROVE" required>
+                                    <label class="form-check-label" for="decision_approve">Approve</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="decision" id="decision_reject" value="REJECT">
+                                    <label class="form-check-label" for="decision_reject">Reject</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="decision" id="decision_return" value="RETURN_FOR_CLARIFICATION">
+                                    <label class="form-check-label" for="decision_return">Return for Clarification</label>
                                 </div>
                             </div>
-
-                            <div class="form-group mb-3">
-                                <label for="comments" class="form-label">
-                                    <strong>Comments</strong>
-                                    <span class="text-danger">*</span> (Required for reject or clarification)
+                            <div class="mb-3">
+                                <label for="comments" class="form-label"><strong>Comments</strong> <span class="text-danger" id="branchCommentsMarker" style="display:none;">*</span></label>
+                                <textarea class="form-control" id="comments" name="comments" rows="5" placeholder="Provide the rationale for your decision."></textarea>
+                                <small class="text-muted">Comments are required for Reject and Return for Clarification.</small>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="confirm_independent_decision" id="confirm_independent_decision" value="1">
+                                <label class="form-check-label" for="confirm_independent_decision">
+                                    I confirm I have reviewed the requestor's specification confirmation and the vendor quotation and am making this decision independently.
                                 </label>
-                                <textarea class="form-control" id="comments" name="comments" rows="5" 
-                                    placeholder="Provide your decision details..."></textarea>
-                                <small class="form-text text-muted">
-                                    For approval: Optional comments confirming your recommendation
-                                    For clarification: Specify what needs clarification
-                                    For rejection: Explain your reasons for rejection
-                                </small>
                             </div>
-
-                            <div class="alert alert-info mb-3">
-                                <i class="bi bi-info-circle"></i> 
-                                <strong>Note:</strong> As Branch Head, your decision serves as the final approval gate for this RFQ. 
-                                Once approved, the procurement team can proceed with supplier selection and award.
+                            <?php if ($canOverride && !in_array((int)($_SESSION['user_id'] ?? 0), $allowedUserIds, true)): ?>
+                                <div class="mb-3">
+                                    <label for="override_reason" class="form-label"><strong>Override Reason</strong> <span class="text-danger">*</span></label>
+                                    <textarea class="form-control" id="override_reason" name="override_reason" rows="3" placeholder="Explain why you are acting on behalf of the routed Branch Head." required></textarea>
+                                </div>
+                            <?php endif; ?>
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i> Reject returns the RFQ to procurement quote review. Return for Clarification sends the selected quotation back to the requestor for another confirmation.
                             </div>
-
-                            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <div class="d-flex justify-content-end gap-2">
                                 <a href="/rfq/list.php" class="btn btn-secondary">Cancel</a>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="bi bi-check"></i> Submit Decision
-                                </button>
+                                <button type="submit" class="btn btn-primary">Submit Branch Head Decision</button>
                             </div>
                         </form>
                     </div>
                 </div>
             </div>
         </div>
-    <?php endif; ?>
-
-    <!-- Already Approved/Rejected Messages -->
-    <?php if ($approvalStatus['branch_head_approval_status'] !== 'PENDING'): ?>
-        <div class="row">
-            <div class="col-md-8 offset-md-2">
-                <div class="alert <?= $approvalStatus['branch_head_approval_status'] === 'APPROVED' ? 'alert-success' : 'alert-danger' ?>" role="alert">
-                    <h4 class="alert-heading">
-                        <?= $approvalStatus['branch_head_approval_status'] === 'APPROVED' ? 'Branch Head Approval Granted' : 'Branch Head Approval Rejected' ?>
-                    </h4>
-                    <p>
-                        This RFQ has already been reviewed and <?= strtolower($approvalStatus['branch_head_approval_status']) ?> 
-                        by the branch head. The decision is final and cannot be changed.
-                    </p>
-                    <?php if ($approvalStatus['branch_head_approval_status'] === 'APPROVED'): ?>
-                        <p><strong>The RFQ is now ready for supplier selection.</strong></p>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
+    <?php else: ?>
+        <div class="row"><div class="col-lg-8 offset-lg-2"><div class="alert alert-secondary">This RFQ is currently at <strong><?= he($rfq['request_status']) ?></strong> and is not awaiting Branch Head approval.</div></div></div>
     <?php endif; ?>
 </div>
 
-<style>
-.timeline {
-    position: relative;
-    padding: 0;
-}
+<script>
+(function () {
+    const form = document.getElementById('branchHeadDecisionForm');
+    if (!form) return;
+    const approve = document.getElementById('decision_approve');
+    const reject = document.getElementById('decision_reject');
+    const ret = document.getElementById('decision_return');
+    const comments = document.getElementById('comments');
+    const confirmBox = document.getElementById('confirm_independent_decision');
+    const marker = document.getElementById('branchCommentsMarker');
 
-.timeline-item {
-    display: flex;
-    position: relative;
-    padding-left: 40px;
-}
+    function syncRequirements() {
+        const commentsRequired = reject.checked || ret.checked;
+        comments.required = commentsRequired;
+        if (marker) {
+            marker.style.display = commentsRequired ? 'inline' : 'none';
+        }
+        if (approve.checked) {
+            confirmBox.required = true;
+        } else {
+            confirmBox.required = false;
+            if (!reject.checked && !ret.checked) {
+                confirmBox.checked = false;
+            }
+        }
+    }
 
-.timeline-marker {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 2px solid #fff;
-}
-
-.timeline-content {
-    flex: 1;
-}
-
-.btn-group-vertical .btn {
-    border-radius: 0;
-    text-align: left;
-    padding: 12px;
-}
-
-.btn-group-vertical .btn:first-child {
-    border-radius: 4px 4px 0 0;
-}
-
-.btn-group-vertical .btn:last-child {
-    border-radius: 0 0 4px 4px;
-}
-
-.btn-group-vertical .btn-check:checked + .btn {
-    background-color: #f8f9fa;
-    border-color: #0d6efd;
-    z-index: 1;
-}
-</style>
+    approve.addEventListener('change', syncRequirements);
+    reject.addEventListener('change', syncRequirements);
+    ret.addEventListener('change', syncRequirements);
+    syncRequirements();
+})();
+</script>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'].'/includes/footer.php'; ?>

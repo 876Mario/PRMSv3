@@ -1,461 +1,534 @@
 <?php
 
-/**
- * RFQ Quote Approval Service
- * Handles the two-stage approval workflow for RFQ quotes:
- * 1. Specification Review
- * 2. Branch Head Final Approval
- */
+require_once __DIR__ . '/RequestorSpecificationReviewService.php';
 
-class RFQQuoteApprovalService {
-    
-    private $pdo;
-    private $user_id;
-    private $user_role;
+class RFQQuoteApprovalService
+{
+    private PDO $pdo;
+    private int $userId;
+    private string $userRole;
+    private RequestorSpecificationReviewService $requestorReviewService;
 
-    public function __construct($pdo, $user_id, $user_role = null) {
+    public function __construct($pdo, $user_id, $user_role = null)
+    {
         $this->pdo = $pdo;
-        $this->user_id = $user_id;
-        $this->user_role = $user_role;
+        $this->userId = (int) $user_id;
+        $this->userRole = (string) ($user_role ?? '');
+        $this->requestorReviewService = new RequestorSpecificationReviewService($this->pdo, $this->userId, $this->userRole);
     }
 
-    /**
-     * Get pending spec reviews for a user
-     * @return array List of RFQs awaiting specification review
-     */
-    public function getPendingSpecReviews() {
-        $stmt = $this->pdo->prepare("
-            SELECT 
+    public function getPendingRequestorReviews(): array
+    {
+        return $this->requestorReviewService->getRequestorPendingReviews();
+    }
+
+    public function approveRequestorReview($rfq_id, $outcome, $comments = '', $quote_id = null, $requestor_notes = '', string $overrideReason = ''): bool
+    {
+        $commentPayload = trim((string) ($requestor_notes !== '' ? $requestor_notes : $comments));
+        return $this->requestorReviewService->submitRequestorReview($rfq_id, $outcome, $commentPayload, $quote_id, $overrideReason);
+    }
+
+    public function rejectRequestorReview($rfq_id, $comments = '', $quote_id = null, string $overrideReason = ''): bool
+    {
+        return $this->requestorReviewService->rejectRequestorReview($rfq_id, $comments, $quote_id, $overrideReason);
+    }
+
+    public function getPendingBranchHeadApprovals(): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT
                 r.rfq_id,
                 r.rfq_number,
                 r.submission_deadline,
+                r.requestor_spec_review_status,
+                r.requestor_reviewed_at,
+                r.requestor_review_comments,
+                pr.request_id,
                 pr.request_number,
                 pr.description,
                 pr.estimated_value,
-                COUNT(q.quote_id) as quote_count,
-                r.created_at,
-                u.display_name as created_by_name
-            FROM rfqs r
-            JOIN procurement_requests pr ON r.request_id = pr.request_id
-            LEFT JOIN rfq_quotes q ON (
-                SELECT rfq_vendor_id FROM rfq_vendors WHERE rfq_id = r.rfq_id LIMIT 1
-            ) = q.rfq_vendor_id
-            LEFT JOIN users u ON r.created_by = u.user_id
-            WHERE r.spec_review_status = 'PENDING'
-            GROUP BY r.rfq_id, r.rfq_number, r.submission_deadline, pr.request_number, 
-                     pr.description, pr.estimated_value, r.created_at, u.display_name
-            ORDER BY r.submission_deadline ASC
-        ");
+                pr.branch_id,
+                pr.created_by AS requestor_user_id,
+                pr.status AS request_status,
+                req.full_name AS requestor_name,
+                rr.full_name AS requestor_reviewer_name,
+                b.branch_name,
+                sq.quote_id AS selected_quote_id,
+                sq.quote_amount AS selected_quote_amount,
+                sq.vendor_name AS selected_vendor_name
+             FROM rfqs r
+             JOIN procurement_requests pr ON pr.request_id = r.request_id
+             LEFT JOIN users req ON req.user_id = pr.created_by
+             LEFT JOIN users rr ON rr.user_id = r.requestor_reviewer_id
+             LEFT JOIN branches b ON b.branch_id = pr.branch_id
+             LEFT JOIN (
+                 SELECT rv.rfq_id, q.quote_id, q.quote_amount, v.vendor_name
+                   FROM rfq_quotes q
+                   JOIN rfq_vendors rv ON rv.rfq_vendor_id = q.rfq_vendor_id
+                   JOIN vendors v ON v.vendor_id = rv.vendor_id
+                  WHERE q.is_selected = 1
+                    AND COALESCE(q.is_deleted, 0) = 0
+             ) sq ON sq.rfq_id = r.rfq_id
+             WHERE pr.status = 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING'
+               AND r.requestor_spec_review_status = 'APPROVED'
+               AND r.branch_head_approval_status = 'PENDING'
+             ORDER BY r.submission_deadline ASC, r.created_at ASC"
+        );
         $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $result = [];
+        foreach ($rows as $row) {
+            if ($this->isActualBranchHeadForContext($row) || $this->hasBranchHeadOverridePermission()) {
+                $result[] = $row;
+            }
+        }
+
+        return $result;
     }
 
-    /**
-     * Get pending branch head approvals for a user
-     * @return array List of RFQs awaiting branch head approval
-     */
-    public function getPendingBranchHeadApprovals() {
-        $stmt = $this->pdo->prepare("
-            SELECT 
-                r.rfq_id,
-                r.rfq_number,
-                r.submission_deadline,
-                pr.request_number,
-                pr.description,
-                pr.estimated_value,
-                COUNT(q.quote_id) as quote_count,
-                r.created_at,
-                u.display_name as created_by_name,
-                sr.display_name as spec_reviewer_name,
-                r.spec_reviewed_at
-            FROM rfqs r
-            JOIN procurement_requests pr ON r.request_id = pr.request_id
-            LEFT JOIN rfq_quotes q ON (
-                SELECT rfq_vendor_id FROM rfq_vendors WHERE rfq_id = r.rfq_id LIMIT 1
-            ) = q.rfq_vendor_id
-            LEFT JOIN users u ON r.created_by = u.user_id
-            LEFT JOIN users sr ON r.spec_reviewer_id = sr.user_id
-            WHERE r.spec_review_status = 'APPROVED'
-              AND r.branch_head_approval_status = 'PENDING'
-            GROUP BY r.rfq_id, r.rfq_number, r.submission_deadline, pr.request_number, 
-                     pr.description, pr.estimated_value, r.created_at, u.display_name,
-                     sr.display_name, r.spec_reviewed_at
-            ORDER BY r.submission_deadline ASC
-        ");
-        $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    public function approveBranchHeadApproval($rfq_id, $comments = '', $quote_id = null, bool $confirmationChecked = true, string $overrideReason = ''): bool
+    {
+        return $this->decideBranchHeadApproval($rfq_id, 'APPROVE', $comments, $quote_id, $confirmationChecked, $overrideReason);
     }
 
-    /**
-     * Approve specification review for an RFQ
-     * @param int $rfq_id RFQ ID
-     * @param string $comments Optional approval comments
-     * @return bool Success status
-     */
-    public function approveSpecReview($rfq_id, $comments = '') {
+    public function rejectBranchHeadApproval($rfq_id, $reason = '', $quote_id = null, string $overrideReason = ''): bool
+    {
+        return $this->decideBranchHeadApproval($rfq_id, 'REJECT', $reason, $quote_id, true, $overrideReason);
+    }
+
+    public function decideBranchHeadApproval($rfq_id, $decision, $comments = '', $quote_id = null, bool $confirmationChecked = false, string $overrideReason = ''): bool
+    {
+        $rfqId = (int) $rfq_id;
+        $decision = strtoupper(trim((string) $decision));
+        $comments = trim((string) $comments);
+
+        if (!in_array($decision, ['APPROVE', 'REJECT', 'RETURN_FOR_CLARIFICATION'], true)) {
+            throw new InvalidArgumentException('Invalid Branch Head decision.');
+        }
+
+        if (in_array($decision, ['REJECT', 'RETURN_FOR_CLARIFICATION'], true) && mb_strlen($comments) < 5) {
+            throw new InvalidArgumentException('Comments must be at least 5 characters for rejection or return for clarification.');
+        }
+
+        if ($decision === 'APPROVE' && !$confirmationChecked) {
+            throw new InvalidArgumentException('Confirmation is required before approving the vendor award.');
+        }
+
         try {
             $this->pdo->beginTransaction();
+            $context = $this->getRfqContext($rfqId);
+            $this->assertBranchHeadActionAllowed($context, $overrideReason);
+            $selectedQuote = $this->getSelectedQuote($rfqId);
+            $this->assertBranchHeadStageState($context, $selectedQuote, $quote_id);
 
-            // Update RFQ spec review status
-            $stmt = $this->pdo->prepare("
-                UPDATE rfqs
-                SET spec_review_status = 'APPROVED',
-                    spec_reviewer_id = ?,
-                    spec_reviewed_at = NOW(),
-                    spec_review_comments = ?
-                WHERE rfq_id = ?
-            ");
-            $stmt->execute([$this->user_id, $comments, $rfq_id]);
+            $requestStatus = 'QUOTE_APPROVED';
+            $branchHeadStatus = $decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+            $requestorStatus = $context['requestor_spec_review_status'];
+            $requestorReviewerId = $context['requestor_reviewer_id'];
+            $requestorReviewedAt = $context['requestor_reviewed_at'];
+            $requestorReviewComments = $context['requestor_review_comments'];
+            $action = $decision === 'RETURN_FOR_CLARIFICATION' ? 'RETURNED_FOR_CLARIFICATION' : ($decision === 'APPROVE' ? 'APPROVED' : 'REJECTED');
 
-            // Log in approval audit trail
-            $this->logApproval($rfq_id, 'SPEC_REVIEW', 'APPROVED', $comments);
+            if ($decision === 'REJECT') {
+                $requestStatus = 'QUOTE_REVIEW_PENDING';
+                $requestorStatus = 'PENDING';
+                $requestorReviewerId = null;
+                $requestorReviewedAt = null;
+                $requestorReviewComments = null;
+            } elseif ($decision === 'RETURN_FOR_CLARIFICATION') {
+                $requestStatus = 'QUOTE_REQUESTOR_REVIEW_PENDING';
+                $requestorStatus = 'PENDING';
+                $requestorReviewerId = null;
+                $requestorReviewedAt = null;
+                $requestorReviewComments = null;
+            }
 
-            // Send notification to branch head
-            require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
-            notifyBranchHeadSpecReviewApproved($rfq_id);
+            $stmt = $this->pdo->prepare(
+                "UPDATE rfqs
+                    SET requestor_spec_review_status = :requestor_status,
+                        requestor_reviewer_id = :requestor_reviewer_id,
+                        requestor_reviewed_at = :requestor_reviewed_at,
+                        requestor_review_comments = :requestor_review_comments,
+                        branch_head_approval_status = :branch_head_status,
+                        branch_head_approver_id = :branch_head_approver_id,
+                        branch_head_approved_at = CURRENT_TIMESTAMP,
+                        branch_head_comments = :branch_head_comments
+                  WHERE rfq_id = :rfq_id"
+            );
+            $stmt->execute([
+                ':requestor_status' => $requestorStatus,
+                ':requestor_reviewer_id' => $requestorReviewerId,
+                ':requestor_reviewed_at' => $requestorReviewedAt,
+                ':requestor_review_comments' => $requestorReviewComments,
+                ':branch_head_status' => $branchHeadStatus,
+                ':branch_head_approver_id' => $this->userId,
+                ':branch_head_comments' => $comments !== '' ? $comments : null,
+                ':rfq_id' => $rfqId,
+            ]);
+
+            $requestStmt = $this->pdo->prepare("UPDATE procurement_requests SET status = :status WHERE request_id = :request_id");
+            $requestStmt->execute([
+                ':status' => $requestStatus,
+                ':request_id' => (int) $context['request_id'],
+            ]);
+
+            $this->logApproval($rfqId, 'BRANCH_HEAD_APPROVAL', $action, $comments, $selectedQuote);
+
+            if (function_exists('logRequestTimeline')) {
+                $timelineAction = $decision === 'APPROVE'
+                    ? 'QUOTE_APPROVED'
+                    : ($decision === 'RETURN_FOR_CLARIFICATION' ? 'QUOTE_REQUESTOR_REVIEW_PENDING' : 'QUOTE_REVIEW_PENDING');
+                $timelineNotes = match ($decision) {
+                    'APPROVE' => 'Branch Head approved the selected quotation for RFQ ' . ($context['rfq_number'] ?? $rfqId),
+                    'RETURN_FOR_CLARIFICATION' => 'Branch Head returned the selected quotation to the requestor for clarification: ' . $comments,
+                    default => 'Branch Head rejected the selected quotation and returned the RFQ to procurement review: ' . $comments,
+                };
+                logRequestTimeline($this->pdo, (int) $context['request_id'], $timelineAction, $timelineNotes);
+            }
+
+            if ($this->isOverrideBranchHeadUser($context)) {
+                $this->logBranchHeadOverrideAudit($rfqId, (int) $context['request_id'], $decision, $comments, $overrideReason);
+            }
 
             $this->pdo->commit();
-            return true;
-        } catch (Exception $e) {
-            $this->pdo->rollBack();
-            error_log("Error approving spec review for RFQ {$rfq_id}: " . $e->getMessage());
-            return false;
-        }
-    }
 
-    /**
-     * Reject specification review for an RFQ
-     * @param int $rfq_id RFQ ID
-     * @param string $reason Reason for rejection
-     * @return bool Success status
-     */
-    public function rejectSpecReview($rfq_id, $reason = '') {
-        try {
-            $this->pdo->beginTransaction();
-
-            // Update RFQ spec review status
-            $stmt = $this->pdo->prepare("
-                UPDATE rfqs
-                SET spec_review_status = 'REJECTED',
-                    spec_reviewer_id = ?,
-                    spec_reviewed_at = NOW(),
-                    spec_review_comments = ?
-                WHERE rfq_id = ?
-            ");
-            $stmt->execute([$this->user_id, $reason, $rfq_id]);
-
-            // Log in approval audit trail
-            $this->logApproval($rfq_id, 'SPEC_REVIEW', 'REJECTED', $reason);
-
-            // Send notification to requestor (quotes need revision)
-            require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
-            notifyRequestorSpecReviewRejected($rfq_id, $reason);
-
-            $this->pdo->commit();
-            return true;
-        } catch (Exception $e) {
-            $this->pdo->rollBack();
-            error_log("Error rejecting spec review for RFQ {$rfq_id}: " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Approve branch head final approval for an RFQ
-     * @param int $rfq_id RFQ ID
-     * @param string $comments Optional approval comments
-     * @return bool Success status
-     */
-    public function approveBranchHeadApproval($rfq_id, $comments = '') {
-        try {
-            $this->pdo->beginTransaction();
-
-            // Verify spec review is approved
-            $stmt = $this->pdo->prepare("SELECT spec_review_status FROM rfqs WHERE rfq_id = ?");
-            $stmt->execute([$rfq_id]);
-            $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$rfq || $rfq['spec_review_status'] !== 'APPROVED') {
-                throw new Exception('Specification review must be approved before branch head approval');
-            }
-
-            // Update RFQ branch head approval status
-            $stmt = $this->pdo->prepare("
-                UPDATE rfqs
-                SET branch_head_approval_status = 'APPROVED',
-                    branch_head_approver_id = ?,
-                    branch_head_approved_at = NOW(),
-                    branch_head_comments = ?
-                WHERE rfq_id = ?
-            ");
-            $stmt->execute([$this->user_id, $comments, $rfq_id]);
-
-            // Log in approval audit trail
-            $this->logApproval($rfq_id, 'BRANCH_HEAD_APPROVAL', 'APPROVED', $comments);
-
-            // Send notification to finance/procurement for supplier selection
-            require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
-            notifyProcurementAllApprovalsComplete($rfq_id);
-
-            $this->pdo->commit();
-            return true;
-        } catch (Exception $e) {
-            $this->pdo->rollBack();
-            error_log("Error approving branch head approval for RFQ {$rfq_id}: " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Reject branch head final approval for an RFQ
-     * @param int $rfq_id RFQ ID
-     * @param string $reason Reason for rejection
-     * @return bool Success status
-     */
-    public function rejectBranchHeadApproval($rfq_id, $reason = '') {
-        try {
-            $this->pdo->beginTransaction();
-
-            // Update RFQ branch head approval status
-            $stmt = $this->pdo->prepare("
-                UPDATE rfqs
-                SET branch_head_approval_status = 'REJECTED',
-                    branch_head_approver_id = ?,
-                    branch_head_approved_at = NOW(),
-                    branch_head_comments = ?
-                WHERE rfq_id = ?
-            ");
-            $stmt->execute([$this->user_id, $reason, $rfq_id]);
-
-            // Log in approval audit trail
-            $this->logApproval($rfq_id, 'BRANCH_HEAD_APPROVAL', 'REJECTED', $reason);
-
-            // Send notification to requestor and spec reviewer
-            $this->sendRequestorNotification($rfq_id, 'branch_head_approval_rejected', $reason);
-
-            $this->pdo->commit();
-            return true;
-        } catch (Exception $e) {
-            $this->pdo->rollBack();
-            error_log("Error rejecting branch head approval for RFQ {$rfq_id}: " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Return RFQ for clarification (from any approval stage)
-     * @param int $rfq_id RFQ ID
-     * @param string $stage SPEC_REVIEW or BRANCH_HEAD_APPROVAL
-     * @param string $clarification_needed Clarification details
-     * @return bool Success status
-     */
-    public function returnForClarification($rfq_id, $stage, $clarification_needed = '') {
-        try {
-            $this->pdo->beginTransaction();
-
-            if ($stage === 'SPEC_REVIEW') {
-                // Reset spec review
-                $stmt = $this->pdo->prepare("
-                    UPDATE rfqs
-                    SET spec_review_status = 'REJECTED',
-                        spec_reviewer_id = ?,
-                        spec_reviewed_at = NOW(),
-                        spec_review_comments = ?
-                    WHERE rfq_id = ?
-                ");
-                $stmt->execute([$this->user_id, $clarification_needed, $rfq_id]);
-                
-                $action = 'RETURNED_FOR_CLARIFICATION';
-                $this->sendRequestorNotification($rfq_id, 'spec_review_returned', $clarification_needed);
-            } elseif ($stage === 'BRANCH_HEAD_APPROVAL') {
-                // Reset branch head approval
-                $stmt = $this->pdo->prepare("
-                    UPDATE rfqs
-                    SET branch_head_approval_status = 'REJECTED',
-                        branch_head_approver_id = ?,
-                        branch_head_approved_at = NOW(),
-                        branch_head_comments = ?
-                    WHERE rfq_id = ?
-                ");
-                $stmt->execute([$this->user_id, $clarification_needed, $rfq_id]);
-                
-                $action = 'RETURNED_FOR_CLARIFICATION';
-                $this->sendRequestorNotification($rfq_id, 'branch_head_approval_returned', $clarification_needed);
-            } else {
-                throw new Exception('Invalid approval stage: ' . $stage);
-            }
-
-            // Log in approval audit trail
-            $this->logApproval($rfq_id, $stage, $action, $clarification_needed);
-
-            $this->pdo->commit();
-            return true;
-        } catch (Exception $e) {
-            $this->pdo->rollBack();
-            error_log("Error returning RFQ {$rfq_id} for clarification: " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Get approval history for an RFQ
-     * @param int $rfq_id RFQ ID
-     * @return array Approval history records
-     */
-    public function getApprovalHistory($rfq_id) {
-        $stmt = $this->pdo->prepare("
-            SELECT 
-                a.*,
-                u.display_name as approver_name,
-                u.email as approver_email
-            FROM rfq_quote_approvals a
-            LEFT JOIN users u ON a.approver_id = u.user_id
-            WHERE a.rfq_id = ?
-            ORDER BY a.created_at DESC
-        ");
-        $stmt->execute([$rfq_id]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    /**
-     * Get current approval status for an RFQ
-     * @param int $rfq_id RFQ ID
-     * @return array Approval status details
-     */
-    public function getApprovalStatus($rfq_id) {
-        $stmt = $this->pdo->prepare("
-            SELECT 
-                rfq_id,
-                spec_review_status,
-                spec_reviewer_id,
-                spec_reviewed_at,
-                branch_head_approval_status,
-                branch_head_approver_id,
-                branch_head_approved_at
-            FROM rfqs
-            WHERE rfq_id = ?
-        ");
-        $stmt->execute([$rfq_id]);
-        return $stmt->fetch(PDO::FETCH_ASSOC);
-    }
-
-    /**
-     * Check if RFQ is fully approved (both stages)
-     * @param int $rfq_id RFQ ID
-     * @return bool True if both approvals are complete
-     */
-    public function isFullyApproved($rfq_id) {
-        $status = $this->getApprovalStatus($rfq_id);
-        return $status && 
-               $status['spec_review_status'] === 'APPROVED' && 
-               $status['branch_head_approval_status'] === 'APPROVED';
-    }
-
-    /**
-     * Log approval action to audit trail
-     */
-    private function logApproval($rfq_id, $stage, $action, $comments = '') {
-        try {
-            $stmt = $this->pdo->prepare("
-                INSERT INTO rfq_quote_approvals 
-                (rfq_id, approval_stage, approver_id, approver_role, action, comments, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, NOW())
-            ");
-            $stmt->execute([$rfq_id, $stage, $this->user_id, $this->user_role, $action, $comments]);
-        } catch (Exception $e) {
-            error_log("Error logging approval: " . $e->getMessage());
-        }
-    }
-
-    /**
-     * Send notification to requestor for approval status changes
-     */
-    private function sendRequestorNotification($rfq_id, $event_type, $details = '') {
-        require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
-
-        try {
-            if ((int)$rfq_id <= 0) {
-                error_log("Notification[RequestorNotification]: invalid RFQ ID provided");
-                return;
-            }
-
-            // Get RFQ and requestor details
-            $stmt = $this->pdo->prepare("
-                SELECT r.*, pr.request_number, pr.created_by, u.email, u.display_name
-                FROM rfqs r
-                JOIN procurement_requests pr ON r.request_id = pr.request_id
-                JOIN users u ON pr.created_by = u.user_id
-                WHERE r.rfq_id = ?
-            ");
-            $stmt->execute([$rfq_id]);
-            $rfq = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$rfq) {
-                error_log("Notification[RequestorNotification]: RFQ {$rfq_id} not found");
-                return;
-            }
-
-            $appUrl = getAppUrl();
-            if ($appUrl === '') {
-                error_log("Notification[RequestorNotification]: application URL could not be resolved for RFQ {$rfq_id}");
-                return;
-            }
-
-            $subjectPrefix = "RFQ " . he($rfq['rfq_number']) . " (Request: " . he($rfq['request_number']) . ")";
-
-            if ($event_type === 'spec_review_rejected') {
-                $subject = "{$subjectPrefix} - Specification Review Returned for Corrections";
-                $action = "returned by the Specification Reviewer";
-            } elseif ($event_type === 'spec_review_returned') {
-                $subject = "{$subjectPrefix} - Specification Review Returned for Clarification";
-                $action = "returned for clarification";
-            } elseif ($event_type === 'branch_head_approval_rejected') {
-                $subject = "{$subjectPrefix} - Branch Head Approval Rejected";
-                $action = "rejected by the Branch Head";
-            } elseif ($event_type === 'branch_head_approval_returned') {
-                $subject = "{$subjectPrefix} - Branch Head Approval Returned for Clarification";
-                $action = "returned for clarification by the Branch Head";
-            } else {
-                return;
-            }
-
-            $rfqUrl = "{$appUrl}/rfq/view.php?id={$rfq_id}";
-            $html = "
-                <p>Your RFQ <strong>" . he($rfq['rfq_number']) . "</strong> has been {$action}.</p>
-                <p><strong>Details:</strong> " . nl2br(he($details)) . "</p>
-                <a href='" . he($rfqUrl) . "' class='btn btn-info'>View RFQ Details</a>
-            ";
-
-            if (notificationsEnabled()) {
-                $recipients = [];
-                if (!empty($rfq['email']) && filter_var($rfq['email'], FILTER_VALIDATE_EMAIL)) {
-                    $recipients[] = $rfq['email'];
+            if (isset($_SERVER['DOCUMENT_ROOT'])) {
+                require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
+                if ($decision === 'APPROVE') {
+                    sendVendorAwardNotification($rfqId);
+                } elseif ($decision === 'RETURN_FOR_CLARIFICATION') {
+                    sendReturnForClarificationNotification($rfqId, 'BRANCH_HEAD_APPROVAL', $comments);
                 } else {
-                    error_log("Notification[RequestorNotification]: RFQ {$rfq_id} skipped invalid requestor email");
-                }
-
-                // Branch head rejections also need to reach the procurement team
-                if ($event_type === 'branch_head_approval_rejected') {
-                    $stmt = $this->pdo->prepare("
-                        SELECT u.email FROM users u
-                        INNER JOIN roles r ON u.role_id = r.id
-                        WHERE r.name = 'Procurement Officer' AND u.is_active = 1
-                    ");
-                    $stmt->execute();
-                    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $officer) {
-                        if (!empty($officer['email']) && filter_var($officer['email'], FILTER_VALIDATE_EMAIL)) {
-                            $recipients[] = $officer['email'];
-                        }
-                    }
-                }
-
-                foreach (array_unique($recipients) as $email) {
-                    $sent = sendMail($email, $subject, $html);
-                    error_log("Notification[RequestorNotification]: RFQ {$rfq_id} event={$event_type} recipient={$email} url={$rfqUrl} status=" . ($sent ? 'Sent' : 'Failed'));
+                    sendRejectionNotification($rfqId, $comments);
                 }
             }
-        } catch (Exception $e) {
-            error_log("Error sending requestor notification for RFQ {$rfq_id}: " . $e->getMessage());
+
+            return true;
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    public function returnForClarification($rfq_id, $stage, $clarification_needed = '', $quote_id = null, string $overrideReason = ''): bool
+    {
+        $stage = strtoupper(trim((string) $stage));
+        if (in_array($stage, ['BRANCH_HEAD_APPROVAL'], true)) {
+            return $this->decideBranchHeadApproval($rfq_id, 'RETURN_FOR_CLARIFICATION', $clarification_needed, $quote_id, true, $overrideReason);
+        }
+
+        if (in_array($stage, ['SPEC_REVIEW', 'REQUESTOR_REVIEW'], true)) {
+            return $this->rejectRequestorReview($rfq_id, $clarification_needed, $quote_id, $overrideReason);
+        }
+
+        throw new InvalidArgumentException('Invalid approval stage: ' . $stage);
+    }
+
+    public function getApprovalHistory($rfq_id): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT a.*, u.full_name AS approver_name, q.quote_amount, v.vendor_name
+             FROM rfq_quote_approvals a
+             LEFT JOIN users u ON u.user_id = a.approver_id
+             LEFT JOIN rfq_quotes q ON q.quote_id = a.quote_id
+             LEFT JOIN rfq_vendors rv ON rv.rfq_vendor_id = q.rfq_vendor_id
+             LEFT JOIN vendors v ON v.vendor_id = rv.vendor_id
+             WHERE a.rfq_id = ?
+             ORDER BY a.created_at DESC, a.approval_id DESC"
+        );
+        $stmt->execute([(int) $rfq_id]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function getApprovalStatus($rfq_id): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT rfq_id,
+                    requestor_spec_review_status,
+                    requestor_reviewer_id,
+                    requestor_reviewed_at,
+                    requestor_review_comments,
+                    branch_head_approval_status,
+                    branch_head_approver_id,
+                    branch_head_approved_at,
+                    branch_head_comments
+             FROM rfqs
+             WHERE rfq_id = ?"
+        );
+        $stmt->execute([(int) $rfq_id]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function isFullyApproved($rfq_id): bool
+    {
+        $status = $this->getApprovalStatus($rfq_id);
+        return !empty($status)
+            && ($status['requestor_spec_review_status'] ?? '') === 'APPROVED'
+            && ($status['branch_head_approval_status'] ?? '') === 'APPROVED';
+    }
+
+    public function lockSelectedQuote($rfq_id, $quote_id): array
+    {
+        $selectedQuote = $this->getSelectedQuote((int) $rfq_id);
+        if (!$selectedQuote) {
+            throw new RuntimeException('No selected quote is currently locked for this RFQ.');
+        }
+        if ((int) $selectedQuote['quote_id'] !== (int) $quote_id) {
+            throw new RuntimeException('The selected quote changed before this approval could be submitted.');
+        }
+
+        return $selectedQuote;
+    }
+
+    public function resetApprovalsOnQuoteChange($rfq_id): void
+    {
+        $rfqId = (int) $rfq_id;
+        $stmt = $this->pdo->prepare(
+            "UPDATE rfqs
+                SET requestor_spec_review_status = 'PENDING',
+                    requestor_reviewer_id = NULL,
+                    requestor_reviewed_at = NULL,
+                    requestor_review_comments = NULL,
+                    branch_head_approval_status = 'PENDING',
+                    branch_head_approver_id = NULL,
+                    branch_head_approved_at = NULL,
+                    branch_head_comments = NULL
+              WHERE rfq_id = ?"
+        );
+        $stmt->execute([$rfqId]);
+    }
+
+    public function getRequestorReviewHistory($rfq_id): array
+    {
+        return $this->requestorReviewService->getRequestorReviewHistory($rfq_id);
+    }
+
+    private function getRfqContext(int $rfqId): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT r.rfq_id,
+                    r.rfq_number,
+                    r.requestor_spec_review_status,
+                    r.requestor_reviewer_id,
+                    r.requestor_reviewed_at,
+                    r.requestor_review_comments,
+                    r.branch_head_approval_status,
+                    pr.request_id,
+                    pr.request_number,
+                    pr.status AS request_status,
+                    pr.created_by AS requestor_user_id,
+                    pr.branch_id,
+                    pr.description,
+                    pr.estimated_value,
+                    req.full_name AS requestor_name,
+                    b.branch_name
+             FROM rfqs r
+             JOIN procurement_requests pr ON pr.request_id = r.request_id
+             LEFT JOIN users req ON req.user_id = pr.created_by
+             LEFT JOIN branches b ON b.branch_id = pr.branch_id
+             WHERE r.rfq_id = ?
+             LIMIT 1"
+        );
+        $stmt->execute([$rfqId]);
+        $context = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$context) {
+            throw new RuntimeException('RFQ not found.');
+        }
+        return $context;
+    }
+
+    private function getSelectedQuote(int $rfqId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT q.quote_id,
+                    q.quote_amount,
+                    q.gct_amount,
+                    q.review_status,
+                    q.review_comments,
+                    q.quote_file,
+                    q.submitted_at,
+                    q.currency,
+                    q.usd_rate,
+                    q.is_selected,
+                    v.vendor_name,
+                    v.contact_person,
+                    v.email AS vendor_email
+             FROM rfq_quotes q
+             JOIN rfq_vendors rv ON rv.rfq_vendor_id = q.rfq_vendor_id
+             JOIN vendors v ON v.vendor_id = rv.vendor_id
+             WHERE rv.rfq_id = ?
+               AND q.is_selected = 1
+               AND COALESCE(q.is_deleted, 0) = 0
+             ORDER BY q.quote_id DESC
+             LIMIT 1"
+        );
+        $stmt->execute([$rfqId]);
+        $quote = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $quote ?: null;
+    }
+
+    private function assertBranchHeadActionAllowed(array $context, string $overrideReason): void
+    {
+        if ($this->isActualBranchHeadForContext($context)) {
+            return;
+        }
+
+        if (!$this->hasBranchHeadOverridePermission()) {
+            throw new RuntimeException('Only the auto-routed Branch Head may decide this approval.');
+        }
+
+        if (mb_strlen(trim($overrideReason)) < 5) {
+            throw new InvalidArgumentException('An override reason of at least 5 characters is required.');
+        }
+    }
+
+    private function assertBranchHeadStageState(array $context, ?array $selectedQuote, $quoteId): void
+    {
+        $status = strtoupper((string) ($context['request_status'] ?? ''));
+        if (in_array($status, ['CANCELLED', 'DECLINED'], true)) {
+            throw new RuntimeException('This RFQ can no longer be approved in its current status.');
+        }
+
+        if ($status !== 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING') {
+            throw new RuntimeException('This RFQ is not awaiting Branch Head approval.');
+        }
+
+        if (($context['requestor_spec_review_status'] ?? '') !== 'APPROVED') {
+            throw new RuntimeException('The requestor specification confirmation must be approved first.');
+        }
+
+        if (!$selectedQuote) {
+            throw new RuntimeException('A selected quote is required before Branch Head approval can proceed.');
+        }
+
+        if ($quoteId !== null && (int) $quoteId > 0 && (int) $selectedQuote['quote_id'] !== (int) $quoteId) {
+            throw new RuntimeException('The selected quote changed before this approval could be submitted.');
+        }
+    }
+
+    private function isActualBranchHeadForContext(array $context): bool
+    {
+        $candidateIds = $this->getBranchHeadCandidateIds((int) ($context['branch_id'] ?? 0), (string) ($context['branch_name'] ?? ''));
+        return in_array($this->userId, $candidateIds, true);
+    }
+
+    private function getBranchHeadCandidateIds(int $branchId, string $branchName = ''): array
+    {
+        $candidates = [];
+        $normalizedBranch = strtoupper(trim($branchName));
+        $isHrmaBranch = $branchId === 5 || str_contains($normalizedBranch, 'HRM');
+
+        if ($isHrmaBranch) {
+            $stmt = $this->pdo->prepare(
+                "SELECT u.user_id
+                   FROM users u
+                   JOIN roles r ON r.id = u.role_id
+                  WHERE r.name = 'Director HRM&A'
+                    AND u.is_active = 1"
+            );
+            $stmt->execute();
+            $candidates = array_merge($candidates, array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN)));
+        }
+
+        if ($branchId > 0) {
+            $stmt = $this->pdo->prepare(
+                "SELECT u.user_id
+                   FROM users u
+                   JOIN roles r ON r.id = u.role_id
+                  WHERE r.name IN ('HOD', 'Branch Head')
+                    AND u.is_active = 1
+                    AND u.branch_id = ?"
+            );
+            $stmt->execute([$branchId]);
+            $candidates = array_merge($candidates, array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN)));
+        }
+
+        return array_values(array_unique(array_filter($candidates)));
+    }
+
+    private function logApproval(int $rfqId, string $stage, string $action, string $comments = '', ?array $selectedQuote = null): void
+    {
+        $quote = $selectedQuote ?: $this->getSelectedQuote($rfqId);
+        $snapshot = null;
+        $quoteId = null;
+        if ($quote) {
+            $quoteId = (int) ($quote['quote_id'] ?? 0);
+            $snapshot = json_encode([
+                'quote_id' => $quoteId,
+                'vendor_name' => $quote['vendor_name'] ?? null,
+                'quote_amount' => isset($quote['quote_amount']) ? (float) $quote['quote_amount'] : null,
+                'gct_amount' => isset($quote['gct_amount']) ? (float) $quote['gct_amount'] : null,
+                'currency' => $quote['currency'] ?? null,
+                'submitted_at' => $quote['submitted_at'] ?? null,
+                'review_status' => $quote['review_status'] ?? null,
+                'review_comments' => $quote['review_comments'] ?? null,
+                'quote_file' => $quote['quote_file'] ?? null,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+
+        $stmt = $this->pdo->prepare(
+            "INSERT INTO rfq_quote_approvals
+                (rfq_id, quote_id, approval_stage, approver_id, approver_role, action, comments, rejection_reason, requestor_notes, vendor_submission_details, created_at)
+             VALUES
+                (:rfq_id, :quote_id, :approval_stage, :approver_id, :approver_role, :action, :comments, :rejection_reason, :requestor_notes, :vendor_submission_details, CURRENT_TIMESTAMP)"
+        );
+        $stmt->execute([
+            ':rfq_id' => $rfqId,
+            ':quote_id' => $quoteId ?: null,
+            ':approval_stage' => $stage,
+            ':approver_id' => $this->userId,
+            ':approver_role' => $this->userRole !== '' ? $this->userRole : null,
+            ':action' => $action,
+            ':comments' => $comments !== '' ? $comments : null,
+            ':rejection_reason' => in_array($action, ['REJECTED', 'RETURNED_FOR_CLARIFICATION'], true) ? $comments : null,
+            ':requestor_notes' => $comments !== '' ? $comments : null,
+            ':vendor_submission_details' => $snapshot,
+        ]);
+    }
+
+    private function hasBranchHeadOverridePermission(): bool
+    {
+        return function_exists('hasPermission')
+            && (hasPermission('override_branch_head_approval') || hasPermission('admin_override_approvals'));
+    }
+
+    private function isOverrideBranchHeadUser(array $context): bool
+    {
+        return !$this->isActualBranchHeadForContext($context) && $this->hasBranchHeadOverridePermission();
+    }
+
+    private function logBranchHeadOverrideAudit(int $rfqId, int $requestId, string $decision, string $comments, string $overrideReason): void
+    {
+        if (!function_exists('logAudit')) {
+            return;
+        }
+
+        $notes = sprintf(
+            'Branch Head approval override for RFQ %d. Decision: %s. Override reason: %s. Comments: %s',
+            $rfqId,
+            $decision,
+            $overrideReason,
+            $comments !== '' ? $comments : 'N/A'
+        );
+        logAudit($this->pdo, 'procurement_requests', $requestId, 'RFQ_BRANCH_HEAD_OVERRIDE', $notes);
+        $auditId = (int) $this->pdo->lastInsertId();
+        if ($auditId > 0) {
+            $stmt = $this->pdo->prepare(
+                "UPDATE audit_log
+                    SET approval_stage = 'BRANCH_HEAD_APPROVAL',
+                        approval_action = 'OVERRIDE',
+                        approval_comments = :approval_comments,
+                        specification_comparison = :comparison
+                  WHERE audit_id = :audit_id"
+            );
+            $stmt->execute([
+                ':approval_comments' => $overrideReason,
+                ':comparison' => $comments,
+                ':audit_id' => $auditId,
+            ]);
         }
     }
 }
