@@ -169,11 +169,20 @@ class WorkflowResponsibilityService
             case 'DIRECTOR_APPROVED':
                 return [$this->buildOfficer($this->directorApprovedRole($branchName), $branchId)];
 
-            // 2 & 3. Quote Review / Quote Selected — the requestor and the
-            //    applicable branch head are jointly responsible.
+            // 2. Quote Review — the requestor and the applicable branch head
+            //    are jointly responsible for reviewing quotations.
             case 'QUOTE_REVIEW_PENDING':
-            case 'QUOTE_APPROVED':
                 return $this->requestorAndBranchHeadOfficers($request);
+
+            // 3. Requestor specification confirmation — route to the original
+            //    request creator, not just any user with the Requestor role.
+            case 'QUOTE_REQUESTOR_REVIEW_PENDING':
+                return [$this->requestorOfficer($request)];
+
+            // 4. Branch Head approval — auto-route from the request branch.
+            case 'QUOTE_REQUESTOR_REVIEW_APPROVED':
+            case 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING':
+                return [$this->buildOfficer('Branch Head', $branchId)];
 
             // 4 & 5 & 8. Funds Verified / Commitment Form / Invoice — Finance
             //    Officer for the requestor's branch.
@@ -247,17 +256,22 @@ class WorkflowResponsibilityService
     private function requestorAndBranchHeadOfficers(array $request): array
     {
         $officers = [];
-
-        $requestorId = (int) ($request['created_by'] ?? 0);
-        $officers[]  = [
-            'role' => 'Requestor',
-            'name' => $requestorId > 0 ? $this->findUserFullName($requestorId) : null,
-        ];
+        $officers[] = $this->requestorOfficer($request);
 
         $branchId   = (int) ($request['branch_id'] ?? 0);
         $officers[] = $this->buildOfficer('Branch Head', $branchId);
 
         return $officers;
+    }
+
+    private function requestorOfficer(array $request): array
+    {
+        $requestorId = (int) ($request['created_by'] ?? 0);
+
+        return [
+            'role' => 'Requestor',
+            'name' => $requestorId > 0 ? $this->findUserFullName($requestorId) : null,
+        ];
     }
 
     /**
@@ -462,13 +476,13 @@ class WorkflowResponsibilityService
                     'role'   => 'Requestor / Branch Head',
                     'action' => 'Review submitted quotations and select the preferred vendor.',
                 ],
-                'QUOTE_SPEC_REVIEW_PENDING' => [
-                    'role'   => 'Procurement Officer',
-                    'action' => 'Review quotations against technical specifications.',
+                'QUOTE_REQUESTOR_REVIEW_PENDING' => [
+                    'role'   => 'Requestor',
+                    'action' => 'Confirm whether the selected quotation meets the original specifications.',
                 ],
-                'QUOTE_SPEC_REVIEW_APPROVED' => [
+                'QUOTE_REQUESTOR_REVIEW_APPROVED' => [
                     'role'   => 'Branch Head',
-                    'action' => 'Approve the specification-reviewed quotation.',
+                    'action' => 'Prepare to give Branch Head approval for the requestor-confirmed quotation.',
                 ],
                 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => [
                     'role'   => 'Branch Head',
@@ -768,10 +782,52 @@ class WorkflowResponsibilityService
      * @param int    $branchId        Branch to scope the search
      * @param string $currentUserRole Viewer role (reserved for future stricter gates)
      */
+
+    private function findBranchHeadUser(int $branchId): ?string
+    {
+        if ($branchId <= 0) {
+            return null;
+        }
+
+        if ($branchId === 5) {
+            $stmt = $this->pdo->prepare(
+                'SELECT u.full_name
+                   FROM users u
+                   JOIN roles r ON r.id = u.role_id
+                  WHERE r.name = ?
+                    AND u.is_active = 1
+                  LIMIT 2'
+            );
+            $stmt->execute(['Director HRM&A']);
+            $rows = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            if (count($rows) === 1) {
+                return $rows[0];
+            }
+        }
+
+        $stmt = $this->pdo->prepare(
+            "SELECT u.full_name
+               FROM users u
+               JOIN roles r ON r.id = u.role_id
+              WHERE r.name IN ('HOD', 'Branch Head')
+                AND u.is_active = 1
+                AND u.branch_id = ?
+              LIMIT 2"
+        );
+        $stmt->execute([$branchId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        return (count($rows) === 1) ? $rows[0] : null;
+    }
+
     private function findRoleUser(string $role, int $branchId, string $currentUserRole): ?string
     {
+        if ($role === 'Branch Head') {
+            return $this->findBranchHeadUser($branchId);
+        }
+
         // Scope search: roles that are branch-specific should match on branch_id
-        $branchScopedRoles = ['HOD', 'Head of Department', 'Branch Head', 'Finance Officer'];
+        $branchScopedRoles = ['HOD', 'Head of Department', 'Finance Officer'];
         $isBranchScoped     = in_array($role, $branchScopedRoles, true);
 
         // Branch-scoped roles cannot be resolved without a valid branch.

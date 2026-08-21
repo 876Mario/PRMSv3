@@ -40,21 +40,21 @@ function allowedTransitions(): array {
                                      // ← backward
                                      'GC_APPROVED', 'DIRECTOR_APPROVED', 'HOD_APPROVED', 'SUBMITTED'],
         // Two-stage quote approval workflow
-        'QUOTE_REVIEW_PENDING'   => ['QUOTE_SPEC_REVIEW_PENDING', 'QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED',
+        'QUOTE_REVIEW_PENDING'   => ['QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED',
                                      // ← backward
                                      'RFQ_LETTER_AVAILABLE'],
-        'QUOTE_SPEC_REVIEW_PENDING' => ['QUOTE_SPEC_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+        'QUOTE_REQUESTOR_REVIEW_PENDING' => ['QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
                                         // ← backward (return for correction)
                                         'RFQ_LETTER_AVAILABLE'],
-        'QUOTE_SPEC_REVIEW_APPROVED' => ['QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+        'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
                                          // ← backward (return to spec review)
-                                         'QUOTE_SPEC_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
-        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['QUOTE_APPROVED', 'QUOTE_SPEC_REVIEW_PENDING', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+                                         'QUOTE_REQUESTOR_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['QUOTE_APPROVED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
                                                  // ← backward (return to spec review)
                                                  'RFQ_LETTER_AVAILABLE'],
         'QUOTE_APPROVED'         => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PROCUREMENT_STAGE',
                                      // ← backward
-                                     'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_SPEC_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
+                                     'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
         'COMMITMENTS_PENDING'    => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'PROCUREMENT_STAGE',
                                      // ← backward
                                      'QUOTE_APPROVED', 'FUNDS_VERIFIED'],
@@ -103,7 +103,7 @@ function isBackwardTransition(string $from, string $to): bool {
     $order = [
         'DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED',
         'FUNDS_VERIFIED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE',
-        'QUOTE_REVIEW_PENDING', 'QUOTE_SPEC_REVIEW_PENDING', 'QUOTE_SPEC_REVIEW_APPROVED',
+        'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED',
         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'EVALUATION_STAGE',
         'COMMITTEE_RECOMMENDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED',
         'PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED', 'COMPLETED',
@@ -234,9 +234,12 @@ function stageOwner(string $stage): array {
         'AWARDED'                => ['Deputy Government Chemist'],
         // RFQ Workflow Stages (reachable through HOD approval)
         'RFQ_LETTER_AVAILABLE'   => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer', 'Director HRM&A', 'Deputy Government Chemist'],
-        'QUOTE_REVIEW_PENDING'   => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer'], // For quote review & approval
+        'QUOTE_REVIEW_PENDING'   => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer'], // For quote review & quote selection
+        'QUOTE_REQUESTOR_REVIEW_PENDING' => ['Requestor'], // Original requestor confirms the selected quotation meets specifications
+        'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['Branch Head', 'HOD', 'Director HRM&A'], // Auto-routes to Branch Head approval
         'PROCUREMENT_STAGE'      => ['Procurement Officer', 'HOD'], // HOD can approve and transition to this
-        'QUOTE_APPROVED'         => ['Branch Head', 'HOD'], // Branch Head approves RFQ quotations / recommendations
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['Branch Head', 'HOD', 'Director HRM&A'], // Branch Head final approval stage
+        'QUOTE_APPROVED'         => ['Branch Head', 'HOD'], // Branch Head approval completed; ready for commitment / award actions
         'COMMITMENTS_PENDING'    => ['Finance Officer'], // Finance uploads commitment after Procurement submits form
         'COMMITMENT_APPROVED'    => ['Finance Officer'], // Finance approval with funds verification
         'COMMITMENT_DECLINED'    => ['Finance Officer'], // Finance declined due to fund constraints
@@ -851,7 +854,7 @@ function canGenerateRFQLetterAtStage(string $status, bool $isDirectProcurement):
     }
     
     // RFQ letter can be generated once approval is received
-    $approvingStages = ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'QUOTE_APPROVED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED'];
+    $approvingStages = ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED'];
     return in_array(strtoupper($status), $approvingStages);
 }
 
@@ -872,12 +875,15 @@ function getRFQWorkflowStep(string $status, bool $rfqExists = false): array {
         'FUNDS_VERIFIED' => ['number' => 2, 'name' => 'Funds Verified', 'description' => 'Ready for RFQ Letter generation'],
         'RFQ_LETTER_AVAILABLE' => ['number' => 3, 'name' => 'RFQ Letter Available', 'description' => 'Send RFQ to vendors'],
         'PROCUREMENT_STAGE' => ['number' => 3, 'name' => 'Procurement Stage', 'description' => 'RFQ process initiated'],
-        'QUOTE_REVIEW_PENDING' => ['number' => 4, 'name' => 'Quotes Submitted', 'description' => 'Review vendor quotes'],
-        'QUOTE_APPROVED' => ['number' => 5, 'name' => 'Quote Selected', 'description' => 'Quote meets requirements'],
-        'COMMITMENTS_PENDING' => ['number' => 6, 'name' => 'Commitment Form Submitted', 'description' => 'Procurement submitted commitment form, awaiting Finance upload'],
-        'COMMITMENT_APPROVED' => ['number' => 7, 'name' => 'Commitment Approved', 'description' => 'Finance approved commitment'],
-        'PO_PENDING' => ['number' => 8, 'name' => 'PO Created', 'description' => 'Purchase Order created, ready for invoice'],
-        'INVOICE_RECEIVED' => ['number' => 9, 'name' => 'Invoice Received', 'description' => 'Vendor invoice uploaded'],
+        'QUOTE_REVIEW_PENDING' => ['number' => 4, 'name' => 'Quotes Submitted', 'description' => 'Review vendor quotes and select the preferred offer'],
+        'QUOTE_REQUESTOR_REVIEW_PENDING' => ['number' => 5, 'name' => 'Pending Requestor Review', 'description' => 'Original requestor must confirm the selected quotation meets specifications'],
+        'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['number' => 6, 'name' => 'Requestor Review Approved', 'description' => 'Selected quotation confirmed by the original requestor'],
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['number' => 7, 'name' => 'Pending Branch Head Approval', 'description' => 'Branch Head must record the final award decision'],
+        'QUOTE_APPROVED' => ['number' => 8, 'name' => 'Quote Fully Approved', 'description' => 'Both RFQ approval stages are complete'],
+        'COMMITMENTS_PENDING' => ['number' => 9, 'name' => 'Commitment Form Submitted', 'description' => 'Procurement submitted commitment form, awaiting Finance upload'],
+        'COMMITMENT_APPROVED' => ['number' => 10, 'name' => 'Commitment Approved', 'description' => 'Finance approved commitment'],
+        'PO_PENDING' => ['number' => 11, 'name' => 'PO Created', 'description' => 'Purchase Order created, ready for invoice'],
+        'INVOICE_RECEIVED' => ['number' => 12, 'name' => 'Invoice Received', 'description' => 'Vendor invoice uploaded'],
         'EVALUATION_STAGE' => ['number' => 4, 'name' => 'Evaluation Stage', 'description' => 'RFQ under evaluation'],
         'COMMITTEE_RECOMMENDED' => ['number' => 5, 'name' => 'Committee Recommended', 'description' => 'Evaluation complete'],
         'AWARDED' => ['number' => 11, 'name' => 'Awarded', 'description' => 'Contract awarded'],
@@ -911,7 +917,10 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
         'DIRECTOR_APPROVED' => 'RFQ_LETTER_AVAILABLE',
         'GC_APPROVED' => 'RFQ_LETTER_AVAILABLE',
         'RFQ_LETTER_AVAILABLE' => 'QUOTE_REVIEW_PENDING',
-        'QUOTE_REVIEW_PENDING' => 'QUOTE_APPROVED',
+        'QUOTE_REVIEW_PENDING' => 'QUOTE_REQUESTOR_REVIEW_PENDING',
+        'QUOTE_REQUESTOR_REVIEW_PENDING' => 'QUOTE_REQUESTOR_REVIEW_APPROVED',
+        'QUOTE_REQUESTOR_REVIEW_APPROVED' => 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING',
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => 'QUOTE_APPROVED',
         'QUOTE_APPROVED' => 'FUNDS_VERIFIED',
         'FUNDS_VERIFIED' => 'COMMITMENTS_PENDING',
         'COMMITMENTS_PENDING' => 'COMMITMENT_APPROVED',
@@ -929,8 +938,11 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
         'SUBMITTED' => 'Submit for approval',
         'HOD_APPROVED' => 'Get HOD approval',
         'RFQ_LETTER_AVAILABLE' => 'Generate RFQ letters and send to vendors',
-        'QUOTE_REVIEW_PENDING' => 'Wait for vendor quotes, then review',
-        'QUOTE_APPROVED' => 'Select quote that meets requirements',
+        'QUOTE_REVIEW_PENDING' => 'Review vendor quotes and select the preferred quotation',
+        'QUOTE_REQUESTOR_REVIEW_PENDING' => 'Requestor confirms the selected quotation meets specifications',
+        'QUOTE_REQUESTOR_REVIEW_APPROVED' => 'Route the confirmed quotation to the Branch Head',
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => 'Branch Head records the final approval decision',
+        'QUOTE_APPROVED' => 'Selected quotation fully approved; proceed to funds verification',
         'FUNDS_VERIFIED' => 'Finance verifies funds are available',
         'COMMITMENTS_PENDING' => 'Procurement fills commitment form, Finance creates commitment',
         'COMMITMENT_APPROVED' => 'Finance created commitment, ready for PO',
@@ -1001,8 +1013,11 @@ function getStatusLabel(string $status): array {
         'FUNDS_VERIFIED' => ['label' => 'Funds Verified', 'description' => 'Finance has verified available funds', 'color' => 'success'],
         'GC_APPROVED' => ['label' => 'Government Chemist Approved', 'description' => 'Deputy Government Chemist has approved', 'color' => 'success'],
         'RFQ_LETTER_AVAILABLE' => ['label' => 'RFQ Letter Available', 'description' => 'RFQ letter can be generated for vendors', 'color' => 'info'],
-        'QUOTE_REVIEW_PENDING' => ['label' => 'Quote Review Pending', 'description' => 'Waiting for Requestor/HOD to review and select vendor quote', 'color' => 'warning'],
-        'QUOTE_APPROVED' => ['label' => 'Quote Approved', 'description' => 'Quote selected by Requestor, awaiting Finance commitment review', 'color' => 'info'],
+        'QUOTE_REVIEW_PENDING' => ['label' => 'Quote Review Pending', 'description' => 'Waiting for quote review and preferred-quote selection', 'color' => 'warning'],
+        'QUOTE_REQUESTOR_REVIEW_PENDING' => ['label' => 'Pending Requestor Review', 'description' => 'Original requestor must confirm the selected quotation meets specifications', 'color' => 'warning'],
+        'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['label' => 'Requestor Review Approved', 'description' => 'Selected quotation confirmed by the original requestor', 'color' => 'success'],
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['label' => 'Pending Branch Head Approval', 'description' => 'Awaiting auto-routed Branch Head final approval', 'color' => 'info'],
+        'QUOTE_APPROVED' => ['label' => 'Quote Approved', 'description' => 'Selected quotation fully approved and ready for commitment / funds verification', 'color' => 'info'],
         'COMMITMENTS_PENDING' => ['label' => 'Commitment Pending', 'description' => 'Procurement submitted commitment form. Awaiting Finance to upload commitment document.', 'color' => 'warning'],
         'COMMITMENT_APPROVED' => ['label' => 'Commitment Approved', 'description' => 'Finance has verified funds and created commitment. Ready for PO creation.', 'color' => 'success'],
         'COMMITMENT_DECLINED' => ['label' => 'Commitment Declined', 'description' => 'Finance declined commitment due to insufficient funds or issues. Request returned to Requestor.', 'color' => 'danger'],

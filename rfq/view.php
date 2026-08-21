@@ -645,6 +645,9 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
             'PROCUREMENT_STAGE'      => ['icon' => 'bi-cart-check',       'color' => '#6f42c1', 'label' => 'Procurement'],
             'RFQ_LETTER_AVAILABLE'   => ['icon' => 'bi-envelope-paper',   'color' => '#0d6efd', 'label' => 'RFQ Letter Available'],
             'QUOTE_REVIEW_PENDING'   => ['icon' => 'bi-chat-dots',        'color' => '#fd7e14', 'label' => 'Quote Review'],
+            'QUOTE_REQUESTOR_REVIEW_PENDING' => ['icon' => 'bi-person-check', 'color' => '#e67e22', 'label' => 'Pending Requestor Review'],
+            'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['icon' => 'bi-check2-circle', 'color' => '#20c997', 'label' => 'Requestor Review Approved'],
+            'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['icon' => 'bi-shield-check', 'color' => '#0dcaf0', 'label' => 'Pending Branch Head Approval'],
             'EVALUATION'             => ['icon' => 'bi-clipboard-check',  'color' => '#ffc107', 'label' => 'Evaluation'],
             'EVALUATION_STAGE'       => ['icon' => 'bi-clipboard-check',  'color' => '#ffc107', 'label' => 'Committee Evaluation'],
             'COMMITTEE_RECOMMENDED'  => ['icon' => 'bi-hand-thumbs-up',   'color' => '#198754', 'label' => 'Committee Recommended'],
@@ -709,7 +712,7 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
         <div class="alert alert-info border-0 rounded-3 d-flex align-items-start gap-2 mb-4">
             <i class="bi bi-lightbulb-fill fs-5 flex-shrink-0 mt-1" style="color:#0066cc;"></i>
             <div>
-                <strong>Review Quotes Now</strong> — Vendors have submitted their quotes. Please review each quote to determine if it meets your requirements. Click the <strong>Review</strong> button on each quote to provide your assessment. Finance will use your review to select the best quote.
+                <strong>Review Quotes Now</strong> — Vendors have submitted their quotes. Review each quote to determine whether it meets the request requirements. After review, the Branch Head/HOD should select the preferred quote to trigger requestor specification confirmation.
             </div>
         </div>
         <?php endif; ?>
@@ -729,7 +732,7 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
         <div class="alert alert-success border-0 rounded-3 d-flex align-items-start gap-2 mb-4">
             <i class="bi bi-star-fill fs-5 flex-shrink-0 mt-1" style="color:#198754;"></i>
             <div>
-                <strong>Approve &amp; Select Best Quote</strong> — As Branch Head, review the quotes and quote recommendations, then select the one that offers the best value. Click <strong>Select</strong> to approve the quote and proceed to funds verification and commitment creation.
+                <strong>Approve &amp; Select Best Quote</strong> — As Branch Head, review the quotes and quote recommendations, then select the one that offers the best value. Click <strong>Select</strong> to route the preferred quote to the original requestor for specification confirmation.
             </div>
         </div>
         <?php endif; ?>
@@ -739,16 +742,7 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
         <div class="alert alert-primary border-0 rounded-3 d-flex align-items-start gap-2 mb-4">
             <i class="bi bi-signpost-split fs-5 flex-shrink-0 mt-1"></i>
             <div>
-                <strong>Procurement Options</strong> — Quotations have been uploaded. You can either
-                <strong>Award</strong> the quotation/vendor, or
-                <strong>Send directly to Accounts for Funds Verification</strong>.
-                <div class="mt-2">
-                    <a href="/rfq/send_to_funds_verification.php?rfq_id=<?= $rfq_id ?>"
-                       class="btn btn-sm btn-outline-primary"
-                       onclick="return confirm('Send this request directly to Accounts for funds verification?')">
-                        <i class="bi bi-cash-coin me-1"></i>Send to Accounts for Funds Verification
-                    </a>
-                </div>
+                <strong>Procurement Reminder</strong> — The direct funds-verification shortcut has been retired. Procurement must support quote review, then wait for the Branch Head/HOD to select a quote, the original requestor to confirm specifications, and the Branch Head to record final approval.
             </div>
         </div>
         <?php endif; ?>
@@ -1220,4 +1214,4 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
     </div>
 </div>
 
-<?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
+<?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>

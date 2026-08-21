@@ -97,36 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         "Quote {$quote_id} reviewed: {$review_status} by {$_SESSION['full_name']}"
     ]);
     
-    // If quote meets requirements, auto-select it and notify Finance to verify funds
-    if ($review_status === 'MEETS_REQUIREMENTS') {
-        // Mark this quote as selected
-        $pdo->prepare("UPDATE rfq_quotes SET is_selected = 1 WHERE quote_id = ?")->execute([$quote_id]);
-        
-        // Unmark any other selected quotes for this RFQ
-        $pdo->prepare("
-            UPDATE rfq_quotes SET is_selected = 0
-            WHERE quote_id != ? AND rfq_vendor_id IN (
-                SELECT rfq_vendor_id FROM rfq_vendors WHERE rfq_id = ?
-            )
-        ")->execute([$quote_id, $rfq_id]);
-        
-        // Transition request to QUOTE_APPROVED
-        $pdo->prepare("
-            UPDATE procurement_requests SET status = 'QUOTE_APPROVED' WHERE request_id = ?
-        ")->execute([$quote['request_id']]);
-        
-        logRequestTimeline($pdo, $quote['request_id'], 'QUOTE_APPROVED',
-            "Quote from {$quote['vendor_name']} approved by {$_SESSION['full_name']}. Finance notified to verify funds.");
-        
-        // Notify Finance Officers to verify funds
-        require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
-        notifyFinanceCommitmentNeeded($quote['request_id'], $quote['vendor_name'], (float)$quote['quote_amount']);
-        
-        pop('Quote approved! Finance has been notified to verify funds.', '/rfq/view.php?id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'success');
-        exit;
-    }
-    
-    pop('Quote review saved successfully', '/rfq/view.php?id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'success');
+    pop('Quote review saved successfully. Select the preferred quote to route it for requestor specification confirmation.', '/rfq/view.php?id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'success');
     exit;
     } catch (Throwable $e) {
         pop(extractDbMessage($e), '/rfq/view.php?id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');

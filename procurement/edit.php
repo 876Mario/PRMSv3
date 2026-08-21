@@ -32,7 +32,7 @@ $isProcurementOrAdmin = in_array(($_SESSION['role_name'] ?? ''), ['Procurement O
 // Procurement can edit at most stages; others can only edit DRAFT
 $procurementEditableStatuses = ['DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 
     'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'EVALUATION_STAGE', 
-    'QUOTE_REVIEW_PENDING', 'QUOTE_APPROVED', 'COMMITMENT_DECLINED'];
+    'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENT_DECLINED'];
 
 if ($isProcurementOrAdmin) {
     if (!in_array(strtoupper($request['status']), $procurementEditableStatuses)) {
