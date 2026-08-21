@@ -82,7 +82,17 @@ if (!$request) {
 /* ================================
    Status Validation
 ================================ */
-if (strtoupper($request['status']) !== 'SUBMITTED') {
+// HOD/Branch Head only act at the initial SUBMITTED stage. Finance Officer
+// also verifies funds at SUBMITTED, but performs the final reimbursement
+// approval once the invoice has cleared verification (FUNDS_VERIFIED when
+// no invoice has been required yet, or INVOICE_VERIFIED once Procurement
+// has verified the goods/service). Without these later statuses being
+// accepted here, a verified invoice had no way to advance the request.
+$allowedStatuses = $isHodOrBranchHeadApproval
+    ? ['SUBMITTED']
+    : ['SUBMITTED', 'FUNDS_VERIFIED', 'INVOICE_VERIFIED'];
+
+if (!in_array(strtoupper($request['status']), $allowedStatuses, true)) {
     pop(
         "This request is not pending approval. Current status: " . $request['status'],
         "/reimbursement/view.php?request_id=".$request_id,
@@ -120,9 +130,15 @@ try {
             $newStatus = 'DECLINED';
         }
     } else {
-        // Finance Officer does fund verification
+        // Finance Officer does fund verification first, then the final
+        // reimbursement approval once the request has cleared invoice
+        // verification (FUNDS_VERIFIED / INVOICE_VERIFIED).
         if ($action === 'approve') {
-            $newStatus = 'FUNDS_VERIFIED';
+            if (strtoupper($request['status']) === 'SUBMITTED') {
+                $newStatus = 'FUNDS_VERIFIED';
+            } else {
+                $newStatus = 'APPROVED';
+            }
         } elseif ($action === 'return') {
             $newStatus = 'RETURNED_FOR_CORRECTION';
         } else {
@@ -237,7 +253,7 @@ try {
         // Request returned for correction
         notifyRequestReturned($request_id, (int)$request['created_by'], $comments ?: 'Please review the feedback and correct your request.');
     } else {
-        // Approved (HOD_APPROVED or FUNDS_VERIFIED)
+        // Approved (HOD_APPROVED, FUNDS_VERIFIED, or final APPROVED)
         notifyRequestFinalized($request_id, $newStatus);
     }
 
@@ -246,10 +262,14 @@ try {
     /* ================================
        Redirect
     ================================ */
-    $message = ($action === 'approve') 
-        ? "Reimbursement request funds verified and approved successfully."
-        : "Reimbursement request has been declined.";
-    
+    if ($action === 'approve') {
+        $message = ($newStatus === 'APPROVED')
+            ? "Reimbursement request approved successfully. It is now ready for payment processing."
+            : "Reimbursement request funds verified and approved successfully.";
+    } else {
+        $message = "Reimbursement request has been declined.";
+    }
+
     pop(
         $message,
         "/reimbursement/view.php?request_id=".$request_id,
