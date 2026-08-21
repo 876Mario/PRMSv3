@@ -40,6 +40,54 @@ if (!$invoice) {
 $request_id = (int)$invoice['request_id'];
 
 if ((int)$invoice['goods_service_verified'] === 1) {
+    /* Self-heal: the invoice was verified previously but the parent request's
+       status never advanced (e.g. it was stuck at FUNDS_VERIFIED). If the
+       request can still move to INVOICE_VERIFIED, do it now so the pipeline
+       isn't left permanently stalled. */
+    if ($invoice['invoice_stage'] === 'COPY_TO_PROCUREMENT'
+        && canReimbursementTransition($invoice['request_status'], 'INVOICE_VERIFIED')
+    ) {
+        try {
+            $pdo->beginTransaction();
+
+            $statusStmt = $pdo->prepare("
+                UPDATE procurement_requests
+                SET status = 'INVOICE_VERIFIED', updated_at = NOW()
+                WHERE request_id = ?
+            ");
+            $statusStmt->execute([$request_id]);
+
+            $historyStmt = $pdo->prepare("
+                INSERT INTO reimbursement_status_history
+                (request_id, old_status, new_status, changed_by, change_notes)
+                VALUES (?, ?, 'INVOICE_VERIFIED', ?, ?)
+            ");
+            $historyStmt->execute([
+                $request_id,
+                $invoice['request_status'],
+                $_SESSION['user_id'],
+                'Pipeline advanced to Invoice Verified (invoice was already verified).',
+            ]);
+
+            $pdo->commit();
+
+            logAudit($pdo, 'reimbursement_invoices', $reimb_invoice_id, 'VERIFY',
+                "Request #{$invoice['request_number']} pipeline advanced to INVOICE_VERIFIED (invoice previously verified)");
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+        }
+
+        modalPop(
+            'Invoice Verified',
+            'This invoice was already verified. The request status has been advanced to Invoices Verified.',
+            '/reimbursement/view.php?request_id=' . $request_id,
+            'success'
+        );
+        exit;
+    }
+
     pop('This invoice has already been verified.', '/reimbursement/view.php?request_id=' . $request_id, POP_DEFAULT_DELAY_MS, 'info');
     exit;
 }

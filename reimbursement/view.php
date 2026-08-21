@@ -306,6 +306,10 @@ if (empty($_SESSION['csrf_token'])) {
                             <a href="/reimbursement/verify_invoice.php?id=<?= (int)$inv['reimb_invoice_id'] ?>" class="btn btn-sm btn-outline-success">
                               <i class="bi bi-check2-circle"></i> Verify
                             </a>
+                          <?php elseif ($inv['invoice_stage'] === 'COPY_TO_PROCUREMENT' && canReimbursementTransition($request['status'], 'INVOICE_VERIFIED')): ?>
+                            <a href="/reimbursement/verify_invoice.php?id=<?= (int)$inv['reimb_invoice_id'] ?>" class="btn btn-sm btn-outline-primary">
+                              <i class="bi bi-arrow-right-circle"></i> Advance Pipeline
+                            </a>
                           <?php else: ?>
                             <span class="text-muted small">—</span>
                           <?php endif; ?>

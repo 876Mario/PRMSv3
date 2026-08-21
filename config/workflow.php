@@ -699,21 +699,26 @@ function getReimbursementApprovalChain(): array {
 /**
  * Get allowed status transitions for reimbursement requests.
  *
- * Note on FUNDS_VERIFIED → APPROVED bypass: While the standard pipeline includes
- * INVOICE_SUBMITTED and INVOICE_VERIFIED stages, the system allows a direct bypass
- * from FUNDS_VERIFIED to APPROVED. This is intentional and permits:
+ * Note on FUNDS_VERIFIED → APPROVED / INVOICE_VERIFIED bypass: While the standard
+ * pipeline includes INVOICE_SUBMITTED and INVOICE_VERIFIED stages, the system allows
+ * direct bypasses from FUNDS_VERIFIED to APPROVED, and from FUNDS_VERIFIED straight
+ * to INVOICE_VERIFIED. This is intentional and permits:
  * - Finance officers to approve without invoice submission in cases where
  *   invoices were already verified externally or are waived
  * - Expedited processing for small or pre-approved reimbursement requests
+ * - Procurement/Finance to verify an invoice attached to a request that never had
+ *   its status explicitly bumped to INVOICE_SUBMITTED (e.g. invoice uploaded before
+ *   that intermediate step was recorded), so the pipeline is not stuck at
+ *   FUNDS_VERIFIED once the invoice has actually been verified.
  *
  * The default workflow should guide users through INVOICE_SUBMITTED and INVOICE_VERIFIED,
- * but the bypass remains available for exceptional cases requiring explicit authorization.
+ * but the bypasses remain available for exceptional cases requiring explicit authorization.
  */
 function getReimbursementTransitions(): array {
     return [
         'DRAFT'                        => ['SUBMITTED'],
         'SUBMITTED'                    => ['FUNDS_VERIFIED', 'DECLINED'],
-        'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'APPROVED', 'DECLINED'],
+        'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'APPROVED', 'DECLINED'],
         'INVOICE_SUBMITTED'            => ['INVOICE_VERIFIED', 'DECLINED'],
         'INVOICE_VERIFIED'             => ['APPROVED', 'INVOICE_SUBMITTED', 'DECLINED'],
         'APPROVED'                     => ['REIMBURSED'],
