@@ -84,19 +84,19 @@ Tracks branch head approver assignments for each RFQ.
 
 #### `rfqs` Table
 Added columns to track approval workflow:
-- `spec_review_status` (ENUM: PENDING, APPROVED, REJECTED)
-- `spec_reviewer_id` (FK to users)
-- `spec_reviewed_at` (DATETIME)
-- `spec_review_comments` (TEXT)
+- `requestor_spec_review_status` (ENUM: PENDING, APPROVED, REJECTED)
+- `requestor_reviewer_id` (FK to users)
+- `requestor_reviewed_at` (DATETIME)
+- `requestor_review_comments` (TEXT)
 - `branch_head_approval_status` (ENUM: PENDING, APPROVED, REJECTED)
 - `branch_head_approver_id` (FK to users)
 - `branch_head_approved_at` (DATETIME)
 - `branch_head_comments` (TEXT)
 
 **Indexes Added:**
-- `idx_rfq_spec_review_status`: Fast status queries
+- `idx_rfq_requestor_spec_review_status`: Fast status queries
 - `idx_rfq_branch_head_approval_status`: Fast status queries
-- `idx_rfq_spec_reviewer_id`: Reviewer lookup
+- `idx_rfq_requestor_reviewer_id`: Reviewer lookup
 - `idx_rfq_branch_head_approver_id`: Approver lookup
 
 #### `audit_log` Table
