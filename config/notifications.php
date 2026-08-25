@@ -3283,7 +3283,13 @@ function sendRequestorReviewNotification(int $rfqId): bool {
         <a href='" . he($rfqUrl) . "' class='btn btn-warning'>Open Requestor Review</a>
     ";
 
-    return dispatchRfqApprovalEmail('RequestorReview', $rfqId, $subject, $html, $recipients, $rfqUrl);
+    $meta = [
+        'request_id'     => (int)($context['request_id'] ?? 0),
+        'request_ref'    => $context['rfq_number'] ?? null,
+        'requestor_name' => $context['requestor_name'] ?? null,
+    ];
+
+    return dispatchRfqApprovalEmail('RequestorReview', $rfqId, $subject, $html, $recipients, $rfqUrl, $meta + ['stage' => 'REQUESTOR_SPEC_REVIEW']);
 }
 
 /**
@@ -3316,7 +3322,13 @@ function sendBranchHeadApprovalNotification(int $rfqId): bool {
         <a href='" . he($rfqUrl) . "' class='btn btn-primary'>Open Branch Head Approval</a>
     ";
 
-    return dispatchRfqApprovalEmail('BranchHeadApproval', $rfqId, $subject, $html, $recipients, $rfqUrl);
+    $meta = [
+        'request_id'     => (int)($context['request_id'] ?? 0),
+        'request_ref'    => $context['rfq_number'] ?? null,
+        'requestor_name' => $context['requestor_name'] ?? null,
+    ];
+
+    return dispatchRfqApprovalEmail('BranchHeadApproval', $rfqId, $subject, $html, $recipients, $rfqUrl, $meta + ['stage' => 'BRANCH_HEAD_APPROVAL']);
 }
 
 /**
@@ -3355,7 +3367,13 @@ function sendRequestorRejectionNotification(int $rfqId, string $reason): bool {
         <a href='" . he($rfqUrl) . "' class='btn btn-info'>View RFQ</a>
     ";
 
-    return dispatchRfqApprovalEmail('RequestorRejection', $rfqId, $subject, $html, $recipients, $rfqUrl);
+    $meta = [
+        'request_id'     => (int)($context['request_id'] ?? 0),
+        'request_ref'    => $context['rfq_number'] ?? null,
+        'requestor_name' => $context['requestor_name'] ?? null,
+    ];
+
+    return dispatchRfqApprovalEmail('RequestorRejection', $rfqId, $subject, $html, $recipients, $rfqUrl, $meta + ['stage' => 'QUOTE_REVIEW']);
 }
 
 /**
@@ -3393,7 +3411,13 @@ function sendVendorAwardNotification(int $rfqId): bool {
         <a href='" . he($rfqUrl) . "' class='btn btn-success'>Open RFQ</a>
     ";
 
-    return dispatchRfqApprovalEmail('VendorAward', $rfqId, $subject, $html, $recipients, $rfqUrl);
+    $meta = [
+        'request_id'     => (int)($context['request_id'] ?? 0),
+        'request_ref'    => $context['rfq_number'] ?? null,
+        'requestor_name' => $context['requestor_name'] ?? null,
+    ];
+
+    return dispatchRfqApprovalEmail('VendorAward', $rfqId, $subject, $html, $recipients, $rfqUrl, $meta + ['stage' => 'QUOTE_APPROVED']);
 }
 
 /**
@@ -3431,7 +3455,13 @@ function sendRejectionNotification(int $rfqId, string $reason): bool {
         <a href='" . he($rfqUrl) . "' class='btn btn-danger'>View RFQ</a>
     ";
 
-    return dispatchRfqApprovalEmail('BranchHeadReject', $rfqId, $subject, $html, $recipients, $rfqUrl);
+    $meta = [
+        'request_id'     => (int)($context['request_id'] ?? 0),
+        'request_ref'    => $context['rfq_number'] ?? null,
+        'requestor_name' => $context['requestor_name'] ?? null,
+    ];
+
+    return dispatchRfqApprovalEmail('BranchHeadReject', $rfqId, $subject, $html, $recipients, $rfqUrl, $meta + ['stage' => 'QUOTE_REVIEW']);
 }
 
 /**
@@ -3474,7 +3504,13 @@ function sendReturnForClarificationNotification(int $rfqId, string $stage, strin
         <a href='" . he($rfqUrl) . "' class='btn btn-warning'>Open RFQ</a>
     ";
 
-    return dispatchRfqApprovalEmail('ReturnForClarification', $rfqId, $subject, $html, $recipients, $rfqUrl);
+    $meta = [
+        'request_id'     => (int)($context['request_id'] ?? 0),
+        'request_ref'    => $context['rfq_number'] ?? null,
+        'requestor_name' => $context['requestor_name'] ?? null,
+    ];
+
+    return dispatchRfqApprovalEmail('ReturnForClarification', $rfqId, $subject, $html, $recipients, $rfqUrl, $meta + ['stage' => $stage]);
 }
 
 function getRfqApprovalNotificationContext(int $rfqId): ?array {
@@ -3492,7 +3528,7 @@ function getRfqApprovalNotificationContext(int $rfqId): ?array {
                     pr.created_by,
                     pr.status AS request_status,
                     u.email AS requestor_email,
-                    COALESCE(u.full_name, u.display_name) AS requestor_name,
+                    u.full_name AS requestor_name,
                     b.branch_name,
                     r.requestor_review_comments,
                     CASE WHEN r.requestor_spec_review_status = 'APPROVED' THEN 'MEETS_SPECIFICATIONS'
@@ -3530,7 +3566,7 @@ function getRfqProcurementRecipients(): array {
 
     try {
         $stmt = $pdo->prepare(
-            "SELECT u.user_id, u.email, COALESCE(u.full_name, u.display_name) AS full_name
+            "SELECT u.user_id, u.email, u.full_name AS full_name
                FROM users u
                JOIN roles r ON r.id = u.role_id
               WHERE r.name = 'Procurement Officer'
@@ -3556,7 +3592,7 @@ function getRfqBranchHeadRecipients(int $branchId, string $branchName = ''): arr
     try {
         if ($isHrmaBranch) {
             $stmt = $pdo->prepare(
-                "SELECT u.user_id, u.email, COALESCE(u.full_name, u.display_name) AS full_name
+                "SELECT u.user_id, u.email, u.full_name AS full_name
                    FROM users u
                    JOIN roles r ON r.id = u.role_id
                   WHERE r.name = 'Director HRM&A'
@@ -3570,7 +3606,7 @@ function getRfqBranchHeadRecipients(int $branchId, string $branchName = ''): arr
 
         if ($branchId > 0) {
             $stmt = $pdo->prepare(
-                "SELECT u.user_id, u.email, COALESCE(u.full_name, u.display_name) AS full_name
+                "SELECT u.user_id, u.email, u.full_name AS full_name
                    FROM users u
                    JOIN roles r ON r.id = u.role_id
                   WHERE r.name IN ('HOD', 'Branch Head')
@@ -3606,7 +3642,7 @@ function getRfqBranchHeadRecipients(int $branchId, string $branchName = ''): arr
     return $unique;
 }
 
-function dispatchRfqApprovalEmail(string $tag, int $rfqId, string $subject, string $html, array $recipients, string $url): bool {
+function dispatchRfqApprovalEmail(string $tag, int $rfqId, string $subject, string $html, array $recipients, string $url, array $meta = []): bool {
     if (empty($recipients)) {
         error_log("Notification[{$tag}]: no valid recipients found for RFQ {$rfqId}");
         return false;
@@ -3640,11 +3676,20 @@ function dispatchRfqApprovalEmail(string $tag, int $rfqId, string $subject, stri
                     default => NotificationService::TYPE_APPROVAL_NEEDED,
                 };
                 
+                $plainBody = trim(preg_replace('/\s+/', ' ', strip_tags($html)));
+                if (function_exists('mb_substr') && mb_strlen($plainBody) > 300) {
+                    $plainBody = mb_substr($plainBody, 0, 297) . '...';
+                }
+
                 NotificationService::createNotification($userId, $notificationType, [
-                    'title' => $subject,
-                    'message' => strip_tags($html),
-                    'url' => $url,
-                    'rfq_id' => $rfqId,
+                    'title'          => html_entity_decode($subject, ENT_QUOTES, 'UTF-8'),
+                    'body'           => !empty($meta['body']) ? $meta['body'] : $plainBody,
+                    'action_url'     => $url,
+                    'request_id'     => isset($meta['request_id']) ? (int)$meta['request_id'] : null,
+                    'request_ref'    => $meta['request_ref'] ?? null,
+                    'stage'          => $meta['stage'] ?? $tag,
+                    'requestor_name' => $meta['requestor_name'] ?? null,
+                    'priority'       => $meta['priority'] ?? 'normal',
                 ]);
                 error_log("Notification[{$tag}]: RFQ {$rfqId} in-app notification created for user {$userId}");
             } catch (Exception $e) {

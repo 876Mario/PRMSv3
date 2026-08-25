@@ -220,7 +220,7 @@ if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
       }
 
       window.prmsMarkRead = function (id, el) {
-        fetch('/api/notifications.php?action=mark_read&id=' + id, { method: 'POST' })
+        fetch('/api/notifications.php?action=mark_read&id=' + id, { method: 'POST', keepalive: true })
           .then(function () { prmsRefreshBadge(); });
       };
 
