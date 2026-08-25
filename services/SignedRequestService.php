@@ -80,7 +80,11 @@ class SignedRequestService {
             return ['valid' => false, 'error' => 'File appears to be corrupted or mismatched with its extension'];
         }
 
-        return ['valid' => true, 'error' => null];
+        return [
+            'valid' => true,
+            'error' => null,
+            'mime_type' => $mimeType
+        ];
     }
 
     /**
@@ -191,7 +195,8 @@ class SignedRequestService {
             }
 
             // Generate secure filename
-            $ext = $this->allowedMimeTypes[finfo_file(finfo_open(FILEINFO_MIME_TYPE), $fileArray['tmp_name'])];
+            $mimeType = $validation['mime_type'];
+            $ext = $this->allowedMimeTypes[$mimeType];
             $timestamp = time();
             $randomHash = bin2hex(random_bytes(8));
             $safeFilename = sprintf(
@@ -245,7 +250,7 @@ class SignedRequestService {
                 $relativePath,
                 $safeFilename,
                 basename($fileArray['name']),
-                finfo_file(finfo_open(FILEINFO_MIME_TYPE), $fileArray['tmp_name']),
+                $mimeType,
                 $fileArray['size'],
                 $newVersion,
                 $uploadedByUserId

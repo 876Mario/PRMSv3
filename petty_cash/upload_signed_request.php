@@ -58,7 +58,7 @@ try {
     $request = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($request) {
-        notifySignedRequestReceived($pdo, $request);
+        notifySignedRequestReceived($request_id, $request['request_number']);
     }
 } catch (Exception $e) {
     error_log("Warning: Failed to send notification for signed petty cash request " . $request_id . ": " . $e->getMessage());
