@@ -28,9 +28,12 @@ $allowedSuites = ['All', 'Unit', 'Feature', 'Workflow', 'Security'];
 $projectRoot = dirname(__DIR__);
 $phpunitBin  = $projectRoot . '/vendor/bin/phpunit';
 if (!is_executable($phpunitBin)) {
-    $phpunitBin = trim((string)shell_exec('command -v phpunit 2>/dev/null'));
-    if (empty($phpunitBin) || !is_executable($phpunitBin)) {
-        $phpunitBin = null;
+    $phpunitBin = null;
+    if (function_exists('shell_exec')) {
+        $systemPhpunitBin = trim((string)shell_exec('command -v phpunit 2>/dev/null'));
+        if ($systemPhpunitBin !== '' && is_executable($systemPhpunitBin)) {
+            $phpunitBin = $systemPhpunitBin;
+        }
     }
 }
 
