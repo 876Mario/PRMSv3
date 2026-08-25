@@ -75,10 +75,11 @@ class RequestorSpecificationReviewService
         try {
             $this->pdo->beginTransaction();
 
-            $context = $this->getRfqContext($rfqId);
+            $context = $this->getRfqContext($rfqId, true);
             $this->assertRequestorActionAllowed($context, $overrideReason);
             $selectedQuote = $this->getSelectedQuote($rfqId);
             $this->assertStageState($context, $selectedQuote, $quote_id);
+            $this->diagnosticLog('requestor review', $rfqId, $context, $selectedQuote, $outcome);
 
             $requestorStatus = $outcome === 'MEETS_SPECIFICATIONS' ? 'APPROVED' : 'REJECTED';
             $nextStatus = $outcome === 'MEETS_SPECIFICATIONS'
@@ -119,11 +120,14 @@ class RequestorSpecificationReviewService
 
             $this->logApprovalAudit($rfqId, $outcome, $comments, $selectedQuote);
 
-            $requestUpdate = $this->pdo->prepare("UPDATE procurement_requests SET status = :status WHERE request_id = :request_id");
+            $requestUpdate = $this->pdo->prepare("UPDATE procurement_requests SET status = :status WHERE request_id = :request_id AND status = 'QUOTE_REQUESTOR_REVIEW_PENDING'");
             $requestUpdate->execute([
                 ':status' => $nextStatus,
                 ':request_id' => (int) $context['request_id'],
             ]);
+            if ($requestUpdate->rowCount() !== 1) {
+                throw new RuntimeException('The RFQ status changed while this review was being submitted. Please reload and try again.');
+            }
 
             if (function_exists('logRequestTimeline')) {
                 logRequestTimeline(
@@ -220,10 +224,9 @@ class RequestorSpecificationReviewService
         ]);
     }
 
-    private function getRfqContext(int $rfqId): array
+    private function getRfqContext(int $rfqId, bool $lock = false): array
     {
-        $stmt = $this->pdo->prepare(
-            "SELECT r.rfq_id,
+        $sql = "SELECT r.rfq_id,
                     r.rfq_number,
                     r.requestor_spec_review_status,
                     r.branch_head_approval_status,
@@ -244,8 +247,11 @@ class RequestorSpecificationReviewService
              LEFT JOIN users req ON req.user_id = pr.created_by
              LEFT JOIN branches b ON b.branch_id = pr.branch_id
              WHERE r.rfq_id = ?
-             LIMIT 1"
-        );
+             LIMIT 1";
+        if ($lock && $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+            $sql .= ' FOR UPDATE';
+        }
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute([$rfqId]);
         $context = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -254,6 +260,21 @@ class RequestorSpecificationReviewService
         }
 
         return $context;
+    }
+
+    private function diagnosticLog(string $event, int $rfqId, array $context, ?array $quote, string $outcome): void
+    {
+        error_log(sprintf(
+            'RFQ workflow %s: rfq_id=%d request_id=%d current_state=%s selected_quote_id=%s actor_id=%d actor_role=%s outcome=%s',
+            $event,
+            $rfqId,
+            (int)($context['request_id'] ?? 0),
+            (string)($context['request_status'] ?? ''),
+            (string)($quote['quote_id'] ?? 'none'),
+            $this->userId,
+            $this->userRole,
+            $outcome
+        ));
     }
 
     private function getSelectedQuote(int $rfqId): ?array

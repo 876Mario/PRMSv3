@@ -117,10 +117,20 @@ class RFQQuoteApprovalService
 
         try {
             $this->pdo->beginTransaction();
-            $context = $this->getRfqContext($rfqId);
+            $context = $this->getRfqContext($rfqId, true);
             $this->assertBranchHeadActionAllowed($context, $overrideReason);
             $selectedQuote = $this->getSelectedQuote($rfqId);
             $this->assertBranchHeadStageState($context, $selectedQuote, $quote_id);
+            error_log(sprintf(
+                'RFQ workflow branch head decision: rfq_id=%d request_id=%d current_state=%s selected_quote_id=%s assigned_approver_id=%d actor_id=%d decision=%s',
+                $rfqId,
+                (int)($context['request_id'] ?? 0),
+                (string)($context['request_status'] ?? ''),
+                (string)($selectedQuote['quote_id'] ?? 'none'),
+                $this->getAssignedBranchHeadId($context),
+                $this->userId,
+                $decision
+            ));
 
             $requestStatus = 'QUOTE_APPROVED';
             $branchHeadStatus = $decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
@@ -167,11 +177,14 @@ class RFQQuoteApprovalService
                 ':rfq_id' => $rfqId,
             ]);
 
-            $requestStmt = $this->pdo->prepare("UPDATE procurement_requests SET status = :status WHERE request_id = :request_id");
+            $requestStmt = $this->pdo->prepare("UPDATE procurement_requests SET status = :status WHERE request_id = :request_id AND status = 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING'");
             $requestStmt->execute([
                 ':status' => $requestStatus,
                 ':request_id' => (int) $context['request_id'],
             ]);
+            if ($requestStmt->rowCount() !== 1) {
+                throw new RuntimeException('The RFQ status changed while this approval was being submitted. Please reload and try again.');
+            }
 
             $this->logApproval($rfqId, 'BRANCH_HEAD_APPROVAL', $action, $comments, $selectedQuote);
 
@@ -306,10 +319,9 @@ class RFQQuoteApprovalService
         return $this->requestorReviewService->getRequestorReviewHistory($rfq_id);
     }
 
-    private function getRfqContext(int $rfqId): array
+    private function getRfqContext(int $rfqId, bool $lock = false): array
     {
-        $stmt = $this->pdo->prepare(
-            "SELECT r.rfq_id,
+        $sql = "SELECT r.rfq_id,
                     r.rfq_number,
                     r.requestor_spec_review_status,
                     r.requestor_reviewer_id,
@@ -330,14 +342,23 @@ class RFQQuoteApprovalService
              LEFT JOIN users req ON req.user_id = pr.created_by
              LEFT JOIN branches b ON b.branch_id = pr.branch_id
              WHERE r.rfq_id = ?
-             LIMIT 1"
-        );
+             LIMIT 1";
+        if ($lock && $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+            $sql .= ' FOR UPDATE';
+        }
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute([$rfqId]);
         $context = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$context) {
             throw new RuntimeException('RFQ not found.');
         }
         return $context;
+    }
+
+    private function getAssignedBranchHeadId(array $context): int
+    {
+        $ids = $this->getBranchHeadCandidateIds((int)($context['branch_id'] ?? 0), (string)($context['branch_name'] ?? ''));
+        return (int)($ids[0] ?? 0);
     }
 
     private function getSelectedQuote(int $rfqId): ?array
