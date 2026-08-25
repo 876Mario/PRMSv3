@@ -3262,7 +3262,11 @@ function sendRequestorReviewNotification(int $rfqId): bool {
 
     $recipients = [];
     if (!empty($context['requestor_email']) && filter_var($context['requestor_email'], FILTER_VALIDATE_EMAIL)) {
-        $recipients[] = ['email' => $context['requestor_email'], 'name' => $context['requestor_name'] ?? 'Requestor'];
+        $recipients[] = [
+            'user_id' => (int)($context['created_by'] ?? 0),
+            'email' => $context['requestor_email'], 
+            'name' => $context['requestor_name'] ?? 'Requestor'
+        ];
     }
 
     $appUrl = getAppUrl();
@@ -3332,7 +3336,11 @@ function sendRequestorRejectionNotification(int $rfqId, string $reason): bool {
 
     $recipients = getRfqProcurementRecipients();
     if (!empty($context['requestor_email']) && filter_var($context['requestor_email'], FILTER_VALIDATE_EMAIL)) {
-        $recipients[] = ['email' => $context['requestor_email'], 'name' => $context['requestor_name'] ?? 'Requestor'];
+        $recipients[] = [
+            'user_id' => (int)($context['created_by'] ?? 0),
+            'email' => $context['requestor_email'], 
+            'name' => $context['requestor_name'] ?? 'Requestor'
+        ];
     }
 
     $appUrl = getAppUrl();
@@ -3366,7 +3374,11 @@ function sendVendorAwardNotification(int $rfqId): bool {
 
     $recipients = getRfqProcurementRecipients();
     if (!empty($context['requestor_email']) && filter_var($context['requestor_email'], FILTER_VALIDATE_EMAIL)) {
-        $recipients[] = ['email' => $context['requestor_email'], 'name' => $context['requestor_name'] ?? 'Requestor'];
+        $recipients[] = [
+            'user_id' => (int)($context['created_by'] ?? 0),
+            'email' => $context['requestor_email'], 
+            'name' => $context['requestor_name'] ?? 'Requestor'
+        ];
     }
 
     $appUrl = getAppUrl();
@@ -3400,7 +3412,11 @@ function sendRejectionNotification(int $rfqId, string $reason): bool {
 
     $recipients = getRfqProcurementRecipients();
     if (!empty($context['requestor_email']) && filter_var($context['requestor_email'], FILTER_VALIDATE_EMAIL)) {
-        $recipients[] = ['email' => $context['requestor_email'], 'name' => $context['requestor_name'] ?? 'Requestor'];
+        $recipients[] = [
+            'user_id' => (int)($context['created_by'] ?? 0),
+            'email' => $context['requestor_email'], 
+            'name' => $context['requestor_name'] ?? 'Requestor'
+        ];
     }
 
     $appUrl = getAppUrl();
@@ -3436,7 +3452,11 @@ function sendReturnForClarificationNotification(int $rfqId, string $stage, strin
     $recipients = [];
     if ($stage === 'BRANCH_HEAD_APPROVAL') {
         if (!empty($context['requestor_email']) && filter_var($context['requestor_email'], FILTER_VALIDATE_EMAIL)) {
-            $recipients[] = ['email' => $context['requestor_email'], 'name' => $context['requestor_name'] ?? 'Requestor'];
+            $recipients[] = [
+                'user_id' => (int)($context['created_by'] ?? 0),
+                'email' => $context['requestor_email'], 
+                'name' => $context['requestor_name'] ?? 'Requestor'
+            ];
         }
     } else {
         $recipients = getRfqProcurementRecipients();
@@ -3518,7 +3538,7 @@ function getRfqProcurementRecipients(): array {
         );
         $stmt->execute();
         return array_map(static function (array $row): array {
-            return ['email' => $row['email'], 'name' => $row['full_name'] ?? 'Procurement Officer'];
+            return ['user_id' => (int)$row['user_id'], 'email' => $row['email'], 'name' => $row['full_name'] ?? 'Procurement Officer'];
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
     } catch (Exception $e) {
         error_log("Notification[ProcurementRecipients]: {$e->getMessage()}");
@@ -3544,7 +3564,7 @@ function getRfqBranchHeadRecipients(int $branchId, string $branchName = ''): arr
             );
             $stmt->execute();
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $recipients[] = ['email' => $row['email'], 'name' => $row['full_name'] ?? 'Director HRM&A'];
+                $recipients[] = ['user_id' => (int)$row['user_id'], 'email' => $row['email'], 'name' => $row['full_name'] ?? 'Director HRM&A'];
             }
         }
 
@@ -3559,7 +3579,7 @@ function getRfqBranchHeadRecipients(int $branchId, string $branchName = ''): arr
             );
             $stmt->execute([$branchId]);
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $recipients[] = ['email' => $row['email'], 'name' => $row['full_name'] ?? 'Branch Head'];
+                $recipients[] = ['user_id' => (int)$row['user_id'], 'email' => $row['email'], 'name' => $row['full_name'] ?? 'Branch Head'];
             }
         }
     } catch (Exception $e) {
@@ -3570,11 +3590,15 @@ function getRfqBranchHeadRecipients(int $branchId, string $branchName = ''): arr
     $seen = [];
     $unique = [];
     foreach ($recipients as $recipient) {
+        $userId = (int)($recipient['user_id'] ?? 0);
+        if ($userId <= 0) {
+            continue;
+        }
         if (empty($recipient['email']) || !filter_var($recipient['email'], FILTER_VALIDATE_EMAIL)) {
             continue;
         }
-        if (!isset($seen[$recipient['email']])) {
-            $seen[$recipient['email']] = true;
+        if (!isset($seen[$userId])) {
+            $seen[$userId] = true;
             $unique[] = $recipient;
         }
     }
@@ -3590,14 +3614,43 @@ function dispatchRfqApprovalEmail(string $tag, int $rfqId, string $subject, stri
 
     $anySent = false;
     foreach ($recipients as $recipient) {
+        $userId = (int)($recipient['user_id'] ?? 0);
         $email = $recipient['email'] ?? '';
+        
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             error_log("Notification[{$tag}]: RFQ {$rfqId} skipped invalid recipient email");
             continue;
         }
+        
+        // Send email notification
         $sent = sendMail($email, $subject, $html);
         error_log("Notification[{$tag}]: RFQ {$rfqId} recipient={$email} url={$url} status=" . ($sent ? 'Sent' : 'Failed'));
         $anySent = $anySent || $sent;
+        
+        // Create in-app notification if user_id is available
+        if ($userId > 0 && class_exists('NotificationService')) {
+            try {
+                $notificationType = match ($tag) {
+                    'RequestorReview' => NotificationService::TYPE_APPROVAL_NEEDED,
+                    'BranchHeadApproval' => NotificationService::TYPE_APPROVAL_NEEDED,
+                    'RequestorRejection' => NotificationService::TYPE_REJECTION,
+                    'VendorAward' => NotificationService::TYPE_SUBMISSION,
+                    'BranchHeadReject' => NotificationService::TYPE_REJECTION,
+                    'ReturnForClarification' => NotificationService::TYPE_RETURN_CORRECTION,
+                    default => NotificationService::TYPE_APPROVAL_NEEDED,
+                };
+                
+                NotificationService::createNotification($userId, $notificationType, [
+                    'title' => $subject,
+                    'message' => strip_tags($html),
+                    'url' => $url,
+                    'rfq_id' => $rfqId,
+                ]);
+                error_log("Notification[{$tag}]: RFQ {$rfqId} in-app notification created for user {$userId}");
+            } catch (Exception $e) {
+                error_log("Notification[{$tag}]: RFQ {$rfqId} failed to create in-app notification for user {$userId}: {$e->getMessage()}");
+            }
+        }
     }
 
     return $anySent;
