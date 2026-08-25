@@ -14,8 +14,6 @@
 -- the correct column names.
 -- ===================================================================
 
-START TRANSACTION;
-
 -- ===================================
 -- 1. Recreate triggers with correct column names
 -- ===================================
@@ -69,6 +67,8 @@ DELIMITER ;
 -- Note: The old procedures sp_approve_rfq_spec_review and sp_reject_rfq_spec_review
 -- are dropped and replaced with sp_approve_rfq_requestor_review and 
 -- sp_reject_rfq_requestor_review to match the August 21 migration's naming convention.
+-- The procedures contain their own transactions to ensure atomicity of the multi-statement
+-- operations (UPDATE + multiple INSERTs).
 
 DROP PROCEDURE IF EXISTS `sp_approve_rfq_spec_review`;
 DROP PROCEDURE IF EXISTS `sp_approve_rfq_requestor_review`;
@@ -138,4 +138,3 @@ END
 $$
 DELIMITER ;
 
-COMMIT;
