@@ -105,6 +105,16 @@ CREATE DEFINER=`u153072617_dgc_ipams`@`127.0.0.1` PROCEDURE `sp_reject_rfq_reque
     COMMIT;
 END$$
 
+CREATE DEFINER=`u153072617_dgc_ipams`@`127.0.0.1` PROCEDURE `sp_approve_rfq_spec_review` (IN `p_rfq_id` INT, IN `p_requestor_id` INT, IN `p_comments` TEXT, IN `p_quote_id` INT)   BEGIN
+    -- Backward-compatible alias that calls the new procedure
+    CALL sp_approve_rfq_requestor_review(p_rfq_id, p_requestor_id, p_comments, p_quote_id);
+END$$
+
+CREATE DEFINER=`u153072617_dgc_ipams`@`127.0.0.1` PROCEDURE `sp_reject_rfq_spec_review` (IN `p_rfq_id` INT, IN `p_requestor_id` INT, IN `p_reason` TEXT, IN `p_quote_id` INT)   BEGIN
+    -- Backward-compatible alias that calls the new procedure
+    CALL sp_reject_rfq_requestor_review(p_rfq_id, p_requestor_id, p_reason, p_quote_id);
+END$$
+
 DELIMITER ;
 
 -- --------------------------------------------------------
@@ -18517,10 +18527,10 @@ CREATE TRIGGER `trg_initialize_spec_review_on_first_quote` AFTER INSERT ON `rfq_
         SELECT rfq_id FROM rfq_vendors WHERE rfq_vendor_id = NEW.rfq_vendor_id
     );
     
-    -- If this is the first quote, initialize the workflow
+    -- If this is the first quote, initialize the workflow with correct column name
     IF quote_count = 1 THEN
         UPDATE rfqs
-        SET spec_review_status = 'PENDING'
+        SET requestor_spec_review_status = 'PENDING'
         WHERE rfq_id = (
             SELECT rfq_id FROM rfq_vendors WHERE rfq_vendor_id = NEW.rfq_vendor_id LIMIT 1
         );
