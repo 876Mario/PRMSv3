@@ -71,6 +71,26 @@ class NotificationService
         }
 
         try {
+            // Skip exact duplicates that are still unread (same recipient,
+            // type, title and action link) to avoid notification spam.
+            $dupStmt = $pdo->prepare("
+                SELECT id FROM user_notifications
+                WHERE user_id = :uid AND type = :type AND title = :title
+                  AND ((action_url IS NULL AND :url1 IS NULL) OR action_url = :url2)
+                  AND is_read = 0
+                LIMIT 1
+            ");
+            $dupStmt->execute([
+                ':uid'   => $userId,
+                ':type'  => $type,
+                ':title' => $title,
+                ':url1'  => $data['action_url'] ?? null,
+                ':url2'  => $data['action_url'] ?? null,
+            ]);
+            if ($dupStmt->fetchColumn()) {
+                return true; // identical unread notification already pending
+            }
+
             $stmt = $pdo->prepare("
                 INSERT INTO user_notifications
                     (user_id, request_id, type, title, body, request_ref,
@@ -181,11 +201,13 @@ class NotificationService
                        action_url, stage, requestor_name, priority,
                        is_read, created_at, read_at
                 FROM user_notifications
-                WHERE user_id = ?
+                WHERE user_id = :uid
                 ORDER BY created_at DESC
-                LIMIT ?
+                LIMIT :lim
             ");
-            $stmt->execute([$userId, $limit]);
+            $stmt->bindValue(':uid', $userId, PDO::PARAM_INT);
+            $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+            $stmt->execute();
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (Throwable $e) {
             error_log("NotificationService::getAll error: " . $e->getMessage());

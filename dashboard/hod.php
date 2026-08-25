@@ -124,7 +124,15 @@ $rfqAwardStmt = $pdo->prepare("
 $rfqAwardStmt->execute();
 $rfqAwards = $rfqAwardStmt->fetchAll(PDO::FETCH_ASSOC);
 
-$totalPending = count($requests) + count($pendingCommitments) + count($pendingPOs) + count($rfqAwards);
+/* RFQs awaiting this Branch Head's final approval (requestor already confirmed) */
+$pendingBranchHeadRfqApprovals = [];
+if (hasPermission('approve_branch_head_award')) {
+    require_once $_SERVER['DOCUMENT_ROOT'].'/services/RFQQuoteApprovalService.php';
+    $rfqApprovalService = new RFQQuoteApprovalService($pdo, (int)$_SESSION['user_id'], $_SESSION['role_name'] ?? '');
+    $pendingBranchHeadRfqApprovals = $rfqApprovalService->getPendingBranchHeadApprovals();
+}
+
+$totalPending = count($requests) + count($pendingCommitments) + count($pendingPOs) + count($rfqAwards) + count($pendingBranchHeadRfqApprovals);
 
 /* ================================
    Status count cards (all requests, not filtered)
@@ -456,6 +464,55 @@ $curDir  = strtoupper($_GET['dir'] ?? 'ASC');
                 <td style="padding: 0.75rem 1rem; color: #999; font-size: 0.8rem;"><?= date('d M Y', strtotime($po['created_at'])) ?></td>
                 <td style="padding: 0.75rem 1rem; text-align: center;">
                   <a href="/po/view.php?po_id=<?= $po['po_id'] ?>" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 0.35rem 0.75rem; border-radius: 6px; text-decoration: none; font-size: 0.75rem; font-weight: 600;">Review</a>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Pending RFQ Approvals (Branch Head final approval) -->
+    <?php if (!empty($pendingBranchHeadRfqApprovals)): ?>
+    <div style="background: white; border-radius: 12px; border: 1px solid #e0e0e0; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); margin-bottom: 1.5rem;">
+      <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 2px solid #e0e0e0; display: flex; align-items: center; justify-content: space-between;">
+        <h6 style="margin: 0; font-size: 1rem; font-weight: 700; color: #333;">🛡️ Pending RFQ Approvals <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;"><?= count($pendingBranchHeadRfqApprovals) ?></span></h6>
+        <a href="/rfq/approval_pending.php" style="color: #667eea; text-decoration: none; font-size: 0.8rem; font-weight: 600;">View All &raquo;</a>
+      </div>
+      <p style="margin: 0 0 1rem 0; color: #777; font-size: 0.8rem;">These RFQs have been confirmed by the requestor and are awaiting your final Branch Head approval.</p>
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+          <thead style="background: #f5f5f5;">
+            <tr>
+              <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">RFQ #</th>
+              <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Requestor</th>
+              <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Branch</th>
+              <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Supplier</th>
+              <th style="padding: 0.75rem 1rem; text-align: right; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Quote Amount</th>
+              <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Submitted</th>
+              <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Status</th>
+              <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Days Pending</th>
+              <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($pendingBranchHeadRfqApprovals as $bh): ?>
+              <?php
+                $bhSubmittedAt  = $bh['requestor_reviewed_at'] ?: null;
+                $bhDaysPending  = $bhSubmittedAt ? max(0, (int)floor((time() - strtotime($bhSubmittedAt)) / 86400)) : null;
+              ?>
+              <tr style="border-bottom: 1px solid #f0f0f0;" onmouseover="this.style.background='#f9f9f9'" onmouseout="this.style.background='white'">
+                <td style="padding: 0.75rem 1rem; font-weight: 600; color: #333;"><?= htmlspecialchars($bh['rfq_number']) ?></td>
+                <td style="padding: 0.75rem 1rem; color: #666;"><?= htmlspecialchars($bh['requestor_name'] ?? 'N/A') ?></td>
+                <td style="padding: 0.75rem 1rem; color: #666;"><?= htmlspecialchars($bh['branch_name'] ?? 'N/A') ?></td>
+                <td style="padding: 0.75rem 1rem; color: #666;"><?= htmlspecialchars($bh['selected_vendor_name'] ?? 'Pending selection') ?></td>
+                <td style="padding: 0.75rem 1rem; text-align: right; font-weight: 600; color: #333;"><?= !empty($bh['selected_quote_amount']) ? 'JMD ' . number_format((float)$bh['selected_quote_amount'], 2) : '—' ?></td>
+                <td style="padding: 0.75rem 1rem; color: #999; font-size: 0.8rem;"><?= $bhSubmittedAt ? date('d M Y', strtotime($bhSubmittedAt)) : '—' ?></td>
+                <td style="padding: 0.75rem 1rem; text-align: center;"><span style="background: #fff3cd; color: #856404; padding: 0.25rem 0.6rem; border-radius: 12px; font-size: 0.72rem; font-weight: 600;">Awaiting Branch Head Approval</span></td>
+                <td style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: <?= ($bhDaysPending !== null && $bhDaysPending > 3) ? '#e74c3c' : '#333' ?>;"><?= $bhDaysPending !== null ? $bhDaysPending : '—' ?></td>
+                <td style="padding: 0.75rem 1rem; text-align: center;">
+                  <a href="/rfq/branch_head_approve.php?id=<?= (int)$bh['rfq_id'] ?>" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 0.35rem 0.75rem; border-radius: 6px; text-decoration: none; font-size: 0.75rem; font-weight: 600;">Review &amp; Approve</a>
                 </td>
               </tr>
             <?php endforeach; ?>
