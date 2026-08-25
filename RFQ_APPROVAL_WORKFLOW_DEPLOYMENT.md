@@ -294,8 +294,8 @@ VALUES (
 
 ```sql
 -- Check approval status for an RFQ
-SELECT rfq_id, spec_review_status, branch_head_approval_status,
-       spec_reviewer_id, branch_head_approver_id
+SELECT rfq_id, requestor_spec_review_status, branch_head_approval_status,
+       requestor_reviewer_id, branch_head_approver_id
 FROM rfqs
 WHERE rfq_id = <id>;
 
@@ -311,9 +311,9 @@ SELECT * FROM rfq_quote_approvals WHERE rfq_id = <id> ORDER BY created_at DESC;
 
 ### Indexes
 Database indexes are automatically created by the migration:
-- `idx_rfq_spec_review_status` - For status queries
+- `idx_rfq_requestor_spec_review_status` - For status queries
 - `idx_rfq_branch_head_approval_status` - For status queries
-- `idx_rfq_spec_reviewer_id` - For reviewer lookups
+- `idx_rfq_requestor_reviewer_id` - For reviewer lookups
 - `idx_rfq_branch_head_approver_id` - For approver lookups
 - `idx_approval_stage`, `idx_approver_id`, `idx_action` - On approval audit table
 
