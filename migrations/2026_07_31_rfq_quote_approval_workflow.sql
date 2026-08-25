@@ -10,18 +10,18 @@
 -- 1. Extend rfqs table for approval tracking
 -- ===================================
 ALTER TABLE `rfqs` 
-ADD COLUMN IF NOT EXISTS `spec_review_status` ENUM('PENDING','APPROVED','REJECTED') DEFAULT 'PENDING' AFTER `quote_review_status`,
-ADD COLUMN IF NOT EXISTS `spec_reviewer_id` INT(11) DEFAULT NULL AFTER `spec_review_status`,
-ADD COLUMN IF NOT EXISTS `spec_reviewed_at` DATETIME DEFAULT NULL AFTER `spec_reviewer_id`,
-ADD COLUMN IF NOT EXISTS `spec_review_comments` TEXT DEFAULT NULL AFTER `spec_reviewed_at`,
-ADD COLUMN IF NOT EXISTS `branch_head_approval_status` ENUM('PENDING','APPROVED','REJECTED') DEFAULT 'PENDING' AFTER `spec_review_comments`,
+ADD COLUMN IF NOT EXISTS `requestor_spec_review_status` ENUM('PENDING','APPROVED','REJECTED') DEFAULT 'PENDING' AFTER `quote_review_status`,
+ADD COLUMN IF NOT EXISTS `requestor_reviewer_id` INT(11) DEFAULT NULL AFTER `requestor_spec_review_status`,
+ADD COLUMN IF NOT EXISTS `requestor_reviewed_at` DATETIME DEFAULT NULL AFTER `requestor_reviewer_id`,
+ADD COLUMN IF NOT EXISTS `requestor_review_comments` TEXT DEFAULT NULL AFTER `requestor_reviewed_at`,
+ADD COLUMN IF NOT EXISTS `branch_head_approval_status` ENUM('PENDING','APPROVED','REJECTED') DEFAULT 'PENDING' AFTER `requestor_review_comments`,
 ADD COLUMN IF NOT EXISTS `branch_head_approver_id` INT(11) DEFAULT NULL AFTER `branch_head_approval_status`,
 ADD COLUMN IF NOT EXISTS `branch_head_approved_at` DATETIME DEFAULT NULL AFTER `branch_head_approver_id`,
 ADD COLUMN IF NOT EXISTS `branch_head_comments` TEXT DEFAULT NULL AFTER `branch_head_approved_at`;
 
 -- Add indexes for approval workflow queries
-CREATE INDEX IF NOT EXISTS idx_rfq_spec_review_status ON rfqs(spec_review_status);
-CREATE INDEX IF NOT EXISTS idx_rfq_spec_reviewer_id ON rfqs(spec_reviewer_id);
+CREATE INDEX IF NOT EXISTS idx_rfq_requestor_spec_review_status ON rfqs(requestor_spec_review_status);
+CREATE INDEX IF NOT EXISTS idx_rfq_requestor_reviewer_id ON rfqs(requestor_reviewer_id);
 CREATE INDEX IF NOT EXISTS idx_rfq_branch_head_approval_status ON rfqs(branch_head_approval_status);
 CREATE INDEX IF NOT EXISTS idx_rfq_branch_head_approver_id ON rfqs(branch_head_approver_id);
 
@@ -130,8 +130,8 @@ CREATE TRIGGER `trg_initialize_rfq_approval_workflow` BEFORE INSERT ON `rfqs` FO
 BEGIN
     -- When RFQ is created, initialize approval statuses using SET NEW
     -- This ensures the default values are set before row insertion
-    IF NEW.spec_review_status IS NULL THEN
-        SET NEW.spec_review_status = 'PENDING';
+    IF NEW.requestor_spec_review_status IS NULL THEN
+        SET NEW.requestor_spec_review_status = 'PENDING';
     END IF;
     IF NEW.branch_head_approval_status IS NULL THEN
         SET NEW.branch_head_approval_status = 'PENDING';
@@ -151,21 +151,21 @@ DROP TRIGGER IF EXISTS `trg_require_quote_approval_for_commitment`;
 DELIMITER $$
 CREATE TRIGGER `trg_require_quote_approval_for_commitment` BEFORE INSERT ON `commitments` FOR EACH ROW
 BEGIN
-    DECLARE spec_status VARCHAR(50);
+    DECLARE requestor_status VARCHAR(50);
     DECLARE branch_head_status VARCHAR(50);
     
     IF NEW.rfq_id IS NOT NULL AND NEW.selected_quote_id IS NOT NULL THEN
         -- Get approval statuses for this RFQ
-        SELECT spec_review_status, branch_head_approval_status
-        INTO spec_status, branch_head_status
+        SELECT requestor_spec_review_status, branch_head_approval_status
+        INTO requestor_status, branch_head_status
         FROM rfqs
         WHERE rfq_id = NEW.rfq_id
         LIMIT 1;
         
         -- Check if both approvals are complete
-        IF spec_status IS NULL OR spec_status != 'APPROVED' THEN
+        IF requestor_status IS NULL OR requestor_status != 'APPROVED' THEN
             SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Cannot create commitment: Specification review not approved';
+            SET MESSAGE_TEXT = 'Cannot create commitment: Requestor specification confirmation not approved';
         END IF;
         
         IF branch_head_status IS NULL OR branch_head_status != 'APPROVED' THEN
@@ -181,8 +181,9 @@ DELIMITER ;
 -- 8. Create stored procedure for approval workflow
 -- ===================================
 DROP PROCEDURE IF EXISTS `sp_approve_rfq_spec_review`;
+DROP PROCEDURE IF EXISTS `sp_approve_rfq_requestor_review`;
 DELIMITER $$
-CREATE PROCEDURE `sp_approve_rfq_spec_review`(
+CREATE PROCEDURE `sp_approve_rfq_requestor_review`(
     IN p_rfq_id INT,
     IN p_approver_id INT,
     IN p_comments TEXT
@@ -190,18 +191,18 @@ CREATE PROCEDURE `sp_approve_rfq_spec_review`(
 BEGIN
     START TRANSACTION;
     
-    -- Update RFQ spec review status
+    -- Update RFQ requestor spec review status
     UPDATE rfqs
-    SET spec_review_status = 'APPROVED',
-        spec_reviewer_id = p_approver_id,
-        spec_reviewed_at = NOW(),
-        spec_review_comments = p_comments
+    SET requestor_spec_review_status = 'APPROVED',
+        requestor_reviewer_id = p_approver_id,
+        requestor_reviewed_at = NOW(),
+        requestor_review_comments = p_comments
     WHERE rfq_id = p_rfq_id;
     
     -- Log approval in audit table
     INSERT INTO rfq_quote_approvals 
     (rfq_id, approval_stage, approver_id, action, comments, created_at)
-    VALUES (p_rfq_id, 'SPEC_REVIEW', p_approver_id, 'APPROVED', p_comments, NOW());
+    VALUES (p_rfq_id, 'REQUESTOR_REVIEW', p_approver_id, 'APPROVED', p_comments, NOW());
     
     COMMIT;
 END
@@ -237,8 +238,9 @@ $$
 DELIMITER ;
 
 DROP PROCEDURE IF EXISTS `sp_reject_rfq_spec_review`;
+DROP PROCEDURE IF EXISTS `sp_reject_rfq_requestor_review`;
 DELIMITER $$
-CREATE PROCEDURE `sp_reject_rfq_spec_review`(
+CREATE PROCEDURE `sp_reject_rfq_requestor_review`(
     IN p_rfq_id INT,
     IN p_approver_id INT,
     IN p_reason TEXT
@@ -246,18 +248,18 @@ CREATE PROCEDURE `sp_reject_rfq_spec_review`(
 BEGIN
     START TRANSACTION;
     
-    -- Update RFQ spec review status
+    -- Update RFQ requestor spec review status
     UPDATE rfqs
-    SET spec_review_status = 'REJECTED',
-        spec_reviewer_id = p_approver_id,
-        spec_reviewed_at = NOW(),
-        spec_review_comments = p_reason
+    SET requestor_spec_review_status = 'REJECTED',
+        requestor_reviewer_id = p_approver_id,
+        requestor_reviewed_at = NOW(),
+        requestor_review_comments = p_reason
     WHERE rfq_id = p_rfq_id;
     
     -- Log rejection in audit table
     INSERT INTO rfq_quote_approvals 
     (rfq_id, approval_stage, approver_id, action, rejection_reason, created_at)
-    VALUES (p_rfq_id, 'SPEC_REVIEW', p_approver_id, 'REJECTED', p_reason, NOW());
+    VALUES (p_rfq_id, 'REQUESTOR_REVIEW', p_approver_id, 'REJECTED', p_reason, NOW());
     
     COMMIT;
 END

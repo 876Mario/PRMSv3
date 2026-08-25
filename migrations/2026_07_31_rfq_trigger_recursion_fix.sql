@@ -35,8 +35,8 @@ CREATE TRIGGER `trg_initialize_rfq_approval_workflow` BEFORE INSERT ON `rfqs` FO
 BEGIN
     -- Only sets NEW.* values before the row is written; never touches `rfqs`
     -- via a separate UPDATE/INSERT/DELETE statement.
-    IF NEW.spec_review_status IS NULL THEN
-        SET NEW.spec_review_status = 'PENDING';
+    IF NEW.requestor_spec_review_status IS NULL THEN
+        SET NEW.requestor_spec_review_status = 'PENDING';
     END IF;
     IF NEW.branch_head_approval_status IS NULL THEN
         SET NEW.branch_head_approval_status = 'PENDING';
@@ -64,20 +64,20 @@ DROP TRIGGER IF EXISTS `trg_require_quote_approval_for_commitment`;
 DELIMITER $$
 CREATE TRIGGER `trg_require_quote_approval_for_commitment` BEFORE INSERT ON `commitments` FOR EACH ROW
 BEGIN
-    DECLARE spec_status VARCHAR(50);
+    DECLARE requestor_status VARCHAR(50);
     DECLARE branch_head_status VARCHAR(50);
 
     IF NEW.rfq_id IS NOT NULL AND NEW.selected_quote_id IS NOT NULL THEN
         -- Read-only lookup; does not modify `rfqs`
-        SELECT spec_review_status, branch_head_approval_status
-        INTO spec_status, branch_head_status
+        SELECT requestor_spec_review_status, branch_head_approval_status
+        INTO requestor_status, branch_head_status
         FROM rfqs
         WHERE rfq_id = NEW.rfq_id
         LIMIT 1;
 
-        IF spec_status IS NULL OR spec_status != 'APPROVED' THEN
+        IF requestor_status IS NULL OR requestor_status != 'APPROVED' THEN
             SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Cannot create commitment: Specification review not approved';
+            SET MESSAGE_TEXT = 'Cannot create commitment: Requestor specification confirmation not approved';
         END IF;
 
         IF branch_head_status IS NULL OR branch_head_status != 'APPROVED' THEN
@@ -95,8 +95,9 @@ DELIMITER ;
 --    inside a trigger fired by `rfqs`, so no recursion occurs)
 -- ===================================
 DROP PROCEDURE IF EXISTS `sp_approve_rfq_spec_review`;
+DROP PROCEDURE IF EXISTS `sp_approve_rfq_requestor_review`;
 DELIMITER $$
-CREATE PROCEDURE `sp_approve_rfq_spec_review`(
+CREATE PROCEDURE `sp_approve_rfq_requestor_review`(
     IN p_rfq_id INT,
     IN p_approver_id INT,
     IN p_comments TEXT
@@ -105,15 +106,15 @@ BEGIN
     START TRANSACTION;
 
     UPDATE rfqs
-    SET spec_review_status = 'APPROVED',
-        spec_reviewer_id = p_approver_id,
-        spec_reviewed_at = NOW(),
-        spec_review_comments = p_comments
+    SET requestor_spec_review_status = 'APPROVED',
+        requestor_reviewer_id = p_approver_id,
+        requestor_reviewed_at = NOW(),
+        requestor_review_comments = p_comments
     WHERE rfq_id = p_rfq_id;
 
     INSERT INTO rfq_quote_approvals
     (rfq_id, approval_stage, approver_id, action, comments, created_at)
-    VALUES (p_rfq_id, 'SPEC_REVIEW', p_approver_id, 'APPROVED', p_comments, NOW());
+    VALUES (p_rfq_id, 'REQUESTOR_REVIEW', p_approver_id, 'APPROVED', p_comments, NOW());
 
     COMMIT;
 END
@@ -147,8 +148,9 @@ $$
 DELIMITER ;
 
 DROP PROCEDURE IF EXISTS `sp_reject_rfq_spec_review`;
+DROP PROCEDURE IF EXISTS `sp_reject_rfq_requestor_review`;
 DELIMITER $$
-CREATE PROCEDURE `sp_reject_rfq_spec_review`(
+CREATE PROCEDURE `sp_reject_rfq_requestor_review`(
     IN p_rfq_id INT,
     IN p_approver_id INT,
     IN p_reason TEXT
@@ -157,15 +159,15 @@ BEGIN
     START TRANSACTION;
 
     UPDATE rfqs
-    SET spec_review_status = 'REJECTED',
-        spec_reviewer_id = p_approver_id,
-        spec_reviewed_at = NOW(),
-        spec_review_comments = p_reason
+    SET requestor_spec_review_status = 'REJECTED',
+        requestor_reviewer_id = p_approver_id,
+        requestor_reviewed_at = NOW(),
+        requestor_review_comments = p_reason
     WHERE rfq_id = p_rfq_id;
 
     INSERT INTO rfq_quote_approvals
     (rfq_id, approval_stage, approver_id, action, rejection_reason, created_at)
-    VALUES (p_rfq_id, 'SPEC_REVIEW', p_approver_id, 'REJECTED', p_reason, NOW());
+    VALUES (p_rfq_id, 'REQUESTOR_REVIEW', p_approver_id, 'REJECTED', p_reason, NOW());
 
     COMMIT;
 END
