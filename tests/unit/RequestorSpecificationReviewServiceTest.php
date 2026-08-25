@@ -58,6 +58,15 @@ class RequestorSpecificationReviewServiceTest extends PHPUnit\Framework\TestCase
         $this->assertSame('QUOTE_BRANCH_HEAD_APPROVAL_PENDING', $requestStatus);
     }
 
+    public function testRepeatedRequestorSubmissionIsRejectedAfterRouting(): void
+    {
+        $service = new RequestorSpecificationReviewService($this->pdo, 10, 'Requestor');
+        $this->assertTrue($service->submitRequestorReview(1, 'MEETS_SPECIFICATIONS', 'Matches the request.', 1001));
+
+        $this->expectException(RuntimeException::class);
+        $service->submitRequestorReview(1, 'MEETS_SPECIFICATIONS', 'Duplicate submission.', 1001);
+    }
+
     public function testRequestorReviewHistoryIsAppendOnlyByCodeInspection(): void
     {
         $serviceSource = file_get_contents(dirname(__DIR__, 2) . '/services/RequestorSpecificationReviewService.php');
