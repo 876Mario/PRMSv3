@@ -480,7 +480,7 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
                                 </td>
                                 <td class="text-end pe-4">
                                     <div class="d-flex flex-wrap gap-1 justify-content-end">
-                                        <!-- REVIEW BUTTON: Requestor/Branch Head/HOD at QUOTE_REVIEW_PENDING -->
+                                        <!-- Quote review is only available before a quote is selected. -->
                                         <?php if ($rfq['request_status'] === 'QUOTE_REVIEW_PENDING' && ($isRequestCreator || in_array($userRoleName, ['HOD', 'Branch Head', 'Procurement Officer']))): ?>
                                         <a href="/rfq/review_quote.php?quote_id=<?= $quote['quote_id'] ?>&rfq_id=<?= $rfq_id ?>"
                                            class="btn btn-sm btn-outline-dark rounded-pill">
@@ -497,6 +497,19 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
                                         <button class="btn btn-sm btn-outline-secondary rounded-pill" disabled title="RFQ must be in quote review stage. Procurement Officer: Click 'Move to Quote Review' button above.">
                                             <i class="bi bi-lock me-1"></i>Not Yet
                                         </button>
+                                        <?php endif; ?>
+
+                                        <?php if ($rfq['request_status'] === 'QUOTE_REQUESTOR_REVIEW_PENDING' && $isRequestCreator): ?>
+                                            <a href="/rfq/requestor_spec_review.php?id=<?= $rfq_id ?>"
+                                               class="btn btn-sm btn-outline-primary rounded-pill">
+                                                <i class="bi bi-person-check me-1"></i>Confirm Specifications
+                                            </a>
+                                        <?php elseif ($rfq['request_status'] === 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING'
+                                            && in_array($userRoleName, ['Branch Head', 'HOD', 'Director HRM&A'])): ?>
+                                            <a href="/rfq/branch_head_approve.php?id=<?= $rfq_id ?>"
+                                               class="btn btn-sm btn-outline-primary rounded-pill">
+                                                <i class="bi bi-shield-check me-1"></i>Branch Head Approval
+                                            </a>
                                         <?php endif; ?>
                                         
                                         <!-- SELECT QUOTE BUTTON: Branch Head/HOD at QUOTE_REVIEW_PENDING -->

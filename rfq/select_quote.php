@@ -73,7 +73,16 @@ try {
     $selectedStmt->execute([$rfq_id]);
     $previousSelectedQuoteId = (int)($selectedStmt->fetchColumn() ?: 0);
 
-    $pdo->prepare("UPDATE rfq_quotes SET is_selected = 1 WHERE quote_id = ?")->execute([$quote_id]);
+    $selectStmt = $pdo->prepare(
+        "UPDATE rfq_quotes q
+            JOIN rfq_vendors rv ON rv.rfq_vendor_id = q.rfq_vendor_id
+            SET q.is_selected = 1
+          WHERE q.quote_id = ? AND rv.rfq_id = ? AND COALESCE(q.is_deleted, 0) = 0"
+    );
+    $selectStmt->execute([$quote_id, $rfq_id]);
+    if ($selectStmt->rowCount() !== 1 && $previousSelectedQuoteId !== $quote_id) {
+        throw new RuntimeException('The selected quote is no longer available for this RFQ.');
+    }
     $pdo->prepare(
         "UPDATE rfq_quotes
             SET is_selected = 0
@@ -104,6 +113,11 @@ try {
 
     $pdo->prepare("UPDATE procurement_requests SET status = 'QUOTE_REQUESTOR_REVIEW_PENDING' WHERE request_id = ?")
         ->execute([(int)$quote['request_id']]);
+    error_log(sprintf(
+        'RFQ workflow quote selected: rfq_id=%d request_id=%d previous_quote_id=%d selected_quote_id=%d actor_id=%d actor_role=%s transition=%s->QUOTE_REQUESTOR_REVIEW_PENDING',
+        $rfq_id, (int)$quote['request_id'], $previousSelectedQuoteId, $quote_id,
+        (int)$_SESSION['user_id'], $roleName, $quote['request_status']
+    ));
 
     $pdo->prepare(
         "INSERT INTO audit_log (table_name, action, notes, change_date, approval_stage, approval_action)
