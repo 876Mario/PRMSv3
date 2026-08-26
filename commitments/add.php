@@ -401,12 +401,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
-                if (!is_dir($uploadDir)) {
-                    mkdir($uploadDir, 0755, true);
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
+                    throw new Exception("Failed to prepare commitment upload directory.");
                 }
 
                 $ext = $mimeToExtDocuments[$mimeType] ?? 'bin';
-                $safeFilename = 'COMMITMENT_' . time() . '_' . bin2hex(random_bytes(16)) . '.' . $ext;
+                $safeFilename = 'COMMITMENT_' . bin2hex(random_bytes(16)) . '.' . $ext;
                 $uploadPath = $uploadDir . $safeFilename;
                 if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
                     throw new Exception("Failed to save commitment document.");
@@ -435,12 +435,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
-                if (!is_dir($uploadDir)) {
-                    mkdir($uploadDir, 0755, true);
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
+                    throw new Exception("Failed to prepare commitment upload directory.");
                 }
 
                 $ext = $mimeToExtForms[$mimeType] ?? 'bin';
-                $safeFilename = 'COMMIT_FORM_' . time() . '_' . bin2hex(random_bytes(16)) . '.' . $ext;
+                $safeFilename = 'COMMIT_FORM_' . bin2hex(random_bytes(16)) . '.' . $ext;
                 $uploadPath = $uploadDir . $safeFilename;
                 if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
                     throw new Exception("Failed to save commitment form document.");
