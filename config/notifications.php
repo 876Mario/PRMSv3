@@ -73,8 +73,8 @@ if (!function_exists('he')) {
 }
 
 if (!function_exists('normalizeCurrency')) {
-    function normalizeCurrency(string $currency = 'JMD'): string {
-        $currency = strtoupper(trim($currency));
+    function normalizeCurrency(?string $currency = 'JMD'): string {
+        $currency = strtoupper(trim($currency ?? 'JMD'));
         // Fix common typo: USB → USD
         if ($currency === 'USB') {
             $currency = 'USD';

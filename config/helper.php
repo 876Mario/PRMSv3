@@ -606,8 +606,8 @@ function statusBadge(string $status): string {
  * @return string Normalized currency code (JMD or USD)
  */
 if (!function_exists('normalizeCurrency')) {
-    function normalizeCurrency(string $currency = 'JMD'): string {
-        $currency = strtoupper(trim($currency));
+    function normalizeCurrency(?string $currency = 'JMD'): string {
+        $currency = strtoupper(trim($currency ?? 'JMD'));
         
         // Fix common typo: USB → USD
         if ($currency === 'USB') {
@@ -632,6 +632,7 @@ if (!function_exists('formatDate')) {
      *
      * @param string|null $datetime Date/time string from database
      * @param string $format PHP date format string
+     * @return string Formatted date from formatJamaicanDate()
      */
     function formatDate($datetime, string $format = 'd M Y'): string
     {
