@@ -24,6 +24,9 @@ function cnrAssert(string $name, bool $condition): void
 
 $pdo = new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$pdo->sqliteCreateFunction('FIND_IN_SET', static function ($needle, $haystack): int {
+    return in_array((string)$needle, array_map('trim', explode(',', (string)$haystack)), true) ? 1 : 0;
+}, 2);
 $GLOBALS['pdo'] = $pdo;
 
 $pdo->exec("
@@ -52,6 +55,15 @@ $pdo->exec("
         request_id INTEGER NOT NULL,
         requestor_spec_review_status TEXT DEFAULT 'PENDING',
         branch_head_approval_status TEXT DEFAULT 'PENDING'
+    );
+    CREATE TABLE inventory_alert_recipients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        location_id INTEGER,
+        recipient_type TEXT NOT NULL,
+        recipient_role_id INTEGER,
+        recipient_user_id INTEGER,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        alert_types TEXT NOT NULL DEFAULT 'REORDER,EXPIRING_7,EXPIRED,PENDING_APPROVAL,OPEN_INCIDENT'
     );
 ");
 
