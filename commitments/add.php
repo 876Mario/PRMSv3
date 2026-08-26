@@ -387,77 +387,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("Failed to prepare commitment upload directory.");
             }
 
-            $documentPath = null;
-            if ($hasCommitmentDocumentUpload) {
-                $file = $_FILES['commitment_document'];
-
+            $handleCommitmentUpload = function (
+                array $file,
+                array $mimeToExt,
+                string $filenamePrefix,
+                string $uploadDir,
+                string $uploadError,
+                string $mimeDetectorError,
+                string $fileTypeError,
+                string $filenameError,
+                string $saveError
+            ): string {
                 if ($file['error'] !== UPLOAD_ERR_OK) {
-                    throw new Exception("Commitment document upload failed. Please try again.");
+                    throw new Exception($uploadError);
                 }
 
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
                 if ($finfo === false) {
-                    throw new Exception("Unable to validate commitment document type.");
+                    throw new Exception($mimeDetectorError);
                 }
                 $mimeType = finfo_file($finfo, $file['tmp_name']);
                 finfo_close($finfo);
 
-                if (!in_array($mimeType, array_keys($mimeToExtDocuments), true)) {
-                    throw new Exception("Invalid file type. Only PDF, DOC, DOCX, XLS, and XLSX are allowed.");
+                if (!in_array($mimeType, array_keys($mimeToExt), true)) {
+                    throw new Exception($fileTypeError);
                 }
                 if ($file['size'] > 50 * 1024 * 1024) {
                     throw new Exception("File size exceeds 50 MB limit.");
                 }
 
-                $ext = $mimeToExtDocuments[$mimeType] ?? 'bin';
+                $ext = $mimeToExt[$mimeType] ?? 'bin';
                 try {
                     $filenameToken = bin2hex(random_bytes(16));
                 } catch (Throwable $e) {
-                    throw new Exception("Unable to generate a secure commitment document filename.");
+                    throw new Exception($filenameError);
                 }
-                $safeFilename = 'COMMITMENT_' . $filenameToken . '.' . $ext;
-                $uploadPath = $commitmentUploadDir . $safeFilename;
+                $safeFilename = $filenamePrefix . '_' . $filenameToken . '.' . $ext;
+                $uploadPath = $uploadDir . $safeFilename;
                 if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-                    throw new Exception("Failed to save commitment document.");
-                }
-                $documentPath = '/uploads/commitments/' . $safeFilename;
-            }
-
-            $formDocPath = null;
-            if ($hasCommitmentFormUpload) {
-                $file = $_FILES['commitment_form_doc'];
-
-                if ($file['error'] !== UPLOAD_ERR_OK) {
-                    throw new Exception("Commitment form upload failed. Please try again.");
+                    throw new Exception($saveError);
                 }
 
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                if ($finfo === false) {
-                    throw new Exception("Unable to validate commitment form document type.");
-                }
-                $mimeType = finfo_file($finfo, $file['tmp_name']);
-                finfo_close($finfo);
+                return '/uploads/commitments/' . $safeFilename;
+            };
 
-                if (!in_array($mimeType, array_keys($mimeToExtForms), true)) {
-                    throw new Exception("Invalid file type. Only PDF, Word, Excel, JPEG and PNG files are allowed.");
-                }
-                if ($file['size'] > 50 * 1024 * 1024) {
-                    throw new Exception("File size exceeds 50 MB limit.");
-                }
+            $documentPath = $hasCommitmentDocumentUpload
+                ? $handleCommitmentUpload(
+                    $_FILES['commitment_document'],
+                    $mimeToExtDocuments,
+                    'COMMITMENT',
+                    $commitmentUploadDir,
+                    "Commitment document upload failed. Please try again.",
+                    "Unable to validate commitment document type.",
+                    "Invalid file type. Only PDF, DOC, DOCX, XLS, and XLSX are allowed.",
+                    "Unable to generate a secure commitment document filename.",
+                    "Failed to save commitment document."
+                )
+                : null;
 
-                $ext = $mimeToExtForms[$mimeType] ?? 'bin';
-                try {
-                    $filenameToken = bin2hex(random_bytes(16));
-                } catch (Throwable $e) {
-                    throw new Exception("Unable to generate a secure commitment form filename.");
-                }
-                $safeFilename = 'COMMIT_FORM_' . $filenameToken . '.' . $ext;
-                $uploadPath = $commitmentUploadDir . $safeFilename;
-                if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-                    throw new Exception("Failed to save commitment form document.");
-                }
-                $formDocPath = '/uploads/commitments/' . $safeFilename;
-            }
+            $formDocPath = $hasCommitmentFormUpload
+                ? $handleCommitmentUpload(
+                    $_FILES['commitment_form_doc'],
+                    $mimeToExtForms,
+                    'COMMIT_FORM',
+                    $commitmentUploadDir,
+                    "Commitment form upload failed. Please try again.",
+                    "Unable to validate commitment form document type.",
+                    "Invalid file type. Only PDF, Word, Excel, JPEG and PNG files are allowed.",
+                    "Unable to generate a secure commitment form filename.",
+                    "Failed to save commitment form document."
+                )
+                : null;
              
             // Validate GFMS number if provided
             if (!empty($gfmsNumber)) {
