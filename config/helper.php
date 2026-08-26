@@ -627,6 +627,12 @@ if (!function_exists('formatCurrency')) {
 }
 
 if (!function_exists('formatDate')) {
+    /**
+     * Format a database date value for display.
+     *
+     * @param string|null $datetime Date/time string from database
+     * @param string $format PHP date format string
+     */
     function formatDate($datetime, string $format = 'd M Y'): string
     {
         return formatJamaicanDate($datetime, $format);
