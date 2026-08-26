@@ -199,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'Procurement request created'
         );
 
-        $pdo->commit();
+        $overrideService = null;
         if ($isAdmin && $initialWorkflowStatus !== 'DRAFT') {
             $overrideService = new AdminWorkflowOverrideService(
                 $pdo,
@@ -207,14 +207,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $roleName,
                 $_SESSION['full_name'] ?? 'System'
             );
-            $overrideResult = $overrideService->overrideStatus($requestId, $initialWorkflowStatus, $initialWorkflowReason);
+            $overrideResult = $overrideService->overrideStatus($requestId, $initialWorkflowStatus, $initialWorkflowReason, false);
             if (!$overrideResult['success']) {
                 throw new Exception($overrideResult['error']);
             }
         }
+        $pdo->commit();
+        if ($overrideService !== null) {
+            $overrideService->sendStatusNotifications($requestId, $initialWorkflowStatus);
+        }
 modalPop(
-    "Draft Saved",
-    "Your procurement request was saved as a draft. Submit it to send for approval.",
+    $initialWorkflowStatus === 'DRAFT' ? "Draft Saved" : "Request Saved",
+    $initialWorkflowStatus === 'DRAFT'
+        ? "Your procurement request was saved as a draft. Submit it to send for approval."
+        : "Your procurement request was saved and moved to the selected workflow status.",
     "/procurement/view.php?id=".$requestId,
     "success"
 );

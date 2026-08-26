@@ -212,7 +212,7 @@ $audit->execute([
     $notes
 ]);
 
-        $pdo->commit();
+        $overrideService = null;
         if ($pendingWorkflowOverrideStatus !== null) {
             $overrideService = new AdminWorkflowOverrideService(
                 $pdo,
@@ -220,16 +220,23 @@ $audit->execute([
                 $roleName,
                 $_SESSION['full_name'] ?? 'System'
             );
-            $overrideResult = $overrideService->overrideStatus((int)$id, $pendingWorkflowOverrideStatus, $pendingWorkflowOverrideReason);
+            $overrideResult = $overrideService->overrideStatus((int)$id, $pendingWorkflowOverrideStatus, $pendingWorkflowOverrideReason, false);
             if (!$overrideResult['success']) {
                 throw new Exception($overrideResult['error']);
             }
+        }
+
+        $pdo->commit();
+        if ($overrideService !== null && $pendingWorkflowOverrideStatus !== null) {
+            $overrideService->sendStatusNotifications((int)$id, $pendingWorkflowOverrideStatus);
         }
         header("Location: /procurement/view.php?id=" . $id);
         exit;
 
     } catch (Exception $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     error_log('Edit save failed: ' . $e->getMessage());
     pop('Error saving changes. Please try again.', '/procurement/edit.php?id='.$id, POP_DEFAULT_DELAY_MS, 'error');
     exit;

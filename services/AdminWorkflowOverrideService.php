@@ -22,7 +22,7 @@ class AdminWorkflowOverrideService
         $this->adminName = $adminName;
     }
 
-    public function overrideStatus(int $requestId, string $newStatus, string $reason): array
+    public function overrideStatus(int $requestId, string $newStatus, string $reason, bool $sendNotifications = true): array
     {
         if (!$this->isAdmin()) {
             return ['success' => false, 'changed' => false, 'error' => 'Only Admin and SuperAdmin users can change workflow status.'];
@@ -80,9 +80,16 @@ class AdminWorkflowOverrideService
             throw $e;
         }
 
-        $this->notifyResponsibleUsers($requestId, $newStatus);
+        if ($sendNotifications) {
+            $this->notifyResponsibleUsers($requestId, $newStatus);
+        }
 
         return ['success' => true, 'changed' => true, 'error' => ''];
+    }
+
+    public function sendStatusNotifications(int $requestId, string $status): void
+    {
+        $this->notifyResponsibleUsers($requestId, strtoupper(trim($status)));
     }
 
     private function isAdmin(): bool
