@@ -35,7 +35,7 @@ tr:nth-child(even) td{background:#f8f9fa;}
 <div style="background:linear-gradient(90deg,#0b5e2b,#c9a227);padding:14px 20px;color:#fff;">
 <table><tr>
 <td><span style="font-size:17px;font-weight:700;">Government Chemist - PIAMS</span><br>
-<span style="font-size:10px;opacity:0.85;">Procurement &amp; Resource Management System</span></td>
+<span style="font-size:10px;opacity:0.85;">Procurement &amp; Inventory Assets Management System</span></td>
 <td style="text-align:right;font-size:10px;">Generated: {$date} at {$time}</td>
 </tr></table></div>
 <div style="padding:14px 20px 8px;">
