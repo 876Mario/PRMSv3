@@ -5,6 +5,11 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/vendor/autoload.php';
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
+if (!has_permission('view_financial_reports')) {
+    http_response_code(403);
+    exit('Forbidden');
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     exit('Method not allowed');
