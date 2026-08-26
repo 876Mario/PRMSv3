@@ -393,6 +393,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 array $mimeToExt,
                 string $filenamePrefix,
                 string $uploadDir,
+                string $webDir,
                 string $uploadError,
                 string $mimeDetectorError,
                 string $fileTypeError,
@@ -413,7 +414,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!array_key_exists($mimeType, $mimeToExt)) {
                     throw new Exception($fileTypeError);
                 }
-                if ($file['size'] > 50 * 1024 * 1024) {
+                $actualFileSize = filesize($file['tmp_name']);
+                if ($actualFileSize === false || $actualFileSize > 50 * 1024 * 1024) {
                     throw new Exception("File size exceeds 50 MB limit.");
                 }
 
@@ -429,7 +431,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Exception($saveError);
                 }
 
-                return '/uploads/commitments/' . $safeFilename;
+                return $webDir . $safeFilename;
             };
 
             $documentPath = $hasCommitmentDocumentUpload
@@ -438,6 +440,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $mimeToExtDocuments,
                     'COMMITMENT',
                     $commitmentUploadDir,
+                    '/uploads/commitments/',
                     "Commitment document upload failed. Please try again.",
                     "Unable to validate commitment document type.",
                     "Invalid file type. Only PDF, DOC, DOCX, XLS, and XLSX are allowed.",
@@ -455,6 +458,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $mimeToExtForms,
                     'COMMIT_FORM',
                     $commitmentUploadDir,
+                    '/uploads/commitments/',
                     "Commitment form upload failed. Please try again.",
                     "Unable to validate commitment form document type.",
                     "Invalid file type. Only PDF, Word, Excel, JPEG and PNG files are allowed.",
