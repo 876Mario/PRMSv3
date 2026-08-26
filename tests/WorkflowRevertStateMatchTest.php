@@ -33,7 +33,7 @@ class WorkflowRevertStateMatchTest extends PHPUnit\Framework\TestCase {
         $this->pdo = new PDO(
             sprintf('mysql:host=%s;dbname=%s;charset=utf8mb4', 
                     getenv('DB_HOST') ?: 'localhost',
-                    getenv('DB_TEST_NAME') ?: 'prms_test'),
+                    getenv('DB_TEST_NAME') ?: 'piams_test'),
             getenv('DB_USER') ?: 'root',
             getenv('DB_PASS') ?: ''
         );
