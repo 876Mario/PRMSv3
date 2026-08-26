@@ -74,7 +74,7 @@ function he($value): string {
 
 if (!function_exists('normalizeCurrency')) {
 function normalizeCurrency(string $currency = 'JMD'): string {
-    $currency = strtoupper(trim($currency ?? 'JMD'));
+    $currency = strtoupper(trim($currency));
     if ($currency === 'USB') {
         $currency = 'USD';
     }

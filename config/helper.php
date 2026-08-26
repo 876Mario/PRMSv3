@@ -607,7 +607,7 @@ function statusBadge(string $status): string {
  */
 if (!function_exists('normalizeCurrency')) {
 function normalizeCurrency(string $currency = 'JMD'): string {
-    $currency = strtoupper(trim($currency ?? 'JMD'));
+    $currency = strtoupper(trim($currency));
     
     // Fix common typo: USB → USD
     if ($currency === 'USB') {
