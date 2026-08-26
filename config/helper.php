@@ -615,7 +615,7 @@ function normalizeCurrency(string $currency = 'JMD'): string {
     }
     
     // Validate and return - default to JMD if invalid
-    return in_array($currency, ['JMD', 'USD']) ? $currency : 'JMD';
+    return in_array($currency, ['JMD', 'USD'], true) ? $currency : 'JMD';
 }
 }
 
