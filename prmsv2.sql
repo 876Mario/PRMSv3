@@ -14430,8 +14430,8 @@ CREATE TABLE `procurement_requests` (
   `request_date` date NOT NULL,
   `description` text NOT NULL,
   `request_type` enum('REGULAR','REIMBURSEMENT','PETTY_CASH','SERVICE_CONTRACT') NOT NULL DEFAULT 'REGULAR' COMMENT 'Type of request: REGULAR procurement, REIMBURSEMENT, PETTY_CASH, or SERVICE_CONTRACT',
-  `status` varchar(30) NOT NULL DEFAULT 'DRAFT',
-  `paused_previous_status` varchar(30) DEFAULT NULL,
+  `status` varchar(50) NOT NULL DEFAULT 'DRAFT',
+  `paused_previous_status` varchar(50) DEFAULT NULL,
   `paused_reason` text DEFAULT NULL,
   `paused_by` int(11) DEFAULT NULL,
   `paused_at` datetime DEFAULT NULL,
@@ -23337,7 +23337,7 @@ CREATE TABLE `vw_outstanding_balance` (
 CREATE TABLE `v_non_po_remediation_audit` (
 `request_id` int(11)
 ,`request_number` varchar(20)
-,`status` varchar(30)
+,`status` varchar(50)
 ,`workflow_path` enum('STANDARD','NON_PO_SKIP_RFQ')
 ,`request_created_at` timestamp
 ,`commitment_id` int(11)
@@ -23358,7 +23358,7 @@ CREATE TABLE `v_po_requirement_audit` (
 `request_id` int(11)
 ,`request_number` varchar(20)
 ,`request_type` enum('REGULAR','REIMBURSEMENT','PETTY_CASH','SERVICE_CONTRACT')
-,`status` varchar(30)
+,`status` varchar(50)
 ,`work_performed` tinyint(1)
 ,`goods_delivered` tinyint(1)
 ,`derived_po_required` varchar(3)

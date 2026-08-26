@@ -391,14 +391,21 @@ if ($requestType === 'PETTY_CASH') {
             
             $pipelineStages['INVOICE_RECEIVED'] = ['icon' => 'bi-receipt', 'label' => 'Invoice'];
         } elseif ($estimatedValue > $directThreshold) {
-            // Over-threshold: Committee evaluation → GC approval gate (SOP Step 10) → Award → Financial stages
+            // Over-threshold: include both committee evaluation and the RFQ quote approval stages.
+            // The quote approval statuses are real procurement_requests.status values, so omitting
+            // them leaves the pipeline unable to locate the current active stage.
             $pipelineStages['PROCUREMENT_STAGE'] = ['icon' => 'bi-clipboard-check', 'label' => 'Procurement'];
             $pipelineStages['EVALUATION_STAGE'] = ['icon' => 'bi-bar-chart', 'label' => 'Evaluation'];
             $pipelineStages['COMMITTEE_RECOMMENDED'] = ['icon' => 'bi-people-fill', 'label' => 'Committee'];
             // Reposition GC_APPROVED after committee (may already exist from approval chain)
             unset($pipelineStages['GC_APPROVED']);
             $pipelineStages['GC_APPROVED'] = ['icon' => 'bi-building-check', 'label' => 'GC Approved'];
-            // AWARDED comes right after GC approval (vendor award decision)
+            $pipelineStages['RFQ_LETTER_AVAILABLE'] = ['icon' => 'bi-envelope-open', 'label' => 'RFQ Letters'];
+            $pipelineStages['QUOTE_REVIEW_PENDING'] = ['icon' => 'bi-chat-dots', 'label' => 'Quote Review'];
+            $pipelineStages['QUOTE_REQUESTOR_REVIEW_PENDING'] = ['icon' => 'bi-person-check', 'label' => 'Requestor Review'];
+            $pipelineStages['QUOTE_REQUESTOR_REVIEW_APPROVED'] = ['icon' => 'bi-person-check-fill', 'label' => 'Requestor Approved'];
+            $pipelineStages['QUOTE_BRANCH_HEAD_APPROVAL_PENDING'] = ['icon' => 'bi-shield-check', 'label' => 'Branch Head Approval'];
+            $pipelineStages['QUOTE_APPROVED'] = ['icon' => 'bi-check-circle', 'label' => 'Quote Selected'];
             $pipelineStages['AWARDED'] = ['icon' => 'bi-trophy', 'label' => 'Awarded'];
             // Post-award financial stages (funds verify → commitment form → commitment created → PO → invoice)
             $pipelineStages['FUNDS_VERIFIED'] = ['icon' => 'bi-cash-coin', 'label' => 'Funds Verified'];

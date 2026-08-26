@@ -909,7 +909,7 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
     if ($isDirectProcurement) {
         return ['status' => 'AWARDED', 'description' => 'Ready for direct procurement (skip RFQ)'];
     }
-    
+
     // FUNDS_VERIFIED can appear in two contexts:
     // 1) As initial approval stage (before RFQ) — next step is RFQ_LETTER_AVAILABLE
     // 2) As post-quote stage (after QUOTE_APPROVED) — next step is COMMITMENTS_PENDING
@@ -958,6 +958,90 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
     
     return ['status' => $next, 'description' => $descMap[$next] ?? 'Next step'];
 }
+
+/**
+ * Admin-selectable workflow statuses for regular procurement requests.
+ *
+ * These labels intentionally mirror the visible pipeline so manual overrides
+ * cannot introduce status values that the workflow UI does not understand.
+ *
+ * @return array<string, array{label: string, description: string, icon: string}>
+ */
+function getAdminWorkflowStatusOptions(): array {
+    return [
+        'DRAFT' => [
+            'label' => 'Draft',
+            'description' => 'Request created but not submitted.',
+            'icon' => 'bi-pencil-square',
+        ],
+        'SUBMITTED' => [
+            'label' => 'Submitted',
+            'description' => 'Request submitted for review.',
+            'icon' => 'bi-send',
+        ],
+        'DIRECTOR_APPROVED' => [
+            'label' => 'Director Approved',
+            'description' => 'Request approved by Director.',
+            'icon' => 'bi-briefcase-fill',
+        ],
+        'RFQ_LETTER_AVAILABLE' => [
+            'label' => 'RFQ Letters',
+            'description' => 'RFQ documents/letters stage.',
+            'icon' => 'bi-envelope-open',
+        ],
+        'QUOTE_REVIEW_PENDING' => [
+            'label' => 'Quote Review',
+            'description' => 'Quotes available for evaluation.',
+            'icon' => 'bi-chat-dots',
+        ],
+        'QUOTE_REQUESTOR_REVIEW_PENDING' => [
+            'label' => 'Requestor Review',
+            'description' => 'Requestor reviewing submitted quotations.',
+            'icon' => 'bi-person-check',
+        ],
+        'QUOTE_REQUESTOR_REVIEW_APPROVED' => [
+            'label' => 'Requestor Approved',
+            'description' => 'Requestor confirmed selected quote meets requirements.',
+            'icon' => 'bi-person-check-fill',
+        ],
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => [
+            'label' => 'Branch Head Approval',
+            'description' => 'Pending Branch Head final approval.',
+            'icon' => 'bi-shield-check',
+        ],
+        'QUOTE_APPROVED' => [
+            'label' => 'Quote Selected',
+            'description' => 'Supplier quote selected.',
+            'icon' => 'bi-check-circle',
+        ],
+        'FUNDS_VERIFIED' => [
+            'label' => 'Funds Verified',
+            'description' => 'Budget/funding verification stage.',
+            'icon' => 'bi-cash-coin',
+        ],
+        'COMMITMENTS_PENDING' => [
+            'label' => 'Commitment Form',
+            'description' => 'Commitment form preparation.',
+            'icon' => 'bi-pencil-square',
+        ],
+        'COMMITMENT_APPROVED' => [
+            'label' => 'Commitment Created',
+            'description' => 'Commitment record generated.',
+            'icon' => 'bi-file-earmark-check',
+        ],
+        'PO_PENDING' => [
+            'label' => 'PO Created',
+            'description' => 'Purchase order generated.',
+            'icon' => 'bi-file-earmark-text',
+        ],
+        'INVOICE_RECEIVED' => [
+            'label' => 'Invoice',
+            'description' => 'Invoice processing stage.',
+            'icon' => 'bi-receipt',
+        ],
+    ];
+}
+
 
 /**
  * Check if quote review and approval can proceed
