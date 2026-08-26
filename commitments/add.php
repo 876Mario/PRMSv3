@@ -401,7 +401,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
-                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
                     throw new Exception("Failed to prepare commitment upload directory.");
                 }
 
@@ -435,7 +435,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
-                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
                     throw new Exception("Failed to prepare commitment upload directory.");
                 }
 
