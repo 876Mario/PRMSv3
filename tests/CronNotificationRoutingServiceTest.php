@@ -135,6 +135,14 @@ $branchHeadReview = CronNotificationRoutingService::getOverdueActionRecipients($
 cnrAssert('Branch Head approval routes to branch head only', array_keys($branchHeadReview) === [3]);
 cnrAssert('Branch Head approval excludes other branch head', !isset($branchHeadReview[10]));
 
+$missingRfqReview = CronNotificationRoutingService::getOverdueActionRecipients($pdo, [
+    'request_id' => 999,
+    'status' => 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING',
+    'branch_id' => 10,
+    'created_by' => 1,
+]);
+cnrAssert('Missing RFQ generates no branch head reminder', $missingRfqReview === []);
+
 $pdo->prepare("INSERT INTO request_approvals (request_id, role, status, stage_order) VALUES (202, 'Director HRM&A', 'pending', 1)")->execute();
 $directorApproval = CronNotificationRoutingService::getOverdueActionRecipients($pdo, [
     'request_id' => 202,

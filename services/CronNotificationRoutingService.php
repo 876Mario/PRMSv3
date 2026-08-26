@@ -224,7 +224,8 @@ class CronNotificationRoutingService
                  LIMIT 1
             ");
             $stmt->execute([$requestId]);
-            return strtoupper((string)($stmt->fetchColumn() ?: 'PENDING')) === 'PENDING';
+            $status = $stmt->fetchColumn();
+            return $status !== false && strtoupper((string)$status) === 'PENDING';
         } catch (Throwable $e) {
             error_log('CronNotificationRoutingService::isRequestorReviewPending failed: ' . $e->getMessage());
             return false;
@@ -242,7 +243,8 @@ class CronNotificationRoutingService
                  LIMIT 1
             ");
             $stmt->execute([$requestId]);
-            return strtoupper((string)($stmt->fetchColumn() ?: 'PENDING')) === 'PENDING';
+            $status = $stmt->fetchColumn();
+            return $status !== false && strtoupper((string)$status) === 'PENDING';
         } catch (Throwable $e) {
             error_log('CronNotificationRoutingService::isBranchHeadReviewPending failed: ' . $e->getMessage());
             return false;
