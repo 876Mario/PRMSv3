@@ -414,6 +414,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!array_key_exists($mimeType, $mimeToExt)) {
                     throw new Exception($fileTypeError);
                 }
+                clearstatcache(true, $file['tmp_name']);
                 $actualFileSize = filesize($file['tmp_name']);
                 if ($actualFileSize === false) {
                     throw new Exception("Unable to determine file size. Please try again.");
@@ -591,7 +592,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (str_starts_with($uploadedPath, '/uploads/commitments/')) {
                 $absoluteUploadedPath = $_SERVER['DOCUMENT_ROOT'] . $uploadedPath;
                 if (is_file($absoluteUploadedPath)) {
-                    unlink($absoluteUploadedPath);
+                    if (!unlink($absoluteUploadedPath)) {
+                        error_log("Failed to clean up uploaded commitment file: " . $absoluteUploadedPath);
+                    }
                 }
             }
         }
