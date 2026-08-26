@@ -632,7 +632,7 @@ if (!function_exists('formatDate')) {
      *
      * @param string|null $datetime Date/time string from database
      * @param string $format PHP date format string
-     * @return string Formatted date from formatJamaicanDate()
+     * @return string The formatted date string
      */
     function formatDate($datetime, string $format = 'd M Y'): string
     {
