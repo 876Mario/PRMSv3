@@ -94,6 +94,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    $pendingWorkflowOverrideStatus = null;
+    $pendingWorkflowOverrideReason = '';
+    if ($isAdmin && isset($_POST['workflow_status'])) {
+        $requestedStatus = strtoupper(trim((string)$_POST['workflow_status']));
+        $overrideReason = trim((string)($_POST['workflow_override_reason'] ?? ''));
+        if (!isset($adminWorkflowOptions[$requestedStatus])) {
+            pop('Invalid workflow status selected.', '/procurement/edit.php?id='.$id, POP_DEFAULT_DELAY_MS, 'error');
+            exit;
+        }
+        if ($requestedStatus !== strtoupper((string)$request['status'])) {
+            if (mb_strlen($overrideReason) < 5) {
+                pop('A reason of at least 5 characters is required for workflow status overrides.', '/procurement/edit.php?id='.$id, POP_DEFAULT_DELAY_MS, 'error');
+                exit;
+            }
+            $pendingWorkflowOverrideStatus = $requestedStatus;
+            $pendingWorkflowOverrideReason = $overrideReason;
+        }
+    }
+
     $pdo->beginTransaction();
 
     try {
@@ -104,23 +123,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             WHERE request_id = ?
         ");
         $stmt->execute([$estimatedValue, $description, $id]);
-
-        if ($isAdmin && isset($_POST['workflow_status'])) {
-            $requestedStatus = strtoupper(trim((string)$_POST['workflow_status']));
-            $overrideReason = trim((string)($_POST['workflow_override_reason'] ?? ''));
-            if ($requestedStatus !== strtoupper((string)$request['status'])) {
-                $overrideService = new AdminWorkflowOverrideService(
-                    $pdo,
-                    (int)($_SESSION['user_id'] ?? 0),
-                    $roleName,
-                    $_SESSION['full_name'] ?? 'System'
-                );
-                $overrideResult = $overrideService->overrideStatus((int)$id, $requestedStatus, $overrideReason);
-                if (!$overrideResult['success']) {
-                    throw new Exception($overrideResult['error']);
-                }
-            }
-        }
 
 
 /* ===== Capture OLD items for audit ===== */
@@ -211,6 +213,18 @@ $audit->execute([
 ]);
 
         $pdo->commit();
+        if ($pendingWorkflowOverrideStatus !== null) {
+            $overrideService = new AdminWorkflowOverrideService(
+                $pdo,
+                (int)($_SESSION['user_id'] ?? 0),
+                $roleName,
+                $_SESSION['full_name'] ?? 'System'
+            );
+            $overrideResult = $overrideService->overrideStatus((int)$id, $pendingWorkflowOverrideStatus, $pendingWorkflowOverrideReason);
+            if (!$overrideResult['success']) {
+                throw new Exception($overrideResult['error']);
+            }
+        }
         header("Location: /procurement/view.php?id=" . $id);
         exit;
 
