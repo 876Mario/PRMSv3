@@ -396,6 +396,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                if ($finfo === false) {
+                    throw new Exception("Unable to validate commitment document type.");
+                }
                 $mimeType = finfo_file($finfo, $file['tmp_name']);
                 finfo_close($finfo);
 
@@ -424,6 +427,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                if ($finfo === false) {
+                    throw new Exception("Unable to validate commitment form document type.");
+                }
                 $mimeType = finfo_file($finfo, $file['tmp_name']);
                 finfo_close($finfo);
 
