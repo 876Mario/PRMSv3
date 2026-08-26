@@ -1,4 +1,10 @@
 <?php
+if (!class_exists('CronNotificationRoutingService')) {
+    $routingServicePath = __DIR__ . '/CronNotificationRoutingService.php';
+    if (file_exists($routingServicePath)) {
+        require_once $routingServicePath;
+    }
+}
 /**
  * CronAuditService
  * =================
@@ -337,6 +343,20 @@ class CronAuditService
     }
 
     /**
+     * Resolve recipients for a specific overdue procurement workflow action.
+     *
+     * @param array $request Row from procurement_requests including request_id, status, branch_id, created_by, request_type, estimated_value
+     * @return array
+     */
+    public static function getOverdueActionRecipients(array $request): array
+    {
+        global $pdo;
+        if (!$pdo || !class_exists('CronNotificationRoutingService')) return [];
+
+        return CronNotificationRoutingService::getOverdueActionRecipients($pdo, $request);
+    }
+
+    /**
      * Resolve configured inventory alert recipients for a location (or all if location_id=null).
      * Returns array of [user_id => ['email' => ..., 'full_name' => ..., 'reason' => ...]]
      *
@@ -348,6 +368,10 @@ class CronAuditService
     {
         global $pdo;
         if (!$pdo) return [];
+
+        if (class_exists('CronNotificationRoutingService')) {
+            return CronNotificationRoutingService::getInventoryAlertRecipients($pdo, $locationId, $alertType);
+        }
 
         $recipients = [];
 
