@@ -406,6 +406,7 @@ if ($requestType === 'PETTY_CASH') {
             $pipelineStages['QUOTE_REQUESTOR_REVIEW_APPROVED'] = ['icon' => 'bi-person-check-fill', 'label' => 'Requestor Approved'];
             $pipelineStages['QUOTE_BRANCH_HEAD_APPROVAL_PENDING'] = ['icon' => 'bi-shield-check', 'label' => 'Branch Head Approval'];
             $pipelineStages['QUOTE_APPROVED'] = ['icon' => 'bi-check-circle', 'label' => 'Quote Selected'];
+            $pipelineStages['AWARDED'] = ['icon' => 'bi-trophy', 'label' => 'Awarded'];
             // Post-award financial stages (funds verify → commitment form → commitment created → PO → invoice)
             $pipelineStages['FUNDS_VERIFIED'] = ['icon' => 'bi-cash-coin', 'label' => 'Funds Verified'];
             $pipelineStages['COMMITMENTS_PENDING'] = ['icon' => 'bi-pencil-square', 'label' => 'Commitment Form'];
