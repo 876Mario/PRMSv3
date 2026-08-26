@@ -34,6 +34,16 @@ if (!defined('POP_DEFAULT_DELAY_MS')) {
     define('POP_DEFAULT_DELAY_MS', 1800);
 }
 
+if (!function_exists('he')) {
+    /**
+     * Escape a value for safe HTML output.
+     */
+    function he($value): string
+    {
+        return htmlspecialchars((string)($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}
+
 
 function logRequestTimeline(PDO $pdo, int $request_id, string $action, string $notes = null) {
     $stmt = $pdo->prepare("
@@ -595,16 +605,39 @@ function statusBadge(string $status): string {
  * @param string $currency Currency code from database
  * @return string Normalized currency code (JMD or USD)
  */
-function normalizeCurrency(string $currency = 'JMD'): string {
-    $currency = strtoupper(trim($currency ?? 'JMD'));
-    
-    // Fix common typo: USB → USD
-    if ($currency === 'USB') {
-        $currency = 'USD';
+if (!function_exists('normalizeCurrency')) {
+    function normalizeCurrency(?string $currency = 'JMD'): string {
+        $currency = strtoupper(trim($currency ?? 'JMD'));
+        
+        // Fix common typo: USB → USD
+        if ($currency === 'USB') {
+            $currency = 'USD';
+        }
+        
+        // Validate and return - default to JMD if invalid
+        return in_array($currency, ['JMD', 'USD'], true) ? $currency : 'JMD';
     }
-    
-    // Validate and return - default to JMD if invalid
-    return in_array($currency, ['JMD', 'USD']) ? $currency : 'JMD';
+}
+
+if (!function_exists('formatCurrency')) {
+    function formatCurrency(float $amount, string $currency = 'JMD'): string
+    {
+        return normalizeCurrency($currency) . ' ' . number_format($amount, 2);
+    }
+}
+
+if (!function_exists('formatDate')) {
+    /**
+     * Format a database date value for display.
+     *
+     * @param string|null $datetime Date/time string from database
+     * @param string $format PHP date format string
+     * @return string The formatted date string
+     */
+    function formatDate($datetime, string $format = 'd M Y'): string
+    {
+        return formatJamaicanDate($datetime, $format);
+    }
 }
 
 /**
