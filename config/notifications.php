@@ -66,8 +66,26 @@ if (!class_exists('EmailNotificationConfigService')) {
 /**
  * HTML-escape a value for safe insertion into email templates.
  */
+if (!function_exists('he')) {
 function he($value): string {
     return htmlspecialchars((string)($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+}
+
+if (!function_exists('normalizeCurrency')) {
+function normalizeCurrency(string $currency = 'JMD'): string {
+    $currency = strtoupper(trim($currency ?? 'JMD'));
+    if ($currency === 'USB') {
+        $currency = 'USD';
+    }
+    return in_array($currency, ['JMD', 'USD'], true) ? $currency : 'JMD';
+}
+}
+
+if (!function_exists('formatCurrency')) {
+function formatCurrency(float $amount, string $currency = 'JMD'): string {
+    return normalizeCurrency($currency) . ' ' . number_format($amount, 2);
+}
 }
 
 /**
