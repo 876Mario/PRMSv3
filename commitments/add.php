@@ -161,6 +161,7 @@ if ($quoteCurrency === 'USD' || $requestCurrency === 'USD') {
 /* ===== Handle POST ===== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? null;
+    $uploadedFilePaths = [];
     
     try {
         if ($action === 'decline') {
@@ -409,7 +410,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $mimeType = finfo_file($finfo, $file['tmp_name']);
                 finfo_close($finfo);
 
-                if (!in_array($mimeType, array_keys($mimeToExt), true)) {
+                if (!array_key_exists($mimeType, $mimeToExt)) {
                     throw new Exception($fileTypeError);
                 }
                 if ($file['size'] > 50 * 1024 * 1024) {
@@ -444,6 +445,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "Failed to save commitment document."
                 )
                 : null;
+            if ($documentPath !== null) {
+                $uploadedFilePaths[] = $documentPath;
+            }
 
             $formDocPath = $hasCommitmentFormUpload
                 ? $handleCommitmentUpload(
@@ -458,6 +462,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "Failed to save commitment form document."
                 )
                 : null;
+            if ($formDocPath !== null) {
+                $uploadedFilePaths[] = $formDocPath;
+            }
              
             // Validate GFMS number if provided
             if (!empty($gfmsNumber)) {
@@ -572,6 +579,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
+        }
+        foreach ($uploadedFilePaths as $uploadedPath) {
+            if (str_starts_with($uploadedPath, '/uploads/commitments/')) {
+                $absoluteUploadedPath = $_SERVER['DOCUMENT_ROOT'] . $uploadedPath;
+                if (is_file($absoluteUploadedPath)) {
+                    unlink($absoluteUploadedPath);
+                }
+            }
         }
         pop(extractDbMessage($e), "/commitments/add.php?request_id=" . $request_id, 2500, "error");
         exit;
