@@ -203,6 +203,7 @@ INSERT IGNORE INTO `page_permissions` (`page_path`, `page_title`, `permission_na
 ('/reports/print_request.php',          'Print Request',                'print_request',           'Reports'),
 ('/reports/print_po.php',               'Print Purchase Order',         'print_purchase_order',    'Reports'),
 ('/reports/print_invoice.php',          'Print Invoice',                'print_invoice',           'Reports'),
+('/reports/export_page_pdf.php',        'Export Page PDF',              'view_financial_reports', 'Reports'),
 
 -- ── Audit ─────────────────────────────────────────────────────────────
 ('/audit/list.php',                     'Audit Logs',                   'view_audit_logs',         'Audit'),
