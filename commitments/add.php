@@ -380,34 +380,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                throw new Exception("Please indicate whether a Purchase Order is required (Yes or No).");
             }
 
+            $hasCommitmentDocumentUpload = isset($_FILES['commitment_document']) && $_FILES['commitment_document']['error'] !== UPLOAD_ERR_NO_FILE;
+            $hasCommitmentFormUpload = isset($_FILES['commitment_form_doc']) && $_FILES['commitment_form_doc']['error'] !== UPLOAD_ERR_NO_FILE;
+            $commitmentUploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
+            if (($hasCommitmentDocumentUpload || $hasCommitmentFormUpload) && !is_dir($commitmentUploadDir) && !mkdir($commitmentUploadDir, 0755, true) && !is_dir($commitmentUploadDir)) {
+                throw new Exception("Failed to prepare commitment upload directory.");
+            }
+
             $documentPath = null;
-            if (isset($_FILES['commitment_document']) && $_FILES['commitment_document']['error'] !== UPLOAD_ERR_NO_FILE) {
+            if ($hasCommitmentDocumentUpload) {
                 $file = $_FILES['commitment_document'];
 
                 if ($file['error'] !== UPLOAD_ERR_OK) {
                     throw new Exception("Commitment document upload failed. Please try again.");
                 }
 
-                $allowedTypes = array_keys($mimeToExtDocuments);
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
                 $mimeType = finfo_file($finfo, $file['tmp_name']);
                 finfo_close($finfo);
 
-                if (!in_array($mimeType, $allowedTypes, true)) {
+                if (!in_array($mimeType, array_keys($mimeToExtDocuments), true)) {
                     throw new Exception("Invalid file type. Only PDF, DOC, DOCX, XLS, and XLSX are allowed.");
                 }
                 if ($file['size'] > 50 * 1024 * 1024) {
                     throw new Exception("File size exceeds 50 MB limit.");
                 }
 
-                $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
-                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-                    throw new Exception("Failed to prepare commitment upload directory.");
-                }
-
                 $ext = $mimeToExtDocuments[$mimeType] ?? 'bin';
                 $safeFilename = 'COMMITMENT_' . bin2hex(random_bytes(16)) . '.' . $ext;
-                $uploadPath = $uploadDir . $safeFilename;
+                $uploadPath = $commitmentUploadDir . $safeFilename;
                 if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
                     throw new Exception("Failed to save commitment document.");
                 }
@@ -415,33 +416,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $formDocPath = null;
-            if (isset($_FILES['commitment_form_doc']) && $_FILES['commitment_form_doc']['error'] !== UPLOAD_ERR_NO_FILE) {
+            if ($hasCommitmentFormUpload) {
                 $file = $_FILES['commitment_form_doc'];
 
                 if ($file['error'] !== UPLOAD_ERR_OK) {
                     throw new Exception("Commitment form upload failed. Please try again.");
                 }
 
-                $allowedTypes = array_keys($mimeToExtForms);
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
                 $mimeType = finfo_file($finfo, $file['tmp_name']);
                 finfo_close($finfo);
 
-                if (!in_array($mimeType, $allowedTypes, true)) {
+                if (!in_array($mimeType, array_keys($mimeToExtForms), true)) {
                     throw new Exception("Invalid file type. Only PDF, Word, Excel, JPEG and PNG files are allowed.");
                 }
                 if ($file['size'] > 50 * 1024 * 1024) {
                     throw new Exception("File size exceeds 50 MB limit.");
                 }
 
-                $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
-                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-                    throw new Exception("Failed to prepare commitment upload directory.");
-                }
-
                 $ext = $mimeToExtForms[$mimeType] ?? 'bin';
                 $safeFilename = 'COMMIT_FORM_' . bin2hex(random_bytes(16)) . '.' . $ext;
-                $uploadPath = $uploadDir . $safeFilename;
+                $uploadPath = $commitmentUploadDir . $safeFilename;
                 if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
                     throw new Exception("Failed to save commitment form document.");
                 }
