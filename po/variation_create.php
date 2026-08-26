@@ -27,7 +27,16 @@ SELECT
     po.po_number,
     po.po_total,
     po.status,
-    po.finance_approved,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM request_approvals ra
+            WHERE ra.entity_type = 'COMMITMENT'
+              AND ra.entity_id = c.commitment_id
+              AND ra.role = 'Finance Officer'
+              AND ra.status = 'approved'
+        ) THEN 1
+        ELSE 0
+    END AS finance_approved,
     po.po_type,
     IFNULL(SUM(inv.invoice_amount),0) AS total_invoiced,
     pr.currency

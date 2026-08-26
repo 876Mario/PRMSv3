@@ -161,6 +161,7 @@ if ($quoteCurrency === 'USD' || $requestCurrency === 'USD') {
 /* ===== Handle POST ===== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? null;
+    $uploadedFilePaths = [];
     
     try {
         if ($action === 'decline') {
@@ -379,7 +380,100 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!in_array($poRequired, ['YES', 'NO'], true)) {
                throw new Exception("Please indicate whether a Purchase Order is required (Yes or No).");
             }
-            
+
+            $hasCommitmentDocumentUpload = isset($_FILES['commitment_document']) && $_FILES['commitment_document']['error'] !== UPLOAD_ERR_NO_FILE;
+            $hasCommitmentFormUpload = isset($_FILES['commitment_form_doc']) && $_FILES['commitment_form_doc']['error'] !== UPLOAD_ERR_NO_FILE;
+            $commitmentUploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
+            if (($hasCommitmentDocumentUpload || $hasCommitmentFormUpload) && !is_dir($commitmentUploadDir) && !mkdir($commitmentUploadDir, 0755, true) && !is_dir($commitmentUploadDir)) {
+                throw new Exception("Failed to prepare commitment upload directory.");
+            }
+
+            $handleCommitmentUpload = function (
+                array $file,
+                array $mimeToExt,
+                string $filenamePrefix,
+                string $uploadDir,
+                string $webDir,
+                string $uploadError,
+                string $mimeDetectorError,
+                string $fileTypeError,
+                string $filenameError,
+                string $saveError
+            ): string {
+                if ($file['error'] !== UPLOAD_ERR_OK) {
+                    throw new Exception($uploadError);
+                }
+
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                if ($finfo === false) {
+                    throw new Exception($mimeDetectorError);
+                }
+                $mimeType = finfo_file($finfo, $file['tmp_name']);
+                finfo_close($finfo);
+
+                if (!array_key_exists($mimeType, $mimeToExt)) {
+                    throw new Exception($fileTypeError);
+                }
+                clearstatcache(true, $file['tmp_name']);
+                $actualFileSize = filesize($file['tmp_name']);
+                if ($actualFileSize === false) {
+                    throw new Exception("Unable to determine file size. Please try again.");
+                }
+                if ($actualFileSize > 50 * 1024 * 1024) {
+                    throw new Exception("File size exceeds 50 MB limit.");
+                }
+
+                $ext = $mimeToExt[$mimeType];
+                try {
+                    $filenameToken = bin2hex(random_bytes(16));
+                } catch (Throwable $e) {
+                    throw new Exception($filenameError);
+                }
+                $safeFilename = $filenamePrefix . '_' . $filenameToken . '.' . $ext;
+                $uploadPath = $uploadDir . $safeFilename;
+                if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
+                    throw new Exception($saveError);
+                }
+
+                return $webDir . $safeFilename;
+            };
+
+            $documentPath = $hasCommitmentDocumentUpload
+                ? $handleCommitmentUpload(
+                    $_FILES['commitment_document'],
+                    $mimeToExtDocuments,
+                    'COMMITMENT',
+                    $commitmentUploadDir,
+                    '/uploads/commitments/',
+                    "Commitment document upload failed. Please try again.",
+                    "Unable to validate commitment document type.",
+                    "Invalid file type. Only PDF, DOC, DOCX, XLS, and XLSX are allowed.",
+                    "Unable to generate a secure commitment document filename.",
+                    "Failed to save commitment document."
+                )
+                : null;
+            if ($documentPath !== null) {
+                $uploadedFilePaths[] = $documentPath;
+            }
+
+            $formDocPath = $hasCommitmentFormUpload
+                ? $handleCommitmentUpload(
+                    $_FILES['commitment_form_doc'],
+                    $mimeToExtForms,
+                    'COMMIT_FORM',
+                    $commitmentUploadDir,
+                    '/uploads/commitments/',
+                    "Commitment form upload failed. Please try again.",
+                    "Unable to validate commitment form document type.",
+                    "Invalid file type. Only PDF, Word, Excel, JPEG and PNG files are allowed.",
+                    "Unable to generate a secure commitment form filename.",
+                    "Failed to save commitment form document."
+                )
+                : null;
+            if ($formDocPath !== null) {
+                $uploadedFilePaths[] = $formDocPath;
+            }
+             
             // Validate GFMS number if provided
             if (!empty($gfmsNumber)) {
                $checkGfms = $pdo->prepare("SELECT commitment_id FROM commitments WHERE gfms_commitment_number = ? LIMIT 1");
@@ -493,6 +587,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
+        }
+        foreach ($uploadedFilePaths as $uploadedPath) {
+            if (str_starts_with($uploadedPath, '/uploads/commitments/')) {
+                $absoluteUploadedPath = $_SERVER['DOCUMENT_ROOT'] . $uploadedPath;
+                if (is_file($absoluteUploadedPath)) {
+                    if (!unlink($absoluteUploadedPath)) {
+                        error_log("Failed to clean up uploaded commitment file: " . $absoluteUploadedPath);
+                    }
+                }
+            }
         }
         pop(extractDbMessage($e), "/commitments/add.php?request_id=" . $request_id, 2500, "error");
         exit;
@@ -743,22 +847,22 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 </div>
                 <?php endif; ?>
 
-                <?php if (empty($request['commitment_form_path'])): ?>
-                <!-- Optional: Upload scanned commitment form -->
-                <div class="mb-4 p-3 border rounded bg-light">
-                    <label for="commitment_form_doc" class="form-label">
-                        <i class="bi bi-paperclip"></i> Scanned Commitment Form (Optional)
-                    </label>
-                    <input type="file" id="commitment_form_doc" name="commitment_form_doc"
-                           class="form-control" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
-                    <small class="text-muted d-block mt-2">
-                        Optional: Upload a scanned copy of the commitment form (PDF, Word, Excel, JPEG, PNG). Max 50 MB.
-                    </small>
-                </div>
-                <?php endif; ?>
-
                 <form method="post" enctype="multipart/form-data">
                     <input type="hidden" name="action" value="upload_commitment">
+
+                    <?php if (empty($request['commitment_form_path'])): ?>
+                    <!-- Optional: Upload scanned commitment form -->
+                    <div class="mb-4 p-3 border rounded bg-light">
+                        <label for="commitment_form_doc" class="form-label">
+                            <i class="bi bi-paperclip"></i> Scanned Commitment Form (Optional)
+                        </label>
+                        <input type="file" id="commitment_form_doc" name="commitment_form_doc"
+                               class="form-control" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
+                        <small class="text-muted d-block mt-2">
+                            Optional: Upload a scanned copy of the commitment form (PDF, Word, Excel, JPEG, PNG). Max 50 MB.
+                        </small>
+                    </div>
+                    <?php endif; ?>
                     
                     <!-- NEW: Display Request PO Flags -->
                     <div class="mb-4 p-3 border rounded bg-info bg-opacity-10">
