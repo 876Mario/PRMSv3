@@ -164,8 +164,13 @@ class WorkflowResponsibilityService
         $branchName = $request['branch_name'] ?? ($request['branch'] ?? null);
 
         switch ($stageStatus) {
+            // 0. SUBMITTED — Display the original Requestor who created and
+            //    submitted the request, not a generic system user.
+            case 'SUBMITTED':
+                return [$this->requestorOfficer($request)];
+
             // 1. Director Approved — final approver depends on the
-            //    requestor's branch.
+            //    requestor's branch. Display the specific Branch Head.
             case 'DIRECTOR_APPROVED':
                 return [$this->buildOfficer($this->directorApprovedRole($branchName), $branchId)];
 
@@ -185,14 +190,19 @@ class WorkflowResponsibilityService
             case 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING':
                 return [$this->buildOfficer('Branch Head', $branchId)];
 
-            // 4 & 5 & 8. Funds Verified / Commitment Form / Invoice — Finance
-            //    Officer for the requestor's branch.
+            // 5. Funds Verified / Invoice — Finance Officer for the requestor's branch.
             case 'FUNDS_VERIFIED':
-            case 'COMMITMENTS_PENDING':
             case 'INVOICE_RECEIVED':
                 return [$this->buildOfficer('Finance Officer', $branchId)];
 
-            // 6 & 7. Purchase Order / RFQ Letters — Procurement Officer and
+            // 6. Commitment Created — Display the Finance Officer who created
+            //    the commitment. For pending stage, show branch Finance Officer.
+            //    For completed stage, the resolveCompleter will show actual creator.
+            case 'COMMITMENTS_PENDING':
+            case 'COMMITMENT_APPROVED':
+                return [$this->buildOfficer('Finance Officer', $branchId)];
+
+            // 7. Purchase Order / RFQ Letters — Procurement Officer and
             //    Director Procurement (organisation-wide roles).
             case 'PO_PENDING':
             case 'RFQ_LETTER_AVAILABLE':
@@ -201,7 +211,7 @@ class WorkflowResponsibilityService
                     $this->buildOfficer('Director Procurement', 0),
                 ];
 
-            // 9. HOD Approved — the Government Chemist, or the branch's
+            // 8. HOD Approved — the Government Chemist, or the branch's
             //    Government-Chemist-designated HOD, depending on the
             //    approved branch mapping.
             case 'HOD_APPROVED':
@@ -722,11 +732,14 @@ class WorkflowResponsibilityService
         // Applies to REGULAR and SERVICE_CONTRACT where each approval stage maps
         // to a distinct named role.
         $stageToRoles = [
+            'SUBMITTED'         => ['Requestor'],  // Requestor who created and submitted
             'HOD_APPROVED'      => ['HOD', 'Branch Head'],
             'FUNDS_VERIFIED'    => ['Finance Officer'],
-            'DIRECTOR_APPROVED' => ['Director HRM&A'],
+            'DIRECTOR_APPROVED' => ['Director HRM&A', 'Deputy Government Chemist', 'Branch Head'],
             'GC_APPROVED'       => ['Deputy Government Chemist', 'Government Chemist'],
             'AWARDED'           => ['Deputy Government Chemist', 'Government Chemist'],
+            'COMMITMENTS_PENDING' => ['Finance Officer'],  // Finance Officer who created commitment
+            'COMMITMENT_APPROVED' => ['Finance Officer'],  // Finance Officer who approved commitment
         ];
 
         // For REIMBURSEMENT / PETTY_CASH Finance Officer owns every stage,
