@@ -75,6 +75,127 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         pop('Comments must be at least 5 characters or empty', '/rfq/review_quote.php?quote_id=' . $quote_id . '&rfq_id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');
         exit;
     }
+
+    // When the original requestor (procurement request creator) marks a quote as meeting
+    // requirements, treat it as both the quote selection and the requestor specification
+    // confirmation, advancing the pipeline directly to Branch Head approval.
+    if ($review_status === 'MEETS_REQUIREMENTS' && $isRequestCreator) {
+        try {
+            $pdo->beginTransaction();
+
+            // Save the quote review status
+            $pdo->prepare("UPDATE rfq_quotes SET review_status = ?, review_comments = ? WHERE quote_id = ?")
+                ->execute([
+                    $review_status,
+                    !empty($review_comments) ? $review_comments : null,
+                    $quote_id,
+                ]);
+
+            // Deselect all other quotes for this RFQ, then select this one
+            $pdo->prepare(
+                "UPDATE rfq_quotes
+                    SET is_selected = 0
+                  WHERE rfq_vendor_id IN (SELECT rfq_vendor_id FROM rfq_vendors WHERE rfq_id = ?)"
+            )->execute([$rfq_id]);
+            $pdo->prepare("UPDATE rfq_quotes SET is_selected = 1 WHERE quote_id = ?")
+                ->execute([$quote_id]);
+
+            // Record requestor specification confirmation on the RFQ
+            $pdo->prepare(
+                "UPDATE rfqs
+                    SET requestor_spec_review_status = 'APPROVED',
+                        requestor_reviewer_id = ?,
+                        requestor_reviewed_at = CURRENT_TIMESTAMP,
+                        requestor_review_comments = ?,
+                        branch_head_approval_status = 'PENDING',
+                        branch_head_approver_id = NULL,
+                        branch_head_approved_at = NULL,
+                        branch_head_comments = NULL
+                  WHERE rfq_id = ?"
+            )->execute([
+                $_SESSION['user_id'],
+                !empty($review_comments) ? $review_comments : null,
+                $rfq_id,
+            ]);
+
+            // Insert into immutable requestor review history
+            $pdo->prepare(
+                "INSERT INTO rfq_requestor_reviews
+                    (rfq_id, requestor_id, review_outcome, comments, review_date, created_at, updated_at)
+                 VALUES (?, ?, 'MEETS_SPECIFICATIONS', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )->execute([
+                $rfq_id,
+                $_SESSION['user_id'],
+                !empty($review_comments) ? $review_comments : null,
+            ]);
+
+            // Insert into quote approval audit trail
+            // Both `comments` and `requestor_notes` capture the same value: the requestor's review comments.
+            $pdo->prepare(
+                "INSERT INTO rfq_quote_approvals
+                    (rfq_id, quote_id, approval_stage, approver_id, approver_role, action, comments, requestor_notes, created_at)
+                 VALUES (?, ?, 'REQUESTOR_REVIEW', ?, ?, 'APPROVED', ?, ?, CURRENT_TIMESTAMP)"
+            )->execute([
+                $rfq_id,
+                $quote_id,
+                $_SESSION['user_id'],
+                $_SESSION['role_name'] ?? null,
+                !empty($review_comments) ? $review_comments : null,
+                !empty($review_comments) ? $review_comments : null,
+            ]);
+
+            // Advance the procurement request pipeline to Branch Head approval
+            $pdo->prepare(
+                "UPDATE procurement_requests
+                    SET status = 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING'
+                  WHERE request_id = ? AND status = 'QUOTE_REVIEW_PENDING'"
+            )->execute([(int)$quote['request_id']]);
+
+            // Audit log
+            $pdo->prepare(
+                "INSERT INTO audit_log (table_name, action, notes, change_date)
+                 VALUES ('rfq_quotes', 'REVIEW', ?, NOW())"
+            )->execute([
+                "Quote {$quote_id} confirmed as MEETS_REQUIREMENTS by requestor {$_SESSION['full_name']}; RFQ routed to Branch Head for final approval.",
+            ]);
+
+            if (function_exists('logRequestTimeline')) {
+                logRequestTimeline(
+                    $pdo,
+                    (int)$quote['request_id'],
+                    'QUOTE_REQUESTOR_REVIEW_APPROVED',
+                    'Requestor confirmed selected quotation meets specifications. Routed to Branch Head for final approval.'
+                );
+            }
+
+            $pdo->commit();
+
+            // Notify Branch Head that approval is pending (outside the transaction to avoid
+            // holding the DB connection open; a notification failure is non-fatal).
+            try {
+                require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
+                if (function_exists('sendBranchHeadApprovalNotification')) {
+                    sendBranchHeadApprovalNotification($rfq_id);
+                }
+            } catch (Throwable $notifyEx) {
+                error_log('sendBranchHeadApprovalNotification failed for rfq_id=' . $rfq_id . ': ' . $notifyEx->getMessage());
+            }
+
+            pop(
+                'Quotation confirmed as meeting your requirements. The RFQ has been routed to the Branch Head for final approval.',
+                '/rfq/view.php?id=' . $rfq_id,
+                POP_DEFAULT_DELAY_MS,
+                'success'
+            );
+            exit;
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            pop(extractDbMessage($e), '/rfq/review_quote.php?quote_id=' . $quote_id . '&rfq_id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');
+            exit;
+        }
+    }
     
     // Update quote review
     try {
