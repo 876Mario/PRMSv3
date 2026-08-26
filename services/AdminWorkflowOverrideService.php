@@ -6,6 +6,9 @@ if (!function_exists('getAdminWorkflowStatusOptions') && isset($_SERVER['DOCUMEN
 if (!function_exists('logRequestTimeline') && isset($_SERVER['DOCUMENT_ROOT'])) {
     require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 }
+if (isset($_SERVER['DOCUMENT_ROOT'])) {
+    require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
+}
 
 class AdminWorkflowOverrideService
 {
@@ -46,7 +49,7 @@ class AdminWorkflowOverrideService
 
         $oldStatus = strtoupper((string)($request['status'] ?? ''));
         if ($oldStatus === $newStatus) {
-            return ['success' => true, 'changed' => false, 'error' => 'No workflow status change was made.'];
+            return ['success' => true, 'changed' => false, 'error' => ''];
         }
 
         $startedTransaction = false;
@@ -167,10 +170,6 @@ class AdminWorkflowOverrideService
 
     private function notifyResponsibleUsers(int $requestId, string $newStatus): void
     {
-        if (isset($_SERVER['DOCUMENT_ROOT'])) {
-            require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
-        }
-
         $request = $this->loadRequest($requestId);
         if (!$request) {
             return;
