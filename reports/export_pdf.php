@@ -46,10 +46,10 @@ try {
             
         $html = <<<HTML
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Helvetica','Arial',sans-serif;color:#212529;font-size:12px;margin:0;padding:0;}</style></head><body>
-<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PRMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement Request Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
+<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PIAMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement & Inventory Assets Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
 <div style="padding:20px 24px 10px;"><h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">{$title}</h2><p style="margin:0;color:#6c757d;font-size:11px;">{$subtitle}</p></div>
 <div style="padding:0 24px;"><table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><thead><tr style="background:#0b5e2b;"><th style="padding:10px;color:#fff;text-align:center;font-size:11px;width:5%;">#</th><th style="padding:10px;color:#fff;text-align:left;font-size:11px;">Status</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Count</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Total Value</th></tr></thead><tbody>{$rows}</tbody></table></div>
-<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PRMS</div>
+<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PIAMS</div>
 </body></html>
 HTML;
         break;
@@ -79,10 +79,10 @@ HTML;
         
         $html = <<<HTML
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Helvetica','Arial',sans-serif;color:#212529;font-size:12px;margin:0;padding:0;}</style></head><body>
-<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PRMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement Request Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
+<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PIAMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement & Inventory Assets Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
 <div style="padding:20px 24px 10px;"><h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">{$title}</h2><p style="margin:0;color:#6c757d;font-size:11px;">{$subtitle}</p></div>
 <div style="padding:0 24px;"><table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><thead><tr style="background:#0b5e2b;"><th style="padding:10px;color:#fff;text-align:center;font-size:11px;width:5%;">#</th><th style="padding:10px;color:#fff;text-align:left;font-size:11px;">Procurement Method</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Count</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Total Value</th></tr></thead><tbody>{$rows}</tbody></table></div>
-<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PRMS</div>
+<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PIAMS</div>
 </body></html>
 HTML;
         break;
@@ -104,10 +104,10 @@ HTML;
         
         $html = <<<HTML
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Helvetica','Arial',sans-serif;color:#212529;font-size:12px;margin:0;padding:0;}</style></head><body>
-<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PRMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement Request Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
+<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PIAMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement & Inventory Assets Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
 <div style="padding:20px 24px 10px;"><h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">{$title}</h2><p style="margin:0;color:#6c757d;font-size:11px;">{$subtitle}</p></div>
 <div style="padding:0 24px;"><table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><thead><tr style="background:#0b5e2b;"><th style="padding:10px;color:#fff;text-align:center;font-size:11px;width:5%;">#</th><th style="padding:10px;color:#fff;text-align:left;font-size:11px;">Branch</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Requests</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Total Value</th></tr></thead><tbody>{$rows}</tbody></table></div>
-<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PRMS</div>
+<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PIAMS</div>
 </body></html>
 HTML;
         break;
@@ -129,10 +129,10 @@ HTML;
         
         $html = <<<HTML
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Helvetica','Arial',sans-serif;color:#212529;font-size:12px;margin:0;padding:0;}</style></head><body>
-<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PRMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement Request Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
+<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PIAMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement & Inventory Assets Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
 <div style="padding:20px 24px 10px;"><h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">{$title}</h2><p style="margin:0;color:#6c757d;font-size:11px;">{$subtitle}</p></div>
 <div style="padding:0 24px;"><table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><thead><tr style="background:#0b5e2b;"><th style="padding:10px;color:#fff;text-align:center;font-size:11px;width:5%;">#</th><th style="padding:10px;color:#fff;text-align:left;font-size:11px;">Supplier/Vendor</th><th style="padding:10px;color:#fff;text-align:center;font-size:11px;">Status</th></tr></thead><tbody>{$rows}</tbody></table></div>
-<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PRMS</div>
+<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PIAMS</div>
 </body></html>
 HTML;
         break;
@@ -154,10 +154,10 @@ HTML;
         
         $html = <<<HTML
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Helvetica','Arial',sans-serif;color:#212529;font-size:12px;margin:0;padding:0;}</style></head><body>
-<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PRMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement Request Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
+<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PIAMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement & Inventory Assets Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
 <div style="padding:20px 24px 10px;"><h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">{$title}</h2><p style="margin:0;color:#6c757d;font-size:11px;">{$subtitle}</p></div>
 <div style="padding:0 24px;"><table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><thead><tr style="background:#0b5e2b;"><th style="padding:10px;color:#fff;text-align:center;font-size:11px;width:5%;">#</th><th style="padding:10px;color:#fff;text-align:left;font-size:11px;">Status</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Count</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Total Amount</th></tr></thead><tbody>{$rows}</tbody></table></div>
-<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PRMS</div>
+<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PIAMS</div>
 </body></html>
 HTML;
         break;
@@ -179,10 +179,10 @@ HTML;
         
         $html = <<<HTML
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Helvetica','Arial',sans-serif;color:#212529;font-size:12px;margin:0;padding:0;}</style></head><body>
-<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PRMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement Request Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
+<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PIAMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement & Inventory Assets Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
 <div style="padding:20px 24px 10px;"><h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">{$title}</h2><p style="margin:0;color:#6c757d;font-size:11px;">{$subtitle}</p></div>
 <div style="padding:0 24px;"><table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><thead><tr style="background:#0b5e2b;"><th style="padding:10px;color:#fff;text-align:left;font-size:11px;">Period</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Count</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Total Amount</th></tr></thead><tbody>{$rows}</tbody></table></div>
-<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PRMS</div>
+<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PIAMS</div>
 </body></html>
 HTML;
         break;
@@ -203,10 +203,10 @@ HTML;
         
         $html = <<<HTML
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Helvetica','Arial',sans-serif;color:#212529;font-size:12px;margin:0;padding:0;}</style></head><body>
-<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PRMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement Request Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
+<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PIAMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement & Inventory Assets Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
 <div style="padding:20px 24px 10px;"><h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">{$title}</h2><p style="margin:0;color:#6c757d;font-size:11px;">{$subtitle}</p></div>
 <div style="padding:0 24px;"><table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><thead><tr style="background:#0b5e2b;"><th style="padding:10px;color:#fff;text-align:left;font-size:11px;">Period</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Payments</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Total Paid</th></tr></thead><tbody>{$rows}</tbody></table></div>
-<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PRMS</div>
+<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PIAMS</div>
 </body></html>
 HTML;
         break;
@@ -234,11 +234,11 @@ HTML;
         
         $html = <<<HTML
 <!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:'Helvetica','Arial',sans-serif;color:#212529;font-size:12px;margin:0;padding:0;}</style></head><body>
-<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PRMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement Request Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
+<div style="background:linear-gradient(90deg, #0b5e2b, #c9a227);padding:16px 24px;color:#fff;"><table width="100%"><tr><td><span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Government Chemist - PIAMS</span><br><span style="font-size:11px;opacity:0.85;">Procurement & Inventory Assets Management System</span></td><td style="text-align:right;"><span style="font-size:11px;">Generated: {$date} at {$time}</span></td></tr></table></div>
 <div style="padding:20px 24px 10px;"><h2 style="margin:0 0 4px;font-size:20px;color:#1a1a2e;">{$title}</h2><p style="margin:0;color:#6c757d;font-size:11px;">{$subtitle}</p></div>
 <div style="padding:0 24px 16px;"><div style="background:#fce4ec;border-radius:8px;padding:12px 14px;display:inline-block;\"><span style="font-size:10px;text-transform:uppercase;color:#6c757d;font-weight:600;\">Total Outstanding</span><br><span style="font-size:18px;font-weight:700;color:#dc3545;\">{$fmtTotal}</span></div></div>
 <div style="padding:0 24px;"><table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><thead><tr style="background:#0b5e2b;"><th style="padding:10px;color:#fff;text-align:center;font-size:11px;width:5%;">#</th><th style="padding:10px;color:#fff;text-align:left;font-size:11px;">Date</th><th style="padding:10px;color:#fff;text-align:left;font-size:11px;">Request #</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Commitment</th><th style="padding:10px;color:#fff;text-align:right;font-size:11px;">Outstanding</th></tr></thead><tbody>{$rows}</tbody></table></div>
-<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PRMS</div>
+<div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">&copy; {$date} Government Chemist &middot; Confidential &middot; PIAMS</div>
 </body></html>
 HTML;
         break;
@@ -298,7 +298,7 @@ HTML;
     <tr>
       <td>
         <span style="font-size:18px;font-weight:700;letter-spacing:0.5px;">Department of the Government Chemist</span><br>
-        <span style="font-size:11px;opacity:0.85;">Procurement Request Management System</span>
+        <span style="font-size:11px;opacity:0.85;">Procurement & Inventory Assets Management System</span>
       </td>
       <td style="text-align:right;">
         <span style="font-size:11px;">Generated: {$date} at {$time}</span>
@@ -359,7 +359,7 @@ HTML;
 
 <!-- Footer -->
 <div style="padding:20px 24px 12px;text-align:center;color:#adb5bd;font-size:10px;border-top:1px solid #e9ecef;margin-top:24px;">
-  &copy; {$date} Department of the Government Chemist &middot; Confidential &middot; PRMS
+  &copy; {$date} Department of the Government Chemist &middot; Confidential &middot; PIAMS
 </div>
 
 </body>

@@ -17,8 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 if (
     empty($_POST['csrf_token'])
-    || empty($_SESSION['prms_export_csrf_token'])
-    || !hash_equals($_SESSION['prms_export_csrf_token'], (string)$_POST['csrf_token'])
+    || empty($_SESSION['piams_export_csrf_token'])
+    || !hash_equals($_SESSION['piams_export_csrf_token'], (string)$_POST['csrf_token'])
 ) {
     http_response_code(403);
     exit('Invalid export token');
@@ -51,7 +51,7 @@ $document = <<<HTML
         table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
         th, td { border: 1px solid #ccc; padding: 5px; vertical-align: top; }
         th { background: #f2f2f2; font-weight: bold; }
-        .btn, button, form, nav, .prms-export-toolbar { display: none !important; }
+        .btn, button, form, nav, .piams-export-toolbar { display: none !important; }
         .card { border: 1px solid #ddd; margin-bottom: 12px; padding: 8px; }
         a { color: #222; text-decoration: none; }
     </style>

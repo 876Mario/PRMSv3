@@ -131,7 +131,7 @@ $deadline    = date('d M Y', strtotime($data['submission_deadline']));
 // CREATE PDF
 // =============================
 $pdf = new TCPDF();
-$pdf->SetCreator('DGC PRMS');
+$pdf->SetCreator('DGC PIAMS');
 $pdf->SetAuthor('Department of Government Chemist');
 $pdf->SetTitle('RFQ - '.$rfqNumber);
 $pdf->setPrintHeader(false);

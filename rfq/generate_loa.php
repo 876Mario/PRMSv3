@@ -39,7 +39,7 @@ $awardDate  = date('d M Y');
 // CREATE PDF
 // =============================
 $pdf = new TCPDF();
-$pdf->SetCreator('DGC PRMS');
+$pdf->SetCreator('DGC PIAMS');
 $pdf->SetAuthor('Department of Government Chemist');
 $pdf->SetTitle('Letter of Award - '.$rfqNumber);
 $pdf->setPrintHeader(false);

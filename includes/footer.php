@@ -9,7 +9,7 @@
   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
     <div class="footer-text">
       <strong>&copy; <?= date('Y') ?> Department of Government Chemist</strong>
-      <span class="footer-version-badge">PRMS v2.0</span>
+      <span class="footer-version-badge">PIAMS v3.0</span>
     </div>
     <div class="footer-credit">
       <i class="bi bi-cpu me-1"></i>Developed by ICT Unit &nbsp;&bull;&nbsp; All Rights Reserved

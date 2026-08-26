@@ -179,7 +179,7 @@ $html = <<<HTML
 
 <!-- Footer -->
 <div style="padding:28px 24px 12px;text-align:center;color:#adb5bd;font-size:9px;border-top:1px solid #e9ecef;margin-top:36px;">
-  &copy; {$genDate} Department of the Government Chemist &middot; Confidential &middot; PRMS
+  &copy; {$genDate} Department of the Government Chemist &middot; Confidential &middot; PIAMS
 </div>
 
 </body>

@@ -396,7 +396,7 @@ $html = <<<HTML
 
 <!-- Footer -->
 <div style="padding:10px 20px;text-align:center;color:#adb5bd;font-size:8px;border-top:1px solid #e9ecef;margin-top:20px;">
-  Department of the Government Chemist &middot; PRMS &middot; Confidential &middot; $genDate
+  Department of the Government Chemist &middot; PIAMS &middot; Confidential &middot; $genDate
 </div>
 
 </body>

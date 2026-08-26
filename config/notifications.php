@@ -272,7 +272,7 @@ function notifyRequestSubmitted(int $requestId): bool {
     <div class="container">
         <div class="header">
             <h2 style="margin: 0;">New Procurement Request Awaiting Approval</h2>
-            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
         </div>
         <div class="content">
             <p>Dear Approver,</p>
@@ -311,7 +311,7 @@ function notifyRequestSubmitted(int $requestId): bool {
             </p>
         </div>
         <div class="footer">
-            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+            <p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p>
         </div>
     </div>
 </body>
@@ -424,7 +424,7 @@ function notifyFinanceForDirectApproval(int $requestId, string $requestType): bo
     <div class="container">
         <div class="header">
             <h2 style="margin: 0;">{$typeEmoji} {$typeDisplay} Request - Fund Verification Needed</h2>
-            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
         </div>
         <div class="content">
             <p>Dear Finance Officer,</p>
@@ -467,7 +467,7 @@ function notifyFinanceForDirectApproval(int $requestId, string $requestType): bo
             </p>
         </div>
         <div class="footer">
-            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+            <p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p>
         </div>
     </div>
 </body>
@@ -573,7 +573,7 @@ function notifyApprovalNeeded(int $requestId, string $stage, int $approverId): b
     <div class="container">
         <div class="header">
             <h2 style="margin: 0;">Action Required - Request Approval</h2>
-            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
         </div>
         <div class="content">
             <p>Dear {$safeApproverName},</p>
@@ -613,7 +613,7 @@ function notifyApprovalNeeded(int $requestId, string $stage, int $approverId): b
             </p>
         </div>
         <div class="footer">
-            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+            <p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p>
         </div>
     </div>
 </body>
@@ -703,7 +703,7 @@ function notifyRequestFinalized(int $requestId, string $finalStatus): bool {
     <div class="container">
         <div class="header">
             <h2 style="margin: 0;">Request Status Update</h2>
-            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
         </div>
         <div class="content">
             <p>Dear {$safeRequestorName},</p>
@@ -740,7 +740,7 @@ function notifyRequestFinalized(int $requestId, string $finalStatus): bool {
             </p>
         </div>
         <div class="footer">
-            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+            <p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p>
         </div>
     </div>
 </body>
@@ -853,7 +853,7 @@ function notifyNextApprover(int $requestId, string $completedStage): bool {
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Approval Stage Escalated</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <div class="alert"><strong>&#9888; Action Required:</strong> The previous stage ({$safeCompletedStage}) is complete. Your approval is now needed.</div>
@@ -868,7 +868,7 @@ function notifyNextApprover(int $requestId, string $completedStage): bool {
         <p><a href="{$appUrl}/procurement/approve.php?id={$requestId}" class="button">Review &amp; Approve</a></p>
         <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from the Procurement Request Management System.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
 
@@ -949,7 +949,7 @@ function notifyCommitmentAction(int $requestId, string $commitmentNumber, string
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">{$actionLabel}</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$request['full_name']},</p>
@@ -962,9 +962,9 @@ function notifyCommitmentAction(int $requestId, string $commitmentNumber, string
         </div>
         <p>{$details}</p>
         <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
-        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PIAMS.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
 
@@ -1030,7 +1030,7 @@ function notifyProcurementOfCommitment(int $requestId, string $commitmentNumber)
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Commitment Uploaded - Ready for PO</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$pu['full_name']},</p>
@@ -1043,9 +1043,9 @@ function notifyProcurementOfCommitment(int $requestId, string $commitmentNumber)
         </div>
         <p>Finance has verified funds and uploaded the commitment document. This request is now ready for Purchase Order creation.</p>
         <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request & Create PO</a></p>
-        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PIAMS.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
             sendMail($pu['email'], $subject, $html);
@@ -1107,7 +1107,7 @@ function notifyPOAction(int $requestId, string $poNumber, string $action, string
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">{$actionLabel}</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$request['full_name']},</p>
@@ -1119,9 +1119,9 @@ function notifyPOAction(int $requestId, string $poNumber, string $action, string
         </div>
         <p>{$details}</p>
         <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
-        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PIAMS.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
 
@@ -1173,7 +1173,7 @@ function notifyInvoiceReceived(int $requestId, string $invoiceNumber, string $po
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Invoice Received</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$request['full_name']},</p>
@@ -1185,9 +1185,9 @@ function notifyInvoiceReceived(int $requestId, string $invoiceNumber, string $po
             <div class="detail-row"><span class="label">Invoice Amount:</span> {$invCurrency} \${$formattedAmount}</div>
         </div>
         <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
-        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PIAMS.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
 
@@ -1246,7 +1246,7 @@ function notifyPaymentRecorded(int $requestId, int $invoiceId, float $paymentAmo
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Payment Recorded</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$request['full_name']},</p>
@@ -1257,9 +1257,9 @@ function notifyPaymentRecorded(int $requestId, int $invoiceId, float $paymentAmo
             <div class="detail-row"><span class="label">Amount:</span> {$payCurrency} \${$formattedAmount}</div>
         </div>
         <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
-        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PIAMS.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
 
@@ -1322,7 +1322,7 @@ function notifyPOVariation(int $requestId, string $poNumber, string $action, flo
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">{$actionLabel}</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$request['full_name']},</p>
@@ -1334,9 +1334,9 @@ function notifyPOVariation(int $requestId, string $poNumber, string $action, flo
         </div>
         {$detailBlock}
         <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
-        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PIAMS.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
 
@@ -1396,7 +1396,7 @@ function notifyQuoteSelected(int $requestId, string $vendorName, float $quoteAmo
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Quote Selected</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$request['full_name']},</p>
@@ -1407,9 +1407,9 @@ function notifyQuoteSelected(int $requestId, string $vendorName, float $quoteAmo
             <div class="detail-row"><span class="label">Quote Amount:</span> {$quoteCurrency} \${$formattedAmount}</div>
         </div>
         <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
-        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PIAMS.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
 
@@ -1492,7 +1492,7 @@ function notifyRequestDeclined(int $requestId, int $requestorId, string $decline
     <div class="container">
         <div class="header">
             <h2 style="margin: 0;">Request Declined</h2>
-            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
         </div>
         <div class="content">
             <p>Dear {$safeRequestorName},</p>
@@ -1547,7 +1547,7 @@ function notifyRequestDeclined(int $requestId, int $requestorId, string $decline
             </p>
         </div>
         <div class="footer">
-            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+            <p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p>
         </div>
     </div>
 </body>
@@ -1581,7 +1581,7 @@ function notifyNewUser(int $userId, string $email, string $fullName, string $rol
 
     try {
         $appUrl = getAppUrl();
-        $subject = "Welcome to PRMS - Your Account Has Been Created";
+        $subject = "Welcome to PIAMS - Your Account Has Been Created";
 
         $html = <<<HTML
 <!DOCTYPE html>
@@ -1611,13 +1611,13 @@ function notifyNewUser(int $userId, string $email, string $fullName, string $rol
 <body>
     <div class="container">
         <div class="header">
-            <h2 style="margin: 0;">Welcome to PRMS!</h2>
+            <h2 style="margin: 0;">Welcome to PIAMS!</h2>
             <p style="margin: 5px 0 0 0;">Procurement Request Management System</p>
         </div>
         <div class="content">
             <div class="welcome-box">
                 <p style="margin: 0; font-size: 16px;"><strong>Hello {$fullName},</strong></p>
-                <p style="margin: 10px 0 0 0;">Your user account has been successfully created in the PRMS.</p>
+                <p style="margin: 10px 0 0 0;">Your user account has been successfully created in the PIAMS.</p>
             </div>
 
             <h3 style="color: #2196F3; margin-top: 20px;">Account Details</h3>
@@ -1646,7 +1646,7 @@ function notifyNewUser(int $userId, string $email, string $fullName, string $rol
             <h3 style="color: #2196F3; margin-top: 20px;">How to Access the System</h3>
             <div class="instructions">
                 <div class="step">
-                    <span class="step-num">Step 1:</span> Visit the PRMS login page
+                    <span class="step-num">Step 1:</span> Visit the PIAMS login page
                 </div>
                 <div class="step">
                     <span class="step-num">Step 2:</span> Enter your email address: <strong>{$email}</strong>
@@ -1680,7 +1680,7 @@ function notifyNewUser(int $userId, string $email, string $fullName, string $rol
             </p>
         </div>
         <div class="footer">
-            <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+            <p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p>
         </div>
     </div>
 </body>
@@ -1759,7 +1759,7 @@ function notifyProcurementOfApproval(int $requestId, string $approvalStatus): bo
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">✓ Request Approved - Ready for Procurement</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$po['full_name']},</p>
@@ -1810,7 +1810,7 @@ function notifyProcurementOfApproval(int $requestId, string $approvalStatus): bo
         </p>
     </div>
     <div class="footer">
-        <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+        <p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p>
     </div>
 </div></body></html>
 HTML;
@@ -1893,7 +1893,7 @@ function notifyProcurementOfDecline(int $requestId, string $declineReason): bool
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">✗ Request Declined - Not Proceeding</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$po['full_name']},</p>
@@ -1944,7 +1944,7 @@ function notifyProcurementOfDecline(int $requestId, string $declineReason): bool
         </p>
     </div>
     <div class="footer">
-        <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+        <p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p>
     </div>
 </div></body></html>
 HTML;
@@ -2030,7 +2030,7 @@ function notifySignedRequestReceived(int $requestId, string $requestNumber): boo
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">✓ Signed Request Received - Ready for Processing</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$po['full_name']},</p>
@@ -2085,7 +2085,7 @@ function notifySignedRequestReceived(int $requestId, string $requestNumber): boo
         </p>
     </div>
     <div class="footer">
-        <p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p>
+        <p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p>
     </div>
 </div></body></html>
 HTML;
@@ -2154,7 +2154,7 @@ function notifyProcurementRFQReady(int $requestId): bool {
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Action Required: Create RFQ</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$po['full_name']},</p>
@@ -2170,7 +2170,7 @@ function notifyProcurementRFQReady(int $requestId): bool {
         <p><strong>Next Step:</strong> Create and send the RFQ to vendors.</p>
         <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request &amp; Create RFQ</a></p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
             if (sendMail($po['email'], $subject, $html)) $sent = true;
@@ -2241,7 +2241,7 @@ function notifyQuoteUploaded(int $rfqId, string $vendorName): bool {
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Vendor Quote Received</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$r['name']},</p>
@@ -2255,7 +2255,7 @@ function notifyQuoteUploaded(int $rfqId, string $vendorName): bool {
         </div>
         <p><a href="{$appUrl}/rfq/view.php?id={$rfqId}" class="button">View RFQ &amp; Quotes</a></p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
             if (sendMail($r['email'], $subject, $html)) $sent = true;
@@ -2323,7 +2323,7 @@ function notifyQuoteReviewReady(int $requestId, int $rfqId): bool {
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Action Required: Review Vendor Quotes</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$r['name']},</p>
@@ -2333,7 +2333,7 @@ function notifyQuoteReviewReady(int $requestId, int $rfqId): bool {
         <p>Please review the submitted vendor quotes and approve or provide feedback.</p>
         <p><a href="{$appUrl}/rfq/view.php?id={$rfqId}" class="button">Review Quotes Now</a></p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
             if (sendMail($r['email'], $subject, $html)) $sent = true;
@@ -2397,7 +2397,7 @@ function notifyEvaluationStarted(int $rfqId): bool {
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Action Required: RFQ Evaluation</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$m['full_name']},</p>
@@ -2407,7 +2407,7 @@ function notifyEvaluationStarted(int $rfqId): bool {
         <p>The evaluation stage has started. Please review the vendor quotes and cast your vote.</p>
         <p><a href="{$appUrl}/rfq/view.php?id={$rfqId}" class="button">Start Evaluation</a></p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
             if (sendMail($m['email'], $subject, $html)) $sent = true;
@@ -2467,7 +2467,7 @@ function notifyFinanceCommitmentNeeded(int $requestId, string $vendorName, float
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Action Required: Verify Funds &amp; Create Commitment</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$fo['full_name']},</p>
@@ -2482,7 +2482,7 @@ function notifyFinanceCommitmentNeeded(int $requestId, string $vendorName, float
         </div>
         <p><a href="{$appUrl}/commitments/add.php?request_id={$requestId}" class="button">Verify Funds &amp; Create Commitment</a></p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
             if (sendMail($fo['email'], $subject, $html)) $sent = true;
@@ -2541,7 +2541,7 @@ function notifyRequestResubmitted(int $requestId): bool {
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Request Resubmitted</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear Approver,</p>
@@ -2557,7 +2557,7 @@ function notifyRequestResubmitted(int $requestId): bool {
         <p>This request will need to be resubmitted by the requestor before it reaches your queue. No action needed yet.</p>
         <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
         return sendMail($approverEmail, $subject, $html);
@@ -2614,7 +2614,7 @@ function notifyProcurementCommitmentFormNeeded(int $requestId): bool {
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Funds Verified - Commitment Form Required</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$pu['full_name']},</p>
@@ -2626,9 +2626,9 @@ function notifyProcurementCommitmentFormNeeded(int $requestId): bool {
         </div>
         <p>Finance has verified that funds are available for this request. Please fill out the commitment form with the commitment date, amount, and GFMS commitment number, then submit to Finance for commitment document upload.</p>
         <p><a href="{$appUrl}/commitments/add.php?request_id={$requestId}" class="button">Fill Commitment Form</a></p>
-        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PIAMS.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
             sendMail($pu['email'], $subject, $html);
@@ -2669,7 +2669,7 @@ function notifyFinanceCommitmentUploadNeeded(int $requestId, string $commitmentN
         $commitmentAmount = 'JMD ' . number_format((float)($request['commitment_total'] ?? 0), 2);
         $gfmsNum = $request['gfms_commitment_number'] ? htmlspecialchars($request['gfms_commitment_number']) : 'Not provided';
         $hasForm = !empty($request['commitment_date']) || !empty($request['commitment_total']) || !empty($request['gfms_commitment_number']);
-        $formStatusText = $hasForm ? 'Provided in PRMS for review.' : 'Not provided.';
+        $formStatusText = $hasForm ? 'Provided in PIAMS for review.' : 'Not provided.';
         $subject = "Commitment Action Required - {$request['request_number']}";
 
         foreach ($financeUsers as $fu) {
@@ -2692,7 +2692,7 @@ function notifyFinanceCommitmentUploadNeeded(int $requestId, string $commitmentN
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Commitment Action Required</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$fu['full_name']},</p>
@@ -2703,16 +2703,16 @@ function notifyFinanceCommitmentUploadNeeded(int $requestId, string $commitmentN
         </div>
         <p>
             Procurement has completed their step for this request.
-            Please create the commitment in GFMS, then optionally upload the commitment document into PRMS to finalize the commitment.
+            Please create the commitment in GFMS, then optionally upload the commitment document into PIAMS to finalize the commitment.
         </p>
         <p>
             Optional commitment form from Procurement:
             {$formStatusText}
         </p>
         <p><a href="{$appUrl}/commitments/add.php?request_id={$requestId}" class="button">Create Commitment</a></p>
-        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PRMS.</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from PIAMS.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
             sendMail($fu['email'], $subject, $html);
@@ -2787,7 +2787,7 @@ function notifyRequestorSubmissionConfirmed(int $requestId): bool {
 <div class="container">
     <div class="header">
         <h2 style="margin: 0;">Request Submitted Successfully</h2>
-        <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+        <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
     </div>
     <div class="content">
         <p>Dear {$safeFullName},</p>
@@ -2802,7 +2802,7 @@ function notifyRequestorSubmissionConfirmed(int $requestId): bool {
         <p><a href="{$viewUrl}" class="button">View Request</a></p>
         <p style="margin-top: 20px; font-size: 12px; color: #777;">This is an automated notification from the Procurement Request Management System.</p>
     </div>
-    <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
 </div></body></html>
 HTML;
 
@@ -2910,7 +2910,7 @@ function notifyRequestCancelled(int $requestId, string $cancelReason, string $pr
     <div class="container">
         <div class="header">
             <h2 style="margin: 0;">Request Cancelled</h2>
-            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
         </div>
         <div class="content">
             <div class="alert">
@@ -2929,7 +2929,7 @@ function notifyRequestCancelled(int $requestId, string $cancelReason, string $pr
             <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">View Request</a></p>
             <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated notification from the Procurement Request Management System.</p>
         </div>
-        <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+        <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
     </div>
 </body>
 </html>
@@ -3200,7 +3200,7 @@ function notifyMissingDocumentReminder(
     <div class="container">
         <div class="header">
             <h2 style="margin: 0;">{$urgentPrefix}Outstanding Document Reminder</h2>
-            <p style="margin: 5px 0 0 0;">Government Chemist - PRMS</p>
+            <p style="margin: 5px 0 0 0;">Government Chemist - PIAMS</p>
         </div>
         <div class="content">
             {$urgentBanner}
@@ -3217,7 +3217,7 @@ function notifyMissingDocumentReminder(
             <p><a href="{$appUrl}/procurement/view.php?id={$requestId}" class="button">Upload Document</a></p>
             <p style="margin-top: 30px; font-size: 12px; color: #777;">This is an automated notification from the Procurement Request Management System.</p>
         </div>
-        <div class="footer"><p>&copy; Government Chemist &middot; PRMS &middot; Confidential</p></div>
+        <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
     </div>
 </body>
 </html>
@@ -4049,7 +4049,7 @@ HTML;
             </p>
         </div>
         <div class="footer">
-            <p>This is an automated notification from the Procurement Request Management System (PRMS).</p>
+            <p>This is an automated notification from the Procurement Request Management System (PIAMS).</p>
             <p>Please do not reply to this email. Log in to the system to take action.</p>
         </div>
     </div>

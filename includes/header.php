@@ -2,8 +2,8 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/auth.php";
 
 $__prmsExportEnabled = !preg_match('#^/(auth|uploads|lib|vendor)/#', $_SERVER['SCRIPT_NAME'] ?? '');
-if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
-  $_SESSION['prms_export_csrf_token'] = bin2hex(random_bytes(32));
+if ($__prmsExportEnabled && empty($_SESSION['piams_export_csrf_token'])) {
+  $_SESSION['piams_export_csrf_token'] = bin2hex(random_bytes(32));
 }
 ?>
 
@@ -32,7 +32,7 @@ if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
       .mobile-topbar,
       .global-topbar,
       .prms-footer,
-      .prms-export-toolbar,
+      .piams-export-toolbar,
       .btn,
       button,
       form { display: none !important; }
@@ -61,7 +61,7 @@ if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
 <div class="d-md-none mobile-topbar">
   <a href="/dashboard/index.php" class="mobile-topbar-brand">
     <img src="/logo/cropped-Logo.png" alt="Logo" style="height:26px; filter: brightness(0) invert(1);">
-    <span>DGC PRMS</span>
+    <span>DGC PIAMS</span>
   </a>
   <button class="btn btn-sm mobile-menu-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
     <i class="bi bi-list"></i>
@@ -78,13 +78,13 @@ if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
     <script>
       // Restore the sidebar's scroll position immediately (before first paint)
       // so it stays where the user left it after selecting a link/tab.
-      // window.PRMS_SIDEBAR_SCROLL_KEY establishes the shared sessionStorage
+      // window.PIAMS_SIDEBAR_SCROLL_KEY establishes the shared sessionStorage
       // key used by both this script and assets/js/app-nav.js; whichever
       // script runs first sets it (falling back to the same default string),
       // and the other reuses it so both always agree on the same key.
       (function () {
-        var KEY = window.PRMS_SIDEBAR_SCROLL_KEY || 'prms.sidebarScrollTop';
-        window.PRMS_SIDEBAR_SCROLL_KEY = KEY;
+        var KEY = window.PIAMS_SIDEBAR_SCROLL_KEY || 'piams.sidebarScrollTop';
+        window.PIAMS_SIDEBAR_SCROLL_KEY = KEY;
         var sidebar = document.getElementById('sidebarMenu');
         var saved = sessionStorage.getItem(KEY);
         if (sidebar && saved !== null) {
@@ -105,7 +105,7 @@ if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
     <span class="topbar-divider">
       <i class="bi bi-chevron-right"></i>
     </span>
-    <span class="topbar-app-name">DGC PRMS</span>
+    <span class="topbar-app-name">DGC PIAMS</span>
   </div>
   <div class="global-topbar-right">
     <span class="topbar-date d-none d-sm-flex">
@@ -254,7 +254,7 @@ if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
 </div>
 
 <?php if ($__prmsExportEnabled): ?>
-<div class="prms-export-toolbar d-flex justify-content-end gap-2 mb-3">
+<div class="piams-export-toolbar d-flex justify-content-end gap-2 mb-3">
   <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.prmsExportPdf && window.prmsExportPdf()">
     <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
   </button>
@@ -266,7 +266,7 @@ if ($__prmsExportEnabled && empty($_SESSION['prms_export_csrf_token'])) {
   </button>
 </div>
 <script>
-window.PRMS_EXPORT_CSRF_TOKEN = <?= json_encode($_SESSION['prms_export_csrf_token'] ?? '') ?>;
+window.PIAMS_EXPORT_CSRF_TOKEN = <?= json_encode($_SESSION['piams_export_csrf_token'] ?? '') ?>;
 window.prmsExportPdf = function () {
   const main = document.querySelector('main') || document.body;
   const title = (document.querySelector('main h1, main h2, main h3, main h4')?.innerText || document.title || 'Export').trim();
@@ -286,7 +286,7 @@ window.prmsExportPdf = function () {
   const tokenInput = document.createElement('input');
   tokenInput.type = 'hidden';
   tokenInput.name = 'csrf_token';
-  tokenInput.value = window.PRMS_EXPORT_CSRF_TOKEN || '';
+  tokenInput.value = window.PIAMS_EXPORT_CSRF_TOKEN || '';
   form.appendChild(titleInput);
   form.appendChild(htmlInput);
   form.appendChild(tokenInput);

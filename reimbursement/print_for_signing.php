@@ -318,7 +318,7 @@ $html = <<<HTML
         Form Revision: {$tplFormRevision} |
         Effective Date: {$tplEffectiveDate} |
         DCR #: {$tplDcrNumber}<br>
-        Printed on: {$tplPrintedOn} | System: PRMS v3
+        Printed on: {$tplPrintedOn} | System: PIAMS v3
     </div>
 </body>
 </html>

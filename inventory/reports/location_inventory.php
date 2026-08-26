@@ -346,7 +346,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
      style="background:linear-gradient(90deg,#0b5e2b,#c9a227);">
     <div class="row">
         <div class="col">
-            <div class="fw-bold fs-5">Government Chemist — PRMS</div>
+            <div class="fw-bold fs-5">Government Chemist — PIAMS</div>
             <div class="small opacity-75">Procurement &amp; Resource Management System</div>
             <div class="mt-1 fs-6">
                 Inventory Report by Location:

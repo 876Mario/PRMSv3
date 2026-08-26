@@ -2,7 +2,7 @@
 /**
  * PHPUnit Bootstrap
  *
- * Sets up the environment for running the PRMS test suite.
+ * Sets up the environment for running the PIAMS test suite.
  * Loaded by PHPUnit before any test is executed.
  */
 
