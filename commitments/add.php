@@ -379,7 +379,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!in_array($poRequired, ['YES', 'NO'], true)) {
                throw new Exception("Please indicate whether a Purchase Order is required (Yes or No).");
             }
-            
+
+            $documentPath = null;
+            if (isset($_FILES['commitment_document']) && $_FILES['commitment_document']['error'] !== UPLOAD_ERR_NO_FILE) {
+                $file = $_FILES['commitment_document'];
+
+                if ($file['error'] !== UPLOAD_ERR_OK) {
+                    throw new Exception("Commitment document upload failed. Please try again.");
+                }
+
+                $allowedTypes = array_keys($mimeToExtDocuments);
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mimeType = finfo_file($finfo, $file['tmp_name']);
+                finfo_close($finfo);
+
+                if (!in_array($mimeType, $allowedTypes, true)) {
+                    throw new Exception("Invalid file type. Only PDF, DOC, DOCX, XLS, and XLSX are allowed.");
+                }
+                if ($file['size'] > 50 * 1024 * 1024) {
+                    throw new Exception("File size exceeds 50 MB limit.");
+                }
+
+                $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0755, true);
+                }
+
+                $ext = $mimeToExtDocuments[$mimeType] ?? 'bin';
+                $safeFilename = 'COMMITMENT_' . time() . '_' . uniqid() . '.' . $ext;
+                $uploadPath = $uploadDir . $safeFilename;
+                if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
+                    throw new Exception("Failed to save commitment document.");
+                }
+                $documentPath = '/uploads/commitments/' . $safeFilename;
+            }
+
+            $formDocPath = null;
+            if (isset($_FILES['commitment_form_doc']) && $_FILES['commitment_form_doc']['error'] !== UPLOAD_ERR_NO_FILE) {
+                $file = $_FILES['commitment_form_doc'];
+
+                if ($file['error'] !== UPLOAD_ERR_OK) {
+                    throw new Exception("Commitment form upload failed. Please try again.");
+                }
+
+                $allowedTypes = array_keys($mimeToExtForms);
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mimeType = finfo_file($finfo, $file['tmp_name']);
+                finfo_close($finfo);
+
+                if (!in_array($mimeType, $allowedTypes, true)) {
+                    throw new Exception("Invalid file type. Only PDF, Word, Excel, JPEG and PNG files are allowed.");
+                }
+                if ($file['size'] > 50 * 1024 * 1024) {
+                    throw new Exception("File size exceeds 50 MB limit.");
+                }
+
+                $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0755, true);
+                }
+
+                $ext = $mimeToExtForms[$mimeType] ?? 'bin';
+                $safeFilename = 'COMMIT_FORM_' . time() . '_' . uniqid() . '.' . $ext;
+                $uploadPath = $uploadDir . $safeFilename;
+                if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
+                    throw new Exception("Failed to save commitment form document.");
+                }
+                $formDocPath = '/uploads/commitments/' . $safeFilename;
+            }
+             
             // Validate GFMS number if provided
             if (!empty($gfmsNumber)) {
                $checkGfms = $pdo->prepare("SELECT commitment_id FROM commitments WHERE gfms_commitment_number = ? LIMIT 1");
@@ -743,22 +811,22 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 </div>
                 <?php endif; ?>
 
-                <?php if (empty($request['commitment_form_path'])): ?>
-                <!-- Optional: Upload scanned commitment form -->
-                <div class="mb-4 p-3 border rounded bg-light">
-                    <label for="commitment_form_doc" class="form-label">
-                        <i class="bi bi-paperclip"></i> Scanned Commitment Form (Optional)
-                    </label>
-                    <input type="file" id="commitment_form_doc" name="commitment_form_doc"
-                           class="form-control" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
-                    <small class="text-muted d-block mt-2">
-                        Optional: Upload a scanned copy of the commitment form (PDF, Word, Excel, JPEG, PNG). Max 50 MB.
-                    </small>
-                </div>
-                <?php endif; ?>
-
                 <form method="post" enctype="multipart/form-data">
                     <input type="hidden" name="action" value="upload_commitment">
+
+                    <?php if (empty($request['commitment_form_path'])): ?>
+                    <!-- Optional: Upload scanned commitment form -->
+                    <div class="mb-4 p-3 border rounded bg-light">
+                        <label for="commitment_form_doc" class="form-label">
+                            <i class="bi bi-paperclip"></i> Scanned Commitment Form (Optional)
+                        </label>
+                        <input type="file" id="commitment_form_doc" name="commitment_form_doc"
+                               class="form-control" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
+                        <small class="text-muted d-block mt-2">
+                            Optional: Upload a scanned copy of the commitment form (PDF, Word, Excel, JPEG, PNG). Max 50 MB.
+                        </small>
+                    </div>
+                    <?php endif; ?>
                     
                     <!-- NEW: Display Request PO Flags -->
                     <div class="mb-4 p-3 border rounded bg-info bg-opacity-10">
