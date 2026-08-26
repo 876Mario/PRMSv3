@@ -606,17 +606,17 @@ function statusBadge(string $status): string {
  * @return string Normalized currency code (JMD or USD)
  */
 if (!function_exists('normalizeCurrency')) {
-function normalizeCurrency(string $currency = 'JMD'): string {
-    $currency = strtoupper(trim($currency));
-    
-    // Fix common typo: USB → USD
-    if ($currency === 'USB') {
-        $currency = 'USD';
+    function normalizeCurrency(string $currency = 'JMD'): string {
+        $currency = strtoupper(trim($currency));
+        
+        // Fix common typo: USB → USD
+        if ($currency === 'USB') {
+            $currency = 'USD';
+        }
+        
+        // Validate and return - default to JMD if invalid
+        return in_array($currency, ['JMD', 'USD'], true) ? $currency : 'JMD';
     }
-    
-    // Validate and return - default to JMD if invalid
-    return in_array($currency, ['JMD', 'USD'], true) ? $currency : 'JMD';
-}
 }
 
 if (!function_exists('formatCurrency')) {
