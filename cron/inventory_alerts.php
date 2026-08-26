@@ -33,6 +33,15 @@ if (!class_exists('CronAuditService')) {
     }
 }
 
+if (!class_exists('CronNotificationRoutingService')) {
+    $routingServicePath = __DIR__ . '/../services/CronNotificationRoutingService.php';
+    if (file_exists($routingServicePath)) {
+        require_once $routingServicePath;
+    } else {
+        die("FATAL: CronNotificationRoutingService.php not found at {$routingServicePath}\n");
+    }
+}
+
 echo "[" . date('Y-m-d H:i:s') . "] Inventory alerts cron started.\n";
 
 /* ─── Acquire execution lock (prevent concurrent runs) ──────────────────── */
@@ -106,7 +115,7 @@ try {
              . "Expires {$e['expiry_date']} ({$daysLeft}d), Qty: {$e['quantity_on_hand']}";
         $alertDetails[] = [
             'item_id' => (int)$e['item_id'],
-            'location_id' => (int)($e['location_id'] ?? 0),
+            'location_id' => !empty($e['location_id']) ? (int)$e['location_id'] : null,
             'type' => $alertType,
             'message' => $msg,
         ];
@@ -129,7 +138,7 @@ try {
              . "Expired {$e['expiry_date']}, Qty: {$e['quantity_on_hand']}";
         $alertDetails[] = [
             'item_id' => (int)$e['item_id'],
-            'location_id' => (int)($e['location_id'] ?? 0),
+            'location_id' => !empty($e['location_id']) ? (int)$e['location_id'] : null,
             'type' => 'EXPIRED',
             'message' => $msg,
         ];
@@ -246,11 +255,21 @@ try {
         try {
             if (sendMail($userEmail, $subject, $htmlBody)) {
                 $notificationsCreated++;
-                // Audit log
-                $auditId = CronAuditService::logRecipient(
-                    $executionId, null, 'INVENTORY_ALERT', null,
-                    null, null, (int)$userId, $reason, false, null
-                );
+                // Audit each generated inventory alert against the PMO recipient.
+                foreach ($alertDetails as $detail) {
+                    CronAuditService::logRecipient(
+                        $executionId,
+                        isset($detail['item_id']) ? (int)$detail['item_id'] : null,
+                        'INVENTORY_ALERT',
+                        $detail['type'] ?? null,
+                        null,
+                        !empty($detail['location_id']) ? (int)$detail['location_id'] : null,
+                        (int)$userId,
+                        $reason,
+                        false,
+                        null
+                    );
+                }
                 echo "[" . date('H:i:s') . "] Alert sent → user {$userId} ({$userName})\n";
             } else {
                 $notificationsFailed++;

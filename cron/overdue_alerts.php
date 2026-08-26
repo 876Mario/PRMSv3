@@ -57,6 +57,15 @@ if (!class_exists('CronAuditService')) {
     }
 }
 
+if (!class_exists('CronNotificationRoutingService')) {
+    $routingServicePath = __DIR__ . '/../services/CronNotificationRoutingService.php';
+    if (file_exists($routingServicePath)) {
+        require_once $routingServicePath;
+    } else {
+        die("FATAL: CronNotificationRoutingService.php not found at {$routingServicePath}\n");
+    }
+}
+
 /* ─── Helper: fetch config values ─────────────────────────────────────── */
 function cronConfig(PDO $pdo, string $key, string $default): string {
     try {
@@ -210,6 +219,8 @@ try {
             pr.updated_at,
             pr.estimated_value,
             pr.currency,
+            pr.request_type,
+            pr.created_by,
             pr.branch_id,
             b.branch_name,
             uc.full_name AS requestor_name,
@@ -233,14 +244,14 @@ try {
         $statusUp   = strtoupper($req['status']);
         $requestsProcessed++;
 
-        // ── Get configured recipients for this branch ──────────────────────
-        $recipients = CronAuditService::getProcurementAlertRecipients($branchId);
+        // ── Resolve only the current workflow action owner(s) ───────────────
+        $recipients = CronAuditService::getOverdueActionRecipients($req);
 
         if (empty($recipients)) {
             // Log as skipped (no recipients configured)
             echo "[" . date('H:i:s') . "] SKIP: Request {$req['request_number']} — "
-               . "no configured procurement alert recipients for Branch {$branchId}\n";
-            $errorMessages[] = "Request {$req['request_number']}: No alert recipients configured for branch {$branchId}";
+               . "no active pending-action owner resolved for status {$req['status']}\n";
+            $errorMessages[] = "Request {$req['request_number']}: No pending-action owner for {$req['status']}";
             continue;
         }
 
@@ -345,9 +356,28 @@ try {
         foreach ($invoices as $inv) {
             $message .= "Invoice {$inv['invoice_number']} (PO {$inv['po_number']}) — due {$inv['invoice_date']}\n";
         }
-        $financeEmail = cronConfig($pdo, 'finance_alert_email', 'accounts@governmentchemist.com');
-        cronSendEmail($financeEmail, "Overdue Invoice Alert", $message);
-        echo "[" . date('H:i:s') . "] Invoice alert sent (" . count($invoices) . " overdue).\n";
+        $financeRecipients = class_exists('CronNotificationRoutingService')
+            ? CronNotificationRoutingService::resolveActiveUsersByRole($pdo, 'Finance Officer', null, 'Finance Officer overdue invoice review')
+            : [];
+
+        if (empty($financeRecipients)) {
+            $errorMessages[] = 'Overdue invoices found but no active Finance Officer recipients';
+            echo "[" . date('H:i:s') . "] SKIP: No active Finance Officer recipients for overdue invoice alert.\n";
+        } else {
+            foreach ($financeRecipients as $financeUserId => $financeRecipient) {
+                if (cronSendEmail($financeRecipient['email'], "Overdue Invoice Alert", $message)) {
+                    $recipientsFound++;
+                    $notificationsCreated++;
+                    CronAuditService::logRecipient(
+                        $executionId, null, 'OVERDUE_INVOICE', null,
+                        null, null, (int)$financeUserId, $financeRecipient['reason'] ?? 'Finance Officer overdue invoice review', false, null
+                    );
+                } else {
+                    $notificationsFailed++;
+                }
+            }
+            echo "[" . date('H:i:s') . "] Invoice alert sent to " . count($financeRecipients) . " Finance Officer recipient(s) (" . count($invoices) . " overdue).\n";
+        }
     }
 
     // Complete execution with success status
