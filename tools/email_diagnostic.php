@@ -177,14 +177,14 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
 <html>
 <head><style>body { font-family: Arial; }</style></head>
 <body>
-    <h2>Test Email from PRMS</h2>
+    <h2>Test Email from PIAMS</h2>
     <p>This is a test email to verify the notification system is working correctly.</p>
     <p><strong>Timestamp:</strong> " . formatJamaicanDateTime(date('Y-m-d H:i:s'), 'd M Y, g:i:s A') . "</p>
 </body>
 </html>
 HTML;
                 
-                $result = sendMail($testEmail, 'PRMS Test Email - ' . date('H:i:s'), $testHtml);
+                $result = sendMail($testEmail, 'PIAMS Test Email - ' . date('H:i:s'), $testHtml);
                 
                 echo "<div class='test-result'>";
                 if ($result) {

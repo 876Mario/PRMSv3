@@ -237,7 +237,7 @@ try {
                   . "<body style='font-family:Arial,sans-serif;color:#333;line-height:1.6;'>"
                   . "<div style='max-width:600px;margin:0 auto;'>"
                   . "<div style='background:linear-gradient(90deg,#0b5e2b,#c9a227);color:#fff;padding:16px 20px;border-radius:4px 4px 0 0;'>"
-                  . "<strong>DGC PRMS – Inventory Alert</strong></div>"
+                  . "<strong>DGC PIAMS – Inventory Alert</strong></div>"
                   . "<div style='padding:20px;border:1px solid #ddd;border-radius:0 0 4px 4px;'>"
                   . "<p>Dear " . htmlspecialchars($userName, ENT_QUOTES, 'UTF-8') . ",</p>"
                   . "<p>The following inventory alerts require your attention:</p>"

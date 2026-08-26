@@ -114,7 +114,7 @@ $committee = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // CREATE PDF
 // =============================
 $pdf = new TCPDF();
-$pdf->SetCreator('DGC PRMS');
+$pdf->SetCreator('DGC PIAMS');
 $pdf->SetAuthor('Department of Government Chemist');
 $pdf->SetTitle('Evaluation Summary Report');
 $pdf->setPrintHeader(false);
@@ -446,7 +446,7 @@ $pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
 $pdf->Ln(4);
 $pdf->SetFont('helvetica', '', 8);
 $pdf->SetTextColor(173, 181, 189);
-$pdf->Cell(0, 4, date('d M Y').' | Department of the Government Chemist | Confidential | PRMS', 0, 1, 'C');
+$pdf->Cell(0, 4, date('d M Y').' | Department of the Government Chemist | Confidential | PIAMS', 0, 1, 'C');
 
 
 $pdf->Output('Evaluation_Summary_'.$rfq['rfq_number'].'.pdf', 'I');

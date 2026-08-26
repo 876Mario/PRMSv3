@@ -84,7 +84,7 @@ function cronSendEmail(string $to, string $subject, string $body): bool {
     $full = "<!DOCTYPE html><html><head><meta charset='UTF-8'></head><body style='font-family:Arial,sans-serif;color:#333;line-height:1.6;'>"
           . "<div style='max-width:600px;margin:0 auto;'>"
           . "<div style='background:linear-gradient(90deg,#0b5e2b,#c9a227);color:#fff;padding:16px 20px;border-radius:4px 4px 0 0;'>"
-          . "<strong>DGC PRMS – Automated Alert</strong></div>"
+          . "<strong>DGC PIAMS – Automated Alert</strong></div>"
           . "<div style='padding:20px;border:1px solid #ddd;border-radius:0 0 4px 4px;'>"
           . $html
           . "</div></div></body></html>";

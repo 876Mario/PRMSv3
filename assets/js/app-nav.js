@@ -1,5 +1,5 @@
 /**
- * DGC PRMS — Navigation UX helpers
+ * DGC PIAMS — Navigation UX helpers
  * - Shows a modern loading overlay while navigating between pages
  *   (this app uses classic full-page loads, not a SPA router).
  * - Persists the sidebar scroll position across page loads so the
@@ -12,8 +12,8 @@
   // window so the early inline restore script in includes/header.php (which
   // must run before this file loads, to avoid a visible scroll-position
   // flash) and this file both read/write the same key.
-  var SIDEBAR_SCROLL_KEY = window.PRMS_SIDEBAR_SCROLL_KEY || 'prms.sidebarScrollTop';
-  window.PRMS_SIDEBAR_SCROLL_KEY = SIDEBAR_SCROLL_KEY;
+  var SIDEBAR_SCROLL_KEY = window.PIAMS_SIDEBAR_SCROLL_KEY || 'piams.sidebarScrollTop';
+  window.PIAMS_SIDEBAR_SCROLL_KEY = SIDEBAR_SCROLL_KEY;
 
   // Safety-net timeout: hides the loader if a navigation is cancelled or
   // never completes (e.g. the browser blocks it or the user stays on page).
