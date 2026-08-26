@@ -90,13 +90,16 @@ if (!canViewDraft($request)) {
 ================================ */
 $isMonitor = isMonitoringRole($_SESSION['role_name'] ?? '');
 
+// Timeline sorting preference (default: oldest first / ascending)
+$timelineSort = isset($_GET['timeline_sort']) && $_GET['timeline_sort'] === 'desc' ? 'DESC' : 'ASC';
+
 try {
     $timelineStmt = $pdo->prepare("
         SELECT a.action, a.notes, a.change_date AS created_at, a.changed_by AS full_name
         FROM audit_log a
         WHERE a.table_name = 'procurement_requests'
           AND a.record_id = ?
-        ORDER BY a.change_date ASC
+        ORDER BY a.change_date " . $timelineSort . "
     ");
     $timelineStmt->execute([$request['request_id']]);
     $timeline = $timelineStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -2051,8 +2054,20 @@ function timelineMeta(string $action): array {
 }
 ?>
 <div class="card shadow-sm border-0 mb-4">
-    <div class="card-header bg-dark text-white">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Request Timeline</h5>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Timeline sorting">
+            <a href="?id=<?= $request['request_id'] ?>&timeline_sort=asc" 
+               class="btn btn-sm <?= $timelineSort === 'ASC' ? 'btn-light' : 'btn-outline-light' ?>" 
+               title="Oldest first">
+                <i class="bi bi-sort-down"></i> Oldest First
+            </a>
+            <a href="?id=<?= $request['request_id'] ?>&timeline_sort=desc" 
+               class="btn btn-sm <?= $timelineSort === 'DESC' ? 'btn-light' : 'btn-outline-light' ?>" 
+               title="Newest first">
+                <i class="bi bi-sort-up"></i> Newest First
+            </a>
+        </div>
     </div>
     <div class="card-body p-0">
         <?php if (empty($timeline)): ?>
