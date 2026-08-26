@@ -3,6 +3,8 @@ $REQUIRE_PERMISSION = 'create_request';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/policy.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/config/workflow.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/services/AdminWorkflowOverrideService.php";
 
 
 $id = $_GET['id'] ?? null;
@@ -27,12 +29,18 @@ if (!$request) {
 }
 
 // Allow Procurement Officers (and Admin/SuperAdmin) to edit requests beyond DRAFT
-$isProcurementOrAdmin = in_array(($_SESSION['role_name'] ?? ''), ['Procurement Officer', 'Admin', 'SuperAdmin']);
+$roleName = $_SESSION['role_name'] ?? '';
+$isAdmin = in_array($roleName, ['Admin', 'SuperAdmin'], true);
+$isProcurementOrAdmin = in_array($roleName, ['Procurement Officer', 'Admin', 'SuperAdmin'], true);
+$adminWorkflowOptions = getAdminWorkflowStatusOptions();
 
 // Procurement can edit at most stages; others can only edit DRAFT
 $procurementEditableStatuses = ['DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 
     'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'EVALUATION_STAGE', 
     'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENT_DECLINED'];
+if ($isAdmin) {
+    $procurementEditableStatuses = array_unique(array_merge($procurementEditableStatuses, array_keys($adminWorkflowOptions)));
+}
 
 if ($isProcurementOrAdmin) {
     if (!in_array(strtoupper($request['status']), $procurementEditableStatuses)) {
@@ -96,6 +104,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             WHERE request_id = ?
         ");
         $stmt->execute([$estimatedValue, $description, $id]);
+
+        if ($isAdmin && isset($_POST['workflow_status'])) {
+            $requestedStatus = strtoupper(trim((string)$_POST['workflow_status']));
+            $overrideReason = trim((string)($_POST['workflow_override_reason'] ?? ''));
+            if ($requestedStatus !== strtoupper((string)$request['status'])) {
+                $overrideService = new AdminWorkflowOverrideService(
+                    $pdo,
+                    (int)($_SESSION['user_id'] ?? 0),
+                    $roleName,
+                    $_SESSION['full_name'] ?? 'System'
+                );
+                $overrideResult = $overrideService->overrideStatus((int)$id, $requestedStatus, $overrideReason);
+                if (!$overrideResult['success']) {
+                    throw new Exception($overrideResult['error']);
+                }
+            }
+        }
 
 
 /* ===== Capture OLD items for audit ===== */
@@ -311,6 +336,30 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
             <form method="POST" id="editForm">
                 <!-- Hidden field to capture estimated value from summary card -->
                 <input type="hidden" name="estimated_value" id="hiddenEstimatedValue">
+                <?php if ($isAdmin): ?>
+                    <div class="alert alert-warning border-0 mb-3">
+                        <div class="fw-bold mb-1">
+                            <i class="bi bi-exclamation-triangle me-1"></i>Admin Workflow Status Override
+                        </div>
+                        Changing the workflow status manually may bypass normal approval steps. Continue only when authorized.
+                    </div>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label for="workflow_status" class="form-label fw-bold">Workflow Status</label>
+                            <select name="workflow_status" id="workflow_status" class="form-select" data-original-status="<?= htmlspecialchars(strtoupper((string)$request['status'])) ?>">
+                                <?php foreach ($adminWorkflowOptions as $statusCode => $statusInfo): ?>
+                                    <option value="<?= htmlspecialchars($statusCode) ?>" <?= strtoupper((string)$request['status']) === $statusCode ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($statusInfo['label']) ?> — <?= htmlspecialchars($statusInfo['description']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="workflow_override_reason" class="form-label fw-bold">Override Reason / Comment</label>
+                            <textarea name="workflow_override_reason" id="workflow_override_reason" class="form-control" rows="2" placeholder="Required when changing workflow status"></textarea>
+                        </div>
+                    </div>
+                <?php endif; ?>
                 <div id="itemsContainer">
                     <?php if (empty($items)): ?>
                         <div class="alert alert-info border-0" role="alert">
@@ -534,6 +583,20 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             alert('Please add at least one item before saving.');
             return false;
+        }
+
+        const workflowStatus = document.getElementById('workflow_status');
+        if (workflowStatus && workflowStatus.value !== workflowStatus.dataset.originalStatus) {
+            const reason = document.getElementById('workflow_override_reason');
+            if (!reason || reason.value.trim().length < 5) {
+                e.preventDefault();
+                alert('Please enter a reason of at least 5 characters for the workflow status override.');
+                return false;
+            }
+            if (!confirm('Changing the workflow status manually may bypass normal approval steps. Continue only when authorized.')) {
+                e.preventDefault();
+                return false;
+            }
         }
     });
 

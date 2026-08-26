@@ -4,6 +4,12 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/policy.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/config/workflow.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/services/AdminWorkflowOverrideService.php";
+
+$roleName = $_SESSION['role_name'] ?? '';
+$isAdmin = in_array($roleName, ['Admin', 'SuperAdmin'], true);
+$adminWorkflowOptions = getAdminWorkflowStatusOptions();
 
 /* ---------- Fetch direct procurement threshold from system_config ---------- */
 $directThreshold = 500000.00; // default
@@ -32,6 +38,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $workPerformed = isset($_POST['work_performed']) && $_POST['work_performed'] === 'on' ? 1 : 0;
         $goodsDelivered = isset($_POST['goods_delivered']) && $_POST['goods_delivered'] === 'on' ? 1 : 0;
         $poRequirementNotes = trim($_POST['po_requirement_notes'] ?? '');
+        $initialWorkflowStatus = 'DRAFT';
+        $initialWorkflowReason = '';
+
+        if ($isAdmin) {
+            $initialWorkflowStatus = strtoupper(trim((string)($_POST['workflow_status'] ?? 'DRAFT')));
+            $initialWorkflowReason = trim((string)($_POST['workflow_override_reason'] ?? ''));
+            if (!isset($adminWorkflowOptions[$initialWorkflowStatus])) {
+                throw new Exception("Invalid workflow status selected.");
+            }
+            if ($initialWorkflowStatus !== 'DRAFT' && mb_strlen($initialWorkflowReason) < 5) {
+                throw new Exception("A reason of at least 5 characters is required for workflow status overrides.");
+            }
+        }
 
         // If USD, get the current exchange rate
         if ($currency === 'USD') {
@@ -181,6 +200,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         );
 
         $pdo->commit();
+        if ($isAdmin && $initialWorkflowStatus !== 'DRAFT') {
+            $overrideService = new AdminWorkflowOverrideService(
+                $pdo,
+                (int)($_SESSION['user_id'] ?? 0),
+                $roleName,
+                $_SESSION['full_name'] ?? 'System'
+            );
+            $overrideResult = $overrideService->overrideStatus($requestId, $initialWorkflowStatus, $initialWorkflowReason);
+            if (!$overrideResult['success']) {
+                throw new Exception($overrideResult['error']);
+            }
+        }
 modalPop(
     "Draft Saved",
     "Your procurement request was saved as a draft. Submit it to send for approval.",
@@ -343,6 +374,30 @@ $jsUsdRate = (float)($sysRateStmt->fetchColumn() ?: 155.00);
                     placeholder="Briefly describe the purpose of this procurement request"></textarea>
           <small class="text-muted">Max 500 characters. This will be shown as a summary on the procurement list.</small>
         </div>
+        <?php if ($isAdmin): ?>
+          <div class="alert alert-warning border-0 mb-3">
+            <div class="fw-bold mb-1">
+              <i class="bi bi-exclamation-triangle me-1"></i>Admin Workflow Status Override
+            </div>
+            Changing the workflow status manually may bypass normal approval steps. Continue only when authorized.
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label for="workflow_status" class="form-label fw-bold">Workflow Status</label>
+              <select name="workflow_status" id="workflow_status" class="form-select" data-original-status="DRAFT">
+                <?php foreach ($adminWorkflowOptions as $statusCode => $statusInfo): ?>
+                  <option value="<?= htmlspecialchars($statusCode) ?>" <?= $statusCode === 'DRAFT' ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($statusInfo['label']) ?> — <?= htmlspecialchars($statusInfo['description']) ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label for="workflow_override_reason" class="form-label fw-bold">Override Reason / Comment</label>
+              <textarea name="workflow_override_reason" id="workflow_override_reason" class="form-control" rows="2" placeholder="Required when changing workflow status"></textarea>
+            </div>
+          </div>
+        <?php endif; ?>
         <h5 class="mt-4 mb-2"><i class="bi bi-list-task me-2"></i> Items Required</h5>
         <div class="table-responsive mb-3">
           <table class="table table-bordered align-middle" id="itemsTable">
@@ -476,5 +531,24 @@ document.addEventListener('click', function (e) {
     if (tr) tr.remove();
   }
 });
+
+const createForm = document.querySelector('form[method="post"]');
+if (createForm) {
+  createForm.addEventListener('submit', function (e) {
+    const workflowStatus = document.getElementById('workflow_status');
+    if (workflowStatus && workflowStatus.value !== workflowStatus.dataset.originalStatus) {
+      const reason = document.getElementById('workflow_override_reason');
+      if (!reason || reason.value.trim().length < 5) {
+        e.preventDefault();
+        alert('Please enter a reason of at least 5 characters for the workflow status override.');
+        return false;
+      }
+      if (!confirm('Changing the workflow status manually may bypass normal approval steps. Continue only when authorized.')) {
+        e.preventDefault();
+        return false;
+      }
+    }
+  });
+}
 </script>
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
