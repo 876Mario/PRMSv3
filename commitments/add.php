@@ -415,11 +415,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Exception($fileTypeError);
                 }
                 $actualFileSize = filesize($file['tmp_name']);
-                if ($actualFileSize === false || $actualFileSize > 50 * 1024 * 1024) {
+                if ($actualFileSize === false) {
+                    throw new Exception("Unable to determine file size. Please try again.");
+                }
+                if ($actualFileSize > 50 * 1024 * 1024) {
                     throw new Exception("File size exceeds 50 MB limit.");
                 }
 
-                $ext = $mimeToExt[$mimeType] ?? 'bin';
+                $ext = $mimeToExt[$mimeType];
                 try {
                     $filenameToken = bin2hex(random_bytes(16));
                 } catch (Throwable $e) {
