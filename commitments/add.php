@@ -406,7 +406,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $ext = $mimeToExtDocuments[$mimeType] ?? 'bin';
-                $safeFilename = 'COMMITMENT_' . time() . '_' . uniqid() . '.' . $ext;
+                $safeFilename = 'COMMITMENT_' . time() . '_' . bin2hex(random_bytes(16)) . '.' . $ext;
                 $uploadPath = $uploadDir . $safeFilename;
                 if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
                     throw new Exception("Failed to save commitment document.");
@@ -440,7 +440,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $ext = $mimeToExtForms[$mimeType] ?? 'bin';
-                $safeFilename = 'COMMIT_FORM_' . time() . '_' . uniqid() . '.' . $ext;
+                $safeFilename = 'COMMIT_FORM_' . time() . '_' . bin2hex(random_bytes(16)) . '.' . $ext;
                 $uploadPath = $uploadDir . $safeFilename;
                 if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
                     throw new Exception("Failed to save commitment form document.");
