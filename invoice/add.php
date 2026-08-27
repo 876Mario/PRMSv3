@@ -91,8 +91,17 @@ $stmt = $pdo->prepare("
 $stmt->execute([$po_id]);
 $totalInvoiced = (float)$stmt->fetchColumn();
 
-/* 3. Remaining balance */
-$remaining = $approvedPoTotal - $totalInvoiced;
+/* 3. Total approved advance payments */
+$apStmt = $pdo->prepare("
+    SELECT COALESCE(SUM(payment_amount), 0)
+    FROM po_advance_payments
+    WHERE po_id = ? AND status = 'APPROVED'
+");
+$apStmt->execute([$po_id]);
+$totalAdvancePayments = (float)$apStmt->fetchColumn();
+
+/* 4. Remaining balance (net of advances) */
+$remaining = $approvedPoTotal - $totalInvoiced - $totalAdvancePayments;
 
 
 /* ================================
@@ -339,6 +348,17 @@ $todayStr = (new DateTimeImmutable('today'))->format('Y-m-d');
                     <span class="badge bg-warning text-dark fs-6"><?= htmlspecialchars($currency) ?> <?= number_format($remaining, 2) ?></span>
                 </div>
             </div>
+            <?php if ($totalAdvancePayments > 0): ?>
+            <div class="row g-3 mt-1">
+                <div class="col-12">
+                    <div class="alert alert-warning mb-0 py-2">
+                        <i class="bi bi-cash-coin me-2"></i>
+                        <strong>Advance Payments Applied:</strong>
+                        <?= htmlspecialchars($currency) ?> <?= number_format($totalAdvancePayments, 2) ?> in approved advance payments have been deducted from the remaining balance.
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 

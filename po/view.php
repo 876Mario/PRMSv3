@@ -140,7 +140,48 @@ $stmt = $pdo->prepare("
 $stmt->execute([$po_id]);
 $variation_total = $stmt->fetchColumn();
 
-$remaining_balance = $approvedTotal - $total_invoiced;
+/* ================================
+   Fetch Approved Advance Payments
+================================ */
+$apSumStmt = $pdo->prepare("
+    SELECT IFNULL(SUM(payment_amount), 0)
+    FROM po_advance_payments
+    WHERE po_id = ? AND status = 'APPROVED'
+");
+$apSumStmt->execute([$po_id]);
+$total_advance_payments = (float)$apSumStmt->fetchColumn();
+
+$remaining_balance = $approvedTotal - $total_invoiced - $total_advance_payments;
+
+/* ================================
+   Fetch All Advance Payments (all statuses) for history display
+================================ */
+$apListStmt = $pdo->prepare("
+    SELECT
+        ap.advance_payment_id,
+        ap.payment_type,
+        ap.payment_amount,
+        ap.payment_date,
+        ap.payment_reference,
+        ap.supplier_name,
+        ap.payment_method,
+        ap.notes,
+        ap.supporting_document_path,
+        ap.supporting_document_original_name,
+        ap.status,
+        ap.approved_at,
+        ap.rejection_reason,
+        ap.approval_comments,
+        uc.full_name AS created_by_name,
+        ua.full_name AS approved_by_name
+    FROM po_advance_payments ap
+    LEFT JOIN users uc ON ap.created_by  = uc.user_id
+    LEFT JOIN users ua ON ap.approved_by = ua.user_id
+    WHERE ap.po_id = ?
+    ORDER BY ap.created_at DESC
+");
+$apListStmt->execute([$po_id]);
+$advancePayments = $apListStmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ================================
    Fetch Invoices linked to this PO
@@ -238,7 +279,7 @@ require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
 $progress = ($totalStages > 0) ? round(($approvedStages / $totalStages) * 100) : 0;
 $rejectedStages = count(array_filter($approvalStages, fn($s) => $s['status'] === 'rejected'));
 
-$utilizationPct = ($approvedTotal > 0) ? min(100, round(($total_invoiced / $approvedTotal) * 100)) : 0;
+$utilizationPct = ($approvedTotal > 0) ? min(100, round((($total_invoiced + $total_advance_payments) / $approvedTotal) * 100)) : 0;
 
 $statusIcon = match($po['status']) {
     'Open'      => ['bg-success', 'bi-unlock',   'Open'],
@@ -306,6 +347,15 @@ $statusIcon = match($po['status']) {
                 <small class="text-uppercase fw-bold d-block mb-1" style="letter-spacing:.05em">Total Invoiced</small>
                 <h3 class="mb-0 fw-bold"><?= money($total_invoiced) ?></h3>
                 <small class="text-muted"><?= $utilizationPct ?>% utilized</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card border-0 shadow-sm h-100" style="background: linear-gradient(135deg, #fff3e0, #ffe0b2); border-left: 6px solid #ff9800;">
+            <div class="card-body text-center py-3">
+                <small class="text-uppercase fw-bold d-block mb-1" style="letter-spacing:.05em; color:#e65100;">Advance Payments</small>
+                <h3 class="mb-0 fw-bold" style="color:#bf360c;"><?= money($total_advance_payments) ?></h3>
+                <small class="text-muted"><?= count($advancePayments) ?> record<?= count($advancePayments) !== 1 ? 's' : '' ?></small>
             </div>
         </div>
     </div>
@@ -539,6 +589,12 @@ $statusIcon = match($po['status']) {
                         </a>
                     <?php endif; ?>
 
+                    <?php if ($isFullyApproved && $po['status'] === 'Open' && has_permission('record_advance_payment')): ?>
+                        <a href="/po/advance_payment.php?po_id=<?= (int)$po_id ?>" class="btn btn-warning">
+                            <i class="bi bi-cash-coin me-1"></i>Record Advance Payment
+                        </a>
+                    <?php endif; ?>
+
                     <?php if (has_permission('approve_purchase_order') && !$isFullyApproved && $po['status'] === 'Open'): ?>
                         <a href="/po/approve.php?id=<?= (int)$po['po_id'] ?>" class="btn btn-primary">
                             <i class="bi bi-check2-square me-1"></i>Approve PO
@@ -703,6 +759,128 @@ $statusIcon = match($po['status']) {
                             <td class="ps-3 fw-bold" colspan="2"><i class="bi bi-calculator me-1"></i>Total Invoiced</td>
                             <td class="text-end fw-bold text-white"><?= money($total_invoiced) ?></td>
                             <td colspan="2"></td>
+                        </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     ADVANCE PAYMENTS HISTORY
+═══════════════════════════════════════════════════════ -->
+<div class="card shadow-sm border-0 mb-4" id="advancePaymentsSection">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-cash-coin me-2"></i>Advance / Partial Payments</h5>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-light text-dark"><?= count($advancePayments) ?> record<?= count($advancePayments) !== 1 ? 's' : '' ?></span>
+            <?php if ($isFullyApproved && $po['status'] === 'Open' && has_permission('record_advance_payment')): ?>
+            <a href="/po/advance_payment.php?po_id=<?= (int)$po_id ?>" class="btn btn-sm btn-warning">
+                <i class="bi bi-plus-circle me-1"></i>Record Advance Payment
+            </a>
+            <?php endif; ?>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr style="background-color: #f8f9fa;">
+                        <th class="ps-3" style="color:#000;"><i class="bi bi-calendar-event me-1"></i>Date</th>
+                        <th style="color:#000;"><i class="bi bi-tag me-1"></i>Type</th>
+                        <th style="color:#000;"><i class="bi bi-hash me-1"></i>Reference</th>
+                        <th class="text-end" style="color:#000;"><i class="bi bi-currency-dollar me-1"></i>Amount</th>
+                        <th style="color:#000;"><i class="bi bi-credit-card me-1"></i>Method</th>
+                        <th class="text-center" style="color:#000;"><i class="bi bi-info-circle me-1"></i>Status</th>
+                        <th style="color:#000;"><i class="bi bi-person me-1"></i>Submitted By</th>
+                        <th style="color:#000;"><i class="bi bi-person-check me-1"></i>Approved By</th>
+                        <th class="text-center" style="color:#000;"><i class="bi bi-lightning me-1"></i>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($advancePayments)): ?>
+                    <tr>
+                        <td colspan="9" class="text-center py-4">
+                            <i class="bi bi-inbox text-muted fs-1"></i>
+                            <p class="text-muted mt-2 mb-0">No advance payments recorded against this PO yet.</p>
+                            <?php if ($isFullyApproved && $po['status'] === 'Open' && has_permission('record_advance_payment')): ?>
+                            <a href="/po/advance_payment.php?po_id=<?= (int)$po_id ?>" class="btn btn-sm btn-warning mt-2">
+                                <i class="bi bi-cash-coin me-1"></i>Record Advance Payment
+                            </a>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php else: ?>
+                        <?php
+                        $apTypeBadges = [
+                            'ADVANCE_PAYMENT' => 'bg-primary',
+                            'PARTIAL_PAYMENT' => 'bg-info text-dark',
+                            'FINAL_PAYMENT'   => 'bg-success',
+                        ];
+                        $apStatusBadges = [
+                            'PENDING_APPROVAL' => 'bg-warning text-dark',
+                            'APPROVED'         => 'bg-success',
+                            'REJECTED'         => 'bg-danger',
+                            'CANCELLED'        => 'bg-secondary',
+                        ];
+                        $totalApproved = 0.0;
+                        foreach ($advancePayments as $ap):
+                            if ($ap['status'] === 'APPROVED') $totalApproved += (float)$ap['payment_amount'];
+                            $apTypeBadge   = $apTypeBadges[$ap['payment_type']] ?? 'bg-secondary';
+                            $apStatusBadge = $apStatusBadges[$ap['status']] ?? 'bg-secondary';
+                            $apTypeLabel   = match ($ap['payment_type']) {
+                                'ADVANCE_PAYMENT' => 'Advance',
+                                'PARTIAL_PAYMENT' => 'Partial',
+                                'FINAL_PAYMENT'   => 'Final',
+                                default           => htmlspecialchars($ap['payment_type']),
+                            };
+                        ?>
+                        <tr>
+                            <td class="ps-3 small text-muted"><?= date('d M Y', strtotime($ap['payment_date'])) ?></td>
+                            <td><span class="badge <?= $apTypeBadge ?>"><?= $apTypeLabel ?></span></td>
+                            <td class="fw-semibold"><?= htmlspecialchars($ap['payment_reference']) ?></td>
+                            <td class="text-end fw-semibold"><?= money((float)$ap['payment_amount']) ?></td>
+                            <td class="small"><?= htmlspecialchars($ap['payment_method'] ?? '—') ?></td>
+                            <td class="text-center">
+                                <span class="badge <?= $apStatusBadge ?>"><?= htmlspecialchars($ap['status']) ?></span>
+                            </td>
+                            <td class="small"><?= htmlspecialchars($ap['created_by_name'] ?? '—') ?></td>
+                            <td class="small">
+                                <?php if ($ap['approved_by_name']): ?>
+                                    <?= htmlspecialchars($ap['approved_by_name']) ?>
+                                    <?php if ($ap['approved_at']): ?>
+                                    <br><small class="text-muted"><?= date('d M Y', strtotime($ap['approved_at'])) ?></small>
+                                    <?php endif; ?>
+                                <?php else: ?>
+                                    <span class="text-muted">—</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-center">
+                                <?php if ($ap['status'] === 'PENDING_APPROVAL' && has_permission('approve_advance_payment')): ?>
+                                <a href="/po/approve_advance_payment.php?id=<?= (int)$ap['advance_payment_id'] ?>"
+                                   class="btn btn-sm btn-success me-1">
+                                    <i class="bi bi-check2"></i> Decide
+                                </a>
+                                <?php else: ?>
+                                <a href="/po/approve_advance_payment.php?id=<?= (int)$ap['advance_payment_id'] ?>"
+                                   class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i> View
+                                </a>
+                                <?php endif; ?>
+                                <?php if ($ap['supporting_document_path']): ?>
+                                <a href="/po/download_advance_payment_doc.php?id=<?= (int)$ap['advance_payment_id'] ?>&action=view"
+                                   class="btn btn-sm btn-outline-secondary" target="_blank" title="View document">
+                                    <i class="bi bi-paperclip"></i>
+                                </a>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <tr class="table-dark">
+                            <td class="ps-3 fw-bold" colspan="3"><i class="bi bi-calculator me-1"></i>Total Approved Advance Payments</td>
+                            <td class="text-end fw-bold text-white"><?= money($totalApproved) ?></td>
+                            <td colspan="5"></td>
                         </tr>
                     <?php endif; ?>
                 </tbody>

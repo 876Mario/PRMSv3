@@ -4388,4 +4388,236 @@ HTML;
     }
 }
 
+/**
+ * Notify approvers that a new advance payment has been submitted and is pending review.
+ */
+function notifyAdvancePaymentSubmitted(int $advancePaymentId): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT
+                ap.advance_payment_id,
+                ap.payment_type,
+                ap.payment_amount,
+                ap.payment_reference,
+                ap.payment_date,
+                po.po_number,
+                po.po_id,
+                uc.full_name AS submitted_by_name
+            FROM po_advance_payments ap
+            JOIN purchase_orders po ON ap.po_id = po.po_id
+            LEFT JOIN users uc ON ap.created_by = uc.user_id
+            WHERE ap.advance_payment_id = ?
+        ");
+        $stmt->execute([$advancePaymentId]);
+        $ap = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$ap) return false;
+
+        /* Fetch users who hold approve_advance_payment permission */
+        $approverStmt = $pdo->prepare("
+            SELECT DISTINCT u.user_id, u.full_name, u.email
+            FROM users u
+            JOIN user_roles ur ON u.user_id = ur.user_id
+            JOIN role_permissions rp ON ur.role_id = rp.role_id
+            JOIN permissions p ON rp.permission_id = p.id
+            WHERE p.name = 'approve_advance_payment'
+              AND u.is_active = 1
+              AND u.email IS NOT NULL
+        ");
+        $approverStmt->execute();
+        $approvers = $approverStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($approvers)) return false;
+
+        $appUrl          = getAppUrl();
+        $typeLabel       = match ($ap['payment_type']) {
+            'ADVANCE_PAYMENT' => 'Advance Payment',
+            'PARTIAL_PAYMENT' => 'Partial Payment',
+            default           => htmlspecialchars($ap['payment_type']),
+        };
+        $formattedAmount = number_format((float)$ap['payment_amount'], 2);
+        $subject         = "Advance Payment Pending Approval — {$ap['po_number']}";
+        $reviewUrl       = "{$appUrl}/po/approve_advance_payment.php?id={$advancePaymentId}";
+
+        $notificationsSent = 0;
+        foreach ($approvers as $approver) {
+            $html = <<<HTML
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+    body{font-family:Arial,sans-serif;color:#333;}
+    .container{max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden;}
+    .header{background:linear-gradient(90deg,#0b5e2b,#c9a227);color:#fff;padding:20px;}
+    .content{padding:20px;}
+    .status-box{background:#ff9800;color:#fff;padding:15px;border-radius:5px;text-align:center;margin:15px 0;font-size:16px;font-weight:bold;}
+    .details{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;}
+    .detail-row{margin:8px 0;}
+    .label{font-weight:bold;color:#555;}
+    .button{background:#0b5e2b;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;margin-top:15px;}
+    .footer{background:#f8f9fa;padding:15px;text-align:center;font-size:12px;color:#777;border-top:1px solid #ddd;}
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin:0;">Advance Payment Pending Approval</h2>
+        <p style="margin:5px 0 0 0;">Government Chemist — PIAMS</p>
+    </div>
+    <div class="content">
+        <p>Dear {$approver['full_name']},</p>
+        <div class="status-box">⏳ {$typeLabel} of JMD \${$formattedAmount} Awaiting Your Decision</div>
+        <div class="details">
+            <div class="detail-row"><span class="label">Purchase Order:</span> {$ap['po_number']}</div>
+            <div class="detail-row"><span class="label">Payment Type:</span> {$typeLabel}</div>
+            <div class="detail-row"><span class="label">Amount:</span> JMD \${$formattedAmount}</div>
+            <div class="detail-row"><span class="label">Reference:</span> {$ap['payment_reference']}</div>
+            <div class="detail-row"><span class="label">Payment Date:</span> {$ap['payment_date']}</div>
+            <div class="detail-row"><span class="label">Submitted By:</span> {$ap['submitted_by_name']}</div>
+        </div>
+        <p><a href="{$reviewUrl}" class="button">Review &amp; Decide</a></p>
+        <p style="margin-top:20px;font-size:12px;color:#777;">This is an automated notification from PIAMS.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+
+            /* In-app notification */
+            if (function_exists('createUserNotification')) {
+                createUserNotification(
+                    $approver['user_id'],
+                    'ADVANCE_PAYMENT_PENDING',
+                    "Advance payment pending approval for PO {$ap['po_number']} — JMD \${$formattedAmount}",
+                    $reviewUrl
+                );
+            }
+
+            if (!empty($approver['email'])) {
+                sendMail($approver['email'], $subject, $html);
+            }
+            $notificationsSent++;
+        }
+
+        return $notificationsSent > 0;
+
+    } catch (Exception $e) {
+        error_log("notifyAdvancePaymentSubmitted error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify the submitter that their advance payment was approved or rejected.
+ */
+function notifyAdvancePaymentDecided(int $advancePaymentId, string $decision): bool {
+    if (!notificationsEnabled()) return false;
+
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT
+                ap.advance_payment_id,
+                ap.payment_type,
+                ap.payment_amount,
+                ap.payment_reference,
+                ap.status,
+                ap.rejection_reason,
+                ap.approval_comments,
+                ap.created_by,
+                po.po_number,
+                po.po_id,
+                uc.full_name AS submitted_by_name,
+                uc.email     AS submitted_by_email,
+                ua.full_name AS decided_by_name
+            FROM po_advance_payments ap
+            JOIN purchase_orders po ON ap.po_id = po.po_id
+            LEFT JOIN users uc ON ap.created_by  = uc.user_id
+            LEFT JOIN users ua ON ap.approved_by = ua.user_id
+            WHERE ap.advance_payment_id = ?
+        ");
+        $stmt->execute([$advancePaymentId]);
+        $ap = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$ap || empty($ap['submitted_by_email'])) return false;
+
+        $appUrl          = getAppUrl();
+        $isApproved      = strtoupper($decision) === 'APPROVED';
+        $typeLabel       = match ($ap['payment_type']) {
+            'ADVANCE_PAYMENT' => 'Advance Payment',
+            'PARTIAL_PAYMENT' => 'Partial Payment',
+            default           => $ap['payment_type'],
+        };
+        $formattedAmount = number_format((float)$ap['payment_amount'], 2);
+        $statusColor     = $isApproved ? '#198754' : '#dc3545';
+        $statusLabel     = $isApproved ? 'APPROVED ✔' : 'REJECTED ✘';
+        $subject         = "Advance Payment {$decision} — {$ap['po_number']}";
+        $poUrl           = "{$appUrl}/po/view.php?po_id={$ap['po_id']}";
+
+        $extraSection = '';
+        if (!$isApproved && !empty($ap['rejection_reason'])) {
+            $reason      = htmlspecialchars($ap['rejection_reason']);
+            $extraSection = "<div class=\"detail-row\"><span class=\"label\">Rejection Reason:</span> {$reason}</div>";
+        }
+        if (!empty($ap['approval_comments'])) {
+            $comments     = htmlspecialchars($ap['approval_comments']);
+            $extraSection .= "<div class=\"detail-row\"><span class=\"label\">Comments:</span> {$comments}</div>";
+        }
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+    body{font-family:Arial,sans-serif;color:#333;}
+    .container{max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden;}
+    .header{background:linear-gradient(90deg,#0b5e2b,#c9a227);color:#fff;padding:20px;}
+    .content{padding:20px;}
+    .status-box{background:{$statusColor};color:#fff;padding:15px;border-radius:5px;text-align:center;margin:15px 0;font-size:16px;font-weight:bold;}
+    .details{background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;}
+    .detail-row{margin:8px 0;}
+    .label{font-weight:bold;color:#555;}
+    .button{background:#0b5e2b;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;margin-top:15px;}
+    .footer{background:#f8f9fa;padding:15px;text-align:center;font-size:12px;color:#777;border-top:1px solid #ddd;}
+</style></head><body>
+<div class="container">
+    <div class="header">
+        <h2 style="margin:0;">Advance Payment Decision</h2>
+        <p style="margin:5px 0 0 0;">Government Chemist — PIAMS</p>
+    </div>
+    <div class="content">
+        <p>Dear {$ap['submitted_by_name']},</p>
+        <div class="status-box">{$statusLabel}</div>
+        <div class="details">
+            <div class="detail-row"><span class="label">Purchase Order:</span> {$ap['po_number']}</div>
+            <div class="detail-row"><span class="label">Payment Type:</span> {$typeLabel}</div>
+            <div class="detail-row"><span class="label">Amount:</span> JMD \${$formattedAmount}</div>
+            <div class="detail-row"><span class="label">Reference:</span> {$ap['payment_reference']}</div>
+            <div class="detail-row"><span class="label">Decided By:</span> {$ap['decided_by_name']}</div>
+            {$extraSection}
+        </div>
+        <p><a href="{$poUrl}" class="button">View Purchase Order</a></p>
+        <p style="margin-top:20px;font-size:12px;color:#777;">This is an automated notification from PIAMS.</p>
+    </div>
+    <div class="footer"><p>&copy; Government Chemist &middot; PIAMS &middot; Confidential</p></div>
+</div></body></html>
+HTML;
+
+        /* In-app notification for the submitter */
+        if (function_exists('createUserNotification') && !empty($ap['created_by'])) {
+            $msg = $isApproved
+                ? "Your advance payment for PO {$ap['po_number']} (JMD \${$formattedAmount}) has been approved."
+                : "Your advance payment for PO {$ap['po_number']} (JMD \${$formattedAmount}) was rejected.";
+            createUserNotification(
+                $ap['created_by'] ?? 0,
+                $isApproved ? 'ADVANCE_PAYMENT_APPROVED' : 'ADVANCE_PAYMENT_REJECTED',
+                $msg,
+                $poUrl
+            );
+        }
+
+        return sendMail($ap['submitted_by_email'], $subject, $html);
+
+    } catch (Exception $e) {
+        error_log("notifyAdvancePaymentDecided error: {$e->getMessage()}");
+        return false;
+    }
+}
+
 ?>

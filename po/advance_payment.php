@@ -30,13 +30,10 @@ $stmt = $pdo->prepare("
         po.po_type,
         po.parent_po_id,
         c.commitment_number,
-        COALESCE(v.company_name, v.contact_name, pr.vendor_name, '') AS supplier_name,
         pr.currency
     FROM purchase_orders po
-    JOIN commitments     c  ON po.commitment_id   = c.commitment_id
-    JOIN procurement_requests pr ON c.request_id  = pr.request_id
-    LEFT JOIN rfqs       rfq ON rfq.request_id    = pr.request_id
-    LEFT JOIN vendors    v   ON rfq.selected_vendor_id = v.id
+    JOIN commitments     c  ON po.commitment_id = c.commitment_id
+    JOIN procurement_requests pr ON c.request_id = pr.request_id
     WHERE po.po_id = ?
     LIMIT 1
 ");
@@ -100,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $paymentReference = trim($_POST['payment_reference'] ?? '');
     $paymentMethod    = trim($_POST['payment_method']    ?? '');
     $notes            = trim($_POST['notes']             ?? '');
-    $supplierName     = trim($_POST['supplier_name']     ?? $po['supplier_name'] ?? '');
+    $supplierName     = trim($_POST['supplier_name']     ?? '');
 
     /* --- Validation --- */
     $allowedTypes = ['ADVANCE_PAYMENT', 'PARTIAL_PAYMENT'];
@@ -272,10 +269,6 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <strong><?= htmlspecialchars($po['commitment_number']) ?></strong>
                 </div>
                 <div class="col-md-3">
-                    <small class="text-muted d-block">Supplier</small>
-                    <strong><?= htmlspecialchars($po['supplier_name'] ?: '—') ?></strong>
-                </div>
-                <div class="col-md-3">
                     <small class="text-muted d-block">PO Status</small>
                     <span class="badge bg-success"><?= htmlspecialchars($po['status']) ?></span>
                 </div>
@@ -385,7 +378,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         </label>
                         <input type="text" name="supplier_name" id="supplier_name"
                                class="form-control form-control-lg"
-                               value="<?= htmlspecialchars($po['supplier_name'] ?? '') ?>"
+                               value=""
                                placeholder="Supplier name">
                     </div>
                 </div>
