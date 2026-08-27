@@ -10,7 +10,29 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 
-$request_id = isset($_GET['request_id']) ? (int)$_GET['request_id'] : 0;
+function loadReimbursementDocControlSettings(PDO $pdo): array
+{
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM doc_ctrl_settings WHERE request_type = 'REIMBURSEMENT' LIMIT 1");
+        $stmt->execute();
+        $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (is_array($settings) && !empty($settings)) {
+            return $settings;
+        }
+    } catch (Throwable $e) {
+        // Backward compatibility fallback for legacy schema without request_type.
+    }
+
+    try {
+        $stmt = $pdo->query("SELECT * FROM doc_ctrl_settings WHERE id = 1 LIMIT 1");
+        $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($settings) ? $settings : [];
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+$request_id = isset($_GET['request_id']) ? (int)$_GET['request_id'] : (int)($_GET['id'] ?? 0);
 
 if ($request_id <= 0) {
     pop('Invalid reimbursement request', '/reimbursement/list.php', 3000, 'error');
@@ -87,9 +109,7 @@ $options->setDefaultFont('DejaVu Sans');
 $dompdf = new Dompdf($options);
 
 // Get current document control settings
-$dcStmt = $pdo->prepare("SELECT * FROM doc_ctrl_settings WHERE id = 1");
-$dcStmt->execute();
-$docCtrl = $dcStmt->fetch(PDO::FETCH_ASSOC) ?? [];
+$docCtrl = loadReimbursementDocControlSettings($pdo);
 
 // Pre-compute all dynamic values before building HTML
 $tplRequestId    = 'REI-' . str_pad((string)$request['request_id'], 6, '0', STR_PAD_LEFT);
