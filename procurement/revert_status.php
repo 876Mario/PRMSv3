@@ -114,6 +114,6 @@ try {
 
 } catch (Throwable $e) {
     error_log('revert_status.php failed: ' . $e->getMessage());
-    modalPop('Error', 'Unable to revert workflow stage: ' . $e->getMessage(), '/procurement/view.php?id=' . $id, 'error');
+    modalPop('Error', 'Unable to revert workflow stage right now.', '/procurement/view.php?id=' . $id, 'error');
     exit;
 }
