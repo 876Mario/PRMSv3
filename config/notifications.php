@@ -4133,9 +4133,9 @@ function notifyReimbursementDisbursed(int $requestId, string $requestNumber): bo
         $formattedAmount = he($currency) . ' ' . number_format((float)($request['estimated_value'] ?? 0), 2);
         
         $appUrl = getAppUrl();
-        $confirmUrl = $appUrl . "/reimbursement/view.php?request_id=" . urlencode((string)$requestId);
+        $confirmUrl = htmlspecialchars($appUrl . "/reimbursement/view.php?request_id=" . urlencode((string)$requestId), ENT_QUOTES, 'UTF-8');
         
-        $subject = "Reimbursement Payment Disbursed - Confirmation Required: {$safeRequestNumber}";
+        $subject = "Reimbursement Payment Disbursed - Confirmation Required: " . preg_replace('/[\r\n\x00-\x1F\x7F]|[^\x20-\x7E]/', '', $requestNumber);
         
         $html = <<<HTML
 <!DOCTYPE html>
@@ -4286,9 +4286,9 @@ function notifyReimbursementCompleted(int $requestId, string $requestNumber): bo
         $formattedAmount = he($currency) . ' ' . number_format((float)($request['estimated_value'] ?? 0), 2);
         
         $appUrl = getAppUrl();
-        $viewUrl = $appUrl . "/reimbursement/view.php?request_id=" . urlencode((string)$requestId);
+        $viewUrl = htmlspecialchars($appUrl . "/reimbursement/view.php?request_id=" . urlencode((string)$requestId), ENT_QUOTES, 'UTF-8');
         
-        $subject = "Reimbursement Completed: {$safeRequestNumber}";
+        $subject = "Reimbursement Completed: " . preg_replace('/[\r\n\x00-\x1F\x7F]|[^\x20-\x7E]/', '', $requestNumber);
         
         $html = <<<HTML
 <!DOCTYPE html>
