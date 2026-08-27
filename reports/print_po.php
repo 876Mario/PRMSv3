@@ -34,7 +34,94 @@ if ((int)$r['fully_approved'] !== 1) {
     exit("PO must be fully approved before printing.");
 }
 
-$fmtTotal   = '$' . number_format($r['po_total'], 2);
+/* Fetch advance payments for this PO */
+$apStmt = $pdo->prepare("
+    SELECT ap.payment_type, ap.payment_amount, ap.payment_date,
+           ap.payment_reference, ap.payment_method, ap.supplier_name,
+           ap.notes, ap.status,
+           uc.full_name AS created_by_name,
+           ua.full_name AS approved_by_name,
+           ap.approved_at
+    FROM po_advance_payments ap
+    LEFT JOIN users uc ON ap.created_by  = uc.user_id
+    LEFT JOIN users ua ON ap.approved_by = ua.user_id
+    WHERE ap.po_id = ?
+    ORDER BY ap.payment_date ASC
+");
+$apStmt->execute([$po_id]);
+$advancePaymentsPrint = $apStmt->fetchAll(PDO::FETCH_ASSOC);
+$totalAdvancePrint = array_sum(array_column(
+    array_filter($advancePaymentsPrint, fn($a) => $a['status'] === 'APPROVED'),
+    'payment_amount'
+));
+
+/* Build advance payments table HTML for PDF injection */
+$advancePaymentsHtml = '';
+if (!empty($advancePaymentsPrint)) {
+    $apRows = '';
+    foreach ($advancePaymentsPrint as $ap) {
+        $typeLabel = match ($ap['payment_type']) {
+            'ADVANCE_PAYMENT' => 'Advance',
+            'PARTIAL_PAYMENT' => 'Partial',
+            'FINAL_PAYMENT'   => 'Final',
+            default           => htmlspecialchars($ap['payment_type']),
+        };
+        $statusColor = match ($ap['status']) {
+            'APPROVED'         => '#198754',
+            'REJECTED'         => '#dc3545',
+            'CANCELLED'        => '#6c757d',
+            default            => '#e0a800',
+        };
+        $amt     = '$' . number_format((float)$ap['payment_amount'], 2);
+        $date    = date('d M Y', strtotime($ap['payment_date']));
+        $ref     = htmlspecialchars($ap['payment_reference']);
+        $method  = htmlspecialchars($ap['payment_method'] ?? '—');
+        $supplier = htmlspecialchars($ap['supplier_name'] ?? '—');
+        $approvedBy = htmlspecialchars($ap['approved_by_name'] ?? '—');
+        $approvedAt = $ap['approved_at'] ? date('d M Y', strtotime($ap['approved_at'])) : '—';
+        $status  = htmlspecialchars($ap['status']);
+        $apRows .= <<<ROW
+<tr>
+  <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$date}</td>
+  <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$typeLabel}</td>
+  <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$ref}</td>
+  <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;text-align:right;font-weight:600;">{$amt}</td>
+  <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$method}</td>
+  <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$supplier}</td>
+  <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;font-weight:bold;color:{$statusColor};">{$status}</td>
+  <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$approvedBy}</td>
+</tr>
+ROW;
+    }
+    $fmtAdvTotal = '$' . number_format((float)$totalAdvancePrint, 2);
+    $advancePaymentsHtml = <<<ADV
+<div style="padding:0 24px 16px;">
+  <h4 style="font-size:13px;color:#1a1a2e;margin:0 0 10px;font-weight:700;">Advance / Partial Payment History</h4>
+  <table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #dee2e6;border-radius:6px;overflow:hidden;">
+    <thead>
+      <tr style="background:#0b5e2b;color:#fff;">
+        <th style="padding:8px;font-size:11px;text-align:left;">Date</th>
+        <th style="padding:8px;font-size:11px;text-align:left;">Type</th>
+        <th style="padding:8px;font-size:11px;text-align:left;">Reference</th>
+        <th style="padding:8px;font-size:11px;text-align:right;">Amount</th>
+        <th style="padding:8px;font-size:11px;text-align:left;">Method</th>
+        <th style="padding:8px;font-size:11px;text-align:left;">Supplier</th>
+        <th style="padding:8px;font-size:11px;text-align:left;">Status</th>
+        <th style="padding:8px;font-size:11px;text-align:left;">Approved By</th>
+      </tr>
+    </thead>
+    <tbody>
+      {$apRows}
+      <tr style="background:#f8f9fa;">
+        <td colspan="3" style="padding:8px;font-size:11px;font-weight:bold;">Total Approved Advance Payments</td>
+        <td style="padding:8px;font-size:11px;font-weight:bold;text-align:right;color:#0b5e2b;">{$fmtAdvTotal}</td>
+        <td colspan="4"></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+ADV;
+}
 $poNum      = htmlspecialchars($r['po_number']);
 $commitNum  = htmlspecialchars($r['commitment_number']);
 $poDate     = date('d M Y', strtotime($r['po_date']));
@@ -153,6 +240,8 @@ $html = <<<HTML
 <div style="padding:0 24px;">
   <hr style="border:none;border-top:2px solid #e9ecef;margin:8px 0 20px;">
 </div>
+
+{$advancePaymentsHtml}
 
 <!-- Authorization Section -->
 <div style="padding:0 24px;">
