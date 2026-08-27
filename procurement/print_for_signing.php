@@ -7,6 +7,7 @@ $REQUIRE_PERMISSION = 'print_procurement_approval_form';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
+require_once __DIR__ . '/print_for_signing_helpers.php';
 
 // Check if Dompdf library is installed
 $autoloadPath = __DIR__."/../vendor/autoload.php";
@@ -28,35 +29,6 @@ function logPrintForSigning(string $message, array $context = []): void
         $suffix = $encoded !== false ? " | {$encoded}" : '';
     }
     error_log("[print_for_signing] {$message}{$suffix}");
-}
-
-function requestTypeToModule(string $requestType): string
-{
-    $normalized = strtolower(trim($requestType));
-    $normalized = preg_replace('/[^a-z0-9]+/', '_', $normalized) ?? '';
-    return trim($normalized, '_');
-}
-
-function loadDocControlSettings(PDO $pdo, string $requestType): array
-{
-    try {
-        $typeStmt = $pdo->prepare("SELECT * FROM doc_ctrl_settings WHERE request_type = ? LIMIT 1");
-        $typeStmt->execute([$requestType]);
-        $settings = $typeStmt->fetch(PDO::FETCH_ASSOC);
-        if (is_array($settings) && !empty($settings)) {
-            return $settings;
-        }
-    } catch (Throwable $e) {
-        // Backward compatibility: older schemas may not have request_type column.
-    }
-
-    try {
-        $legacyStmt = $pdo->query("SELECT * FROM doc_ctrl_settings WHERE id = 1 LIMIT 1");
-        $settings = $legacyStmt->fetch(PDO::FETCH_ASSOC);
-        return is_array($settings) ? $settings : [];
-    } catch (Throwable $e) {
-        return [];
-    }
 }
 
 // Get request ID from GET parameter
@@ -111,11 +83,13 @@ if ($requestType !== 'REGULAR') {
         exit;
     }
 
-    logPrintForSigning('No request-type endpoint found; using fallback renderer', [
+    logPrintForSigning('No request-type endpoint found; failing closed', [
         'request_id' => $request_id,
         'request_type' => $requestType,
         'expected_target' => $targetPath
     ]);
+    http_response_code(404);
+    exit('Print endpoint is not configured for this request type.');
 }
 
 // Fetch request details
