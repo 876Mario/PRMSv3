@@ -698,6 +698,7 @@ if (empty($_SESSION['csrf_token'])) {
       </div>
       <form method="post" action="/reimbursement/mark_reimbursed.php">
         <div class="modal-body">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
           <input type="hidden" name="request_id" value="<?= $request_id ?>">
           <div class="mb-3">
             <label for="payment_reference" class="form-label">Payment Reference (Optional)</label>
@@ -732,6 +733,7 @@ if (empty($_SESSION['csrf_token'])) {
       </div>
       <form method="post" action="/reimbursement/confirm_receipt.php">
         <div class="modal-body">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
           <input type="hidden" name="request_id" value="<?= $request_id ?>">
           <p>Please confirm that you have received the reimbursement payment for this request.</p>
           <div class="mb-3">
