@@ -79,15 +79,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($decision === 'APPROVED') {
             $poId = (int)$ap['po_id'];
 
-            $varStmt2 = $pdo->prepare("SELECT COALESCE(SUM(variation_amount),0) FROM po_variations WHERE po_id=? AND status='APPROVED' FOR UPDATE");
-            $varStmt2->execute([$poId]);
-            $approvedPoTotal2 = (float)$ap['po_total'] + (float)$varStmt2->fetchColumn();
+            /* Lock the purchase_orders row first so concurrent approvals serialize here */
+            $poLockStmt = $pdo->prepare("SELECT po_total FROM purchase_orders WHERE po_id = ? FOR UPDATE");
+            $poLockStmt->execute([$poId]);
+            $lockedPoTotalRaw = $poLockStmt->fetchColumn();
+            if ($lockedPoTotalRaw === false) {
+                $pdo->rollBack();
+                modalPop('Error', 'The associated purchase order could not be found.', "/po/view.php?po_id={$ap['po_id']}", 'error');
+                exit;
+            }
+            $lockedPoTotal = (float)$lockedPoTotalRaw;
 
-            $invStmt2 = $pdo->prepare("SELECT COALESCE(SUM(invoice_amount),0) FROM invoices WHERE po_id=? FOR UPDATE");
+            $varStmt2 = $pdo->prepare("SELECT COALESCE(SUM(variation_amount),0) FROM po_variations WHERE po_id=? AND status='APPROVED'");
+            $varStmt2->execute([$poId]);
+            $approvedPoTotal2 = $lockedPoTotal + (float)$varStmt2->fetchColumn();
+
+            $invStmt2 = $pdo->prepare("SELECT COALESCE(SUM(invoice_amount),0) FROM invoices WHERE po_id=?");
             $invStmt2->execute([$poId]);
             $totalInvoiced2 = (float)$invStmt2->fetchColumn();
 
-            $advStmt2 = $pdo->prepare("SELECT COALESCE(SUM(payment_amount),0) FROM po_advance_payments WHERE po_id=? AND status='APPROVED' FOR UPDATE");
+            $advStmt2 = $pdo->prepare("SELECT COALESCE(SUM(payment_amount),0) FROM po_advance_payments WHERE po_id=? AND status='APPROVED'");
             $advStmt2->execute([$poId]);
             $totalAdvApproved2 = (float)$advStmt2->fetchColumn();
 
