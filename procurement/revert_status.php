@@ -2,12 +2,14 @@
 /**
  * Revert workflow status of a procurement request to a prior stage.
  * POST-only. Authorized roles only. Full audit trail.
+ * Uses WorkflowService for dynamic, request-type-aware revert logic.
  */
 $REQUIRE_PERMISSION = 'approve_request';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/WorkflowService.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     pop('Invalid request method.', '/procurement/list.php', POP_DEFAULT_DELAY_MS, 'error');
@@ -31,13 +33,6 @@ if ($reason === '') {
     exit;
 }
 
-// Role check
-$currentRole = $_SESSION['role_name'] ?? '';
-if (!in_array($currentRole, allowedRevertRoles(), true)) {
-    modalPop('Unauthorized', 'You are not authorized to revert workflow stages.', '/procurement/view.php?id=' . $id, 'error');
-    exit;
-}
-
 // Fetch request
 $stmt = $pdo->prepare("SELECT * FROM procurement_requests WHERE request_id = ?");
 $stmt->execute([$id]);
@@ -48,26 +43,17 @@ if (!$request) {
 }
 
 $currentStatus = strtoupper($request['status'] ?? '');
+$requestType = $request['request_type'] ?? 'REGULAR';
+$currentRole = $_SESSION['role_name'] ?? '';
+$userId = (int)($_SESSION['user_id'] ?? 0);
+$userName = $_SESSION['full_name'] ?? $currentRole;
 
-// Validate it is a backward transition
-if (!isBackwardTransition($currentStatus, $targetStatus)) {
-    modalPop(
-        'Invalid Revert',
-        "Cannot revert from {$currentStatus} to {$targetStatus}. Only backward transitions are permitted via this endpoint.",
-        '/procurement/view.php?id=' . $id,
-        'error'
-    );
-    exit;
-}
+// Initialize workflow service
+$workflowService = new WorkflowService($pdo);
 
-// Validate the transition exists in allowedTransitions()
-if (!canTransition($currentStatus, $targetStatus)) {
-    modalPop(
-        'Transition Not Allowed',
-        "The transition from {$currentStatus} to {$targetStatus} is not permitted by workflow rules.",
-        '/procurement/view.php?id=' . $id,
-        'error'
-    );
+// Role check
+if (!$workflowService->canUserRevert($currentRole, $requestType)) {
+    modalPop('Unauthorized', 'You are not authorized to revert workflow stages.', '/procurement/view.php?id=' . $id, 'error');
     exit;
 }
 
@@ -82,77 +68,41 @@ if (in_array($currentStatus, ['COMPLETED', 'DECLINED', 'CANCELLED'], true)) {
     exit;
 }
 
+// Validate it is a backward transition for this request type
+if (!$workflowService->isBackwardTransition($requestType, $currentStatus, $targetStatus)) {
+    modalPop(
+        'Invalid Revert',
+        "Cannot revert from {$currentStatus} to {$targetStatus}. Only backward transitions are permitted for {$requestType} requests.",
+        '/procurement/view.php?id=' . $id,
+        'error'
+    );
+    exit;
+}
+
+// Validate the transition exists in the workflow configuration
+$transitions = $workflowService->getTransitionsForType($requestType);
+if (!in_array($targetStatus, $transitions[$currentStatus] ?? [])) {
+    modalPop(
+        'Transition Not Allowed',
+        "The transition from {$currentStatus} to {$targetStatus} is not permitted by {$requestType} workflow rules.",
+        '/procurement/view.php?id=' . $id,
+        'error'
+    );
+    exit;
+}
+
 try {
-    $pdo->beginTransaction();
-
-    // Update request status
-    $pdo->prepare("
-        UPDATE procurement_requests
-        SET status     = ?,
-            updated_at = NOW()
-        WHERE request_id = ?
-    ")->execute([$targetStatus, $id]);
-
-    // Remove old pending approvals for this request.
-    // Previously-approved stages are retained in audit_log / workflow_transition_history.
-    $pdo->prepare("
-        DELETE FROM request_approvals
-        WHERE request_id = ?
-          AND status = 'pending'
-    ")->execute([$id]);
-
-    // ========================================================
-    // CRITICAL FIX: Recreate approval chain for new status
-    // ========================================================
-    // If reverting to a status that requires approvals (e.g., SUBMITTED),
-    // recreate the approval task chain so approvers can act.
-    // This prevents the "No pending approvals" error.
-    // 
-    // IMPORTANT: Exceptions here are NOT caught — if approval recreation fails,
-    // the entire transaction is rolled back. This is SAFER than silently reverting
-    // without approvals (which would reproduce the original bug).
-    if (in_array($targetStatus, ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'], true)) {
-        // Fetch request details for approval chain calculation
-        $reqStmt = $pdo->prepare("
-            SELECT request_type, estimated_value, branch_id
-            FROM procurement_requests
-            WHERE request_id = ?
-        ");
-        $reqStmt->execute([$id]);
-        $reqDetails = $reqStmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($reqDetails) {
-            // Recreate approval chain using centralized helper
-            // Exceptions here are NOT caught — they will cause transaction rollback
-            createApprovalChain(
-                $pdo,
-                $id,
-                $reqDetails['request_type'] ?? 'REGULAR',
-                (float)($reqDetails['estimated_value'] ?? 0),
-                $reqDetails['branch_id']
-            );
-        }
-    }
-
-    $actor = $_SESSION['full_name'] ?? $currentRole;
-    $notes = "Workflow reverted from {$currentStatus} to {$targetStatus} by {$actor} ({$currentRole}). Reason: {$reason}";
-
-    logAudit($pdo, 'procurement_requests', $id, 'WORKFLOW_REVERT', $notes);
-    logRequestTimeline($pdo, $id, 'WORKFLOW_REVERT', $notes);
-
-    // Insert transition history record for audit
-    try {
-        $pdo->prepare("
-            INSERT INTO workflow_transition_history
-              (request_id, from_status, to_status, is_backward, actor_user_id, actor_role, reason, created_at)
-            VALUES (?, ?, ?, 1, ?, ?, ?, NOW())
-        ")->execute([$id, $currentStatus, $targetStatus, $_SESSION['user_id'], $currentRole, $reason]);
-    } catch (Throwable $e) {
-        // Table may not exist yet — already logged via audit_log; continue.
-        error_log('workflow_transition_history insert failed (table may not exist): ' . $e->getMessage());
-    }
-
-    $pdo->commit();
+    // Use the workflow service to execute the revert with full audit trail
+    $workflowService->executeRevert(
+        $id,
+        $requestType,
+        $currentStatus,
+        $targetStatus,
+        $reason,
+        $userId,
+        $currentRole,
+        $userName
+    );
 
     pop(
         "Request reverted to " . str_replace('_', ' ', $targetStatus) . ".",
@@ -163,10 +113,7 @@ try {
     exit;
 
 } catch (Throwable $e) {
-    if ($pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
     error_log('revert_status.php failed: ' . $e->getMessage());
-    modalPop('Error', 'Unable to revert workflow stage. Please try again.', '/procurement/view.php?id=' . $id, 'error');
+    modalPop('Error', 'Unable to revert workflow stage: ' . $e->getMessage(), '/procurement/view.php?id=' . $id, 'error');
     exit;
 }

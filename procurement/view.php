@@ -1340,15 +1340,19 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
 
                     <?php
                     // Revert Stage — available to authorized roles when backward transitions exist
-                    $canRevertStage = $current !== 'PAUSED' && in_array($role, allowedRevertRoles(), true)
+                    require_once $_SERVER['DOCUMENT_ROOT'].'/services/WorkflowService.php';
+                    $workflowService = new WorkflowService($pdo);
+                    
+                    $canRevertStage = $current !== 'PAUSED' 
+                        && $workflowService->canUserRevert($role, $request['request_type'] ?? 'REGULAR')
                         && !in_array($current, ['DRAFT', 'COMPLETED', 'DECLINED', 'CANCELLED'], true);
+                    
                     $revertTargets = [];
                     if ($canRevertStage) {
-                        foreach (allowedTransitions()[$current] ?? [] as $t) {
-                            if (isBackwardTransition($current, $t)) {
-                                $revertTargets[] = $t;
-                            }
-                        }
+                        $revertTargets = $workflowService->getValidRevertTargets(
+                            $request['request_type'] ?? 'REGULAR',
+                            $current
+                        );
                         $canRevertStage = !empty($revertTargets);
                     }
                     ?>
@@ -2252,12 +2256,16 @@ function timelineMeta(string $action): array {
                     <label class="form-label fw-bold">Revert to Stage</label>
                     <select name="target_status" class="form-select" required>
                         <option value="">— Select target stage —</option>
-                        <?php foreach ($revertTargets ?? [] as $t): ?>
-                        <option value="<?= htmlspecialchars($t) ?>">
-                            <?= htmlspecialchars(str_replace('_', ' ', $t)) ?>
+                        <?php foreach ($revertTargets ?? [] as $target): ?>
+                        <option value="<?= htmlspecialchars($target['status']) ?>">
+                            <?= htmlspecialchars($target['label']) ?>
+                            <?php if (!empty($target['stage_owners'])): ?>
+                                (<?= htmlspecialchars(implode(', ', $target['stage_owners'])) ?>)
+                            <?php endif; ?>
                         </option>
                         <?php endforeach; ?>
                     </select>
+                    <small class="text-muted">The request will be returned to the selected stage for correction.</small>
                 </div>
                 <div class="mb-0">
                     <label class="form-label fw-bold">Reason <span class="text-danger">*</span></label>
