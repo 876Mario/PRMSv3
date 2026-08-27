@@ -311,8 +311,10 @@ class SignedRequestService {
      */
     public function getActiveDocument($requestId) {
         $stmt = $this->pdo->prepare("
-            SELECT * FROM signed_request_documents 
-            WHERE request_id = ? AND is_active = 1 AND is_deleted = 0
+            SELECT srd.*, COALESCE(u.full_name, 'Unknown') as uploaded_by_name
+            FROM signed_request_documents srd
+            LEFT JOIN users u ON srd.uploaded_by_user_id = u.user_id
+            WHERE srd.request_id = ? AND srd.is_active = 1 AND srd.is_deleted = 0
             LIMIT 1
         ");
         $stmt->execute([$requestId]);
@@ -324,7 +326,7 @@ class SignedRequestService {
      */
     public function getDocumentHistory($requestId) {
         $stmt = $this->pdo->prepare("
-            SELECT srd.*, u.full_name as uploaded_by_name
+            SELECT srd.*, COALESCE(u.full_name, 'Unknown') as uploaded_by_name
             FROM signed_request_documents srd
             LEFT JOIN users u ON srd.uploaded_by_user_id = u.user_id
             WHERE srd.request_id = ? AND srd.is_deleted = 0
