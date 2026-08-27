@@ -14,12 +14,15 @@ $request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 $confirmation_notes = isset($_POST['confirmation_notes']) ? trim($_POST['confirmation_notes']) : '';
 
 // Verify CSRF token
+$postedCsrfToken = $_POST['csrf_token'] ?? null;
 $sessionCsrfToken = $_SESSION['csrf_token'] ?? null;
 if (
     $_SERVER['REQUEST_METHOD'] !== 'POST'
-    || empty($_POST['csrf_token'])
+    || !is_string($postedCsrfToken)
+    || $postedCsrfToken === ''
     || !is_string($sessionCsrfToken)
-    || !hash_equals($sessionCsrfToken, (string) $_POST['csrf_token'])
+    || $sessionCsrfToken === ''
+    || !hash_equals($sessionCsrfToken, $postedCsrfToken)
 ) {
     pop('Invalid request (CSRF check failed)', '/reimbursement/list.php', 2500, 'error');
     exit;
