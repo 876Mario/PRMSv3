@@ -39,7 +39,8 @@ $filePath = $_SERVER['DOCUMENT_ROOT'] . $ap['supporting_document_path'];
 /* Enforce that the file is within the expected upload directory */
 $uploadBase = realpath($_SERVER['DOCUMENT_ROOT'] . '/uploads/advance_payments');
 $realPath   = realpath($filePath);
-if ($realPath === false || $uploadBase === false || strpos($realPath, $uploadBase . DIRECTORY_SEPARATOR) !== 0) {
+if ($realPath === false || $uploadBase === false || strpos($realPath, $uploadBase . DIRECTORY_SEPARATOR) !== 0
+    || !is_file($realPath) || !is_readable($realPath)) {
     pop('File not found or access denied.', "/po/view.php?po_id={$ap['po_id']}", POP_DEFAULT_DELAY_MS, 'error');
     exit;
 }
