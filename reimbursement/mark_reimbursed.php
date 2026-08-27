@@ -14,6 +14,12 @@ $request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 $payment_reference = isset($_POST['payment_reference']) ? trim($_POST['payment_reference']) : '';
 $payment_notes = isset($_POST['payment_notes']) ? trim($_POST['payment_notes']) : '';
 
+// Verify CSRF token
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+    pop('Invalid request (CSRF check failed)', '/reimbursement/list.php', 2500, 'error');
+    exit;
+}
+
 if ($request_id <= 0) {
     pop("Invalid reimbursement request reference.", "/reimbursement/list.php");
     exit;

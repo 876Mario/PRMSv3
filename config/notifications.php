@@ -4102,6 +4102,7 @@ HTML;
  */
 function notifyReimbursementDisbursed(int $requestId, string $requestNumber): bool {
     global $pdo;
+    if (!notificationsEnabled()) return false;
     
     try {
         // Fetch request and requestor details
@@ -4124,13 +4125,15 @@ function notifyReimbursementDisbursed(int $requestId, string $requestNumber): bo
         }
         
         // Safe values for HTML
-        $safeRequestNumber = htmlspecialchars($requestNumber, ENT_QUOTES, 'UTF-8');
-        $safeRequestorName = htmlspecialchars($request['requestor_name'] ?? 'User', ENT_QUOTES, 'UTF-8');
-        $safeBranchName = htmlspecialchars($request['branch_name'] ?? 'N/A', ENT_QUOTES, 'UTF-8');
-        $safeDescription = htmlspecialchars($request['description'] ?? '', ENT_QUOTES, 'UTF-8');
-        $formattedAmount = 'XCD $' . number_format((float)($request['estimated_value'] ?? 0), 2);
+        $safeRequestNumber = he($requestNumber);
+        $safeRequestorName = he($request['requestor_name'] ?? 'User');
+        $safeBranchName = he($request['branch_name'] ?? 'N/A');
+        $safeDescription = he($request['description'] ?? '');
+        $currency = normalizeCurrency($request['currency'] ?? 'JMD');
+        $formattedAmount = he($currency) . ' ' . number_format((float)($request['estimated_value'] ?? 0), 2);
         
-        $confirmUrl = getenv('APP_BASE_URL') . "/reimbursement/view.php?request_id=" . urlencode((string)$requestId);
+        $appUrl = getAppUrl();
+        $confirmUrl = $appUrl . "/reimbursement/view.php?request_id=" . urlencode((string)$requestId);
         
         $subject = "Reimbursement Payment Disbursed - Confirmation Required: {$safeRequestNumber}";
         
@@ -4241,6 +4244,7 @@ HTML;
  */
 function notifyReimbursementCompleted(int $requestId, string $requestNumber): bool {
     global $pdo;
+    if (!notificationsEnabled()) return false;
     
     try {
         // Fetch request details
@@ -4275,12 +4279,14 @@ function notifyReimbursementCompleted(int $requestId, string $requestNumber): bo
         $financeOfficers = $financeStmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Safe values for HTML
-        $safeRequestNumber = htmlspecialchars($requestNumber, ENT_QUOTES, 'UTF-8');
-        $safeRequestorName = htmlspecialchars($request['requestor_name'] ?? 'User', ENT_QUOTES, 'UTF-8');
-        $safeBranchName = htmlspecialchars($request['branch_name'] ?? 'N/A', ENT_QUOTES, 'UTF-8');
-        $formattedAmount = 'XCD $' . number_format((float)($request['estimated_value'] ?? 0), 2);
+        $safeRequestNumber = he($requestNumber);
+        $safeRequestorName = he($request['requestor_name'] ?? 'User');
+        $safeBranchName = he($request['branch_name'] ?? 'N/A');
+        $currency = normalizeCurrency($request['currency'] ?? 'JMD');
+        $formattedAmount = he($currency) . ' ' . number_format((float)($request['estimated_value'] ?? 0), 2);
         
-        $viewUrl = getenv('APP_BASE_URL') . "/reimbursement/view.php?request_id=" . urlencode((string)$requestId);
+        $appUrl = getAppUrl();
+        $viewUrl = $appUrl . "/reimbursement/view.php?request_id=" . urlencode((string)$requestId);
         
         $subject = "Reimbursement Completed: {$safeRequestNumber}";
         
