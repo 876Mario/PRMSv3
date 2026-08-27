@@ -146,6 +146,27 @@ try {
     $update->execute([$newStatus, $request_id]);
 
     /* ================================
+       Log Status Change to History
+    ================================ */
+    $historyInsert = $pdo->prepare("
+        INSERT INTO petty_cash_status_history
+        (request_id, old_status, new_status, changed_by, change_notes)
+        VALUES (?, ?, ?, ?, ?)
+    ");
+    $historyNotes = $comments ?: ($action === 'approve' 
+        ? "Approved by {$approverRole}" 
+        : ($action === 'return' 
+            ? "Returned for correction by {$approverRole}" 
+            : "Declined by {$approverRole}"));
+    $historyInsert->execute([
+        $request_id,
+        $previousStatus,
+        $newStatus,
+        $_SESSION['user_id'],
+        $historyNotes
+    ]);
+
+    /* ================================
        Update Approval Record
     ================================ */
     // Determine approval status for request_approvals table
