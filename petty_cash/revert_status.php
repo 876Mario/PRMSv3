@@ -4,7 +4,7 @@
  * POST-only. Authorized roles only. Full audit trail.
  * Uses WorkflowService for dynamic revert logic.
  */
-$REQUIRE_PERMISSION = 'approve_petty_cash';
+$REQUIRE_PERMISSION = 'approve_petty_cash_request';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
@@ -134,6 +134,6 @@ try {
 
 } catch (Throwable $e) {
     error_log('petty_cash/revert_status.php failed: ' . $e->getMessage());
-    modalPop('Error', 'Unable to revert workflow stage: ' . $e->getMessage(), '/petty_cash/view.php?id=' . $id, 'error');
+    modalPop('Error', 'Unable to revert workflow stage right now.', '/petty_cash/view.php?id=' . $id, 'error');
     exit;
 }

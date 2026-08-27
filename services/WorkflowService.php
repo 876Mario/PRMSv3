@@ -9,9 +9,9 @@
  */
 class WorkflowService
 {
-    private PDO $pdo;
+    private ?PDO $pdo;
 
-    public function __construct(PDO $pdo)
+    public function __construct(?PDO $pdo)
     {
         $this->pdo = $pdo;
     }
@@ -146,7 +146,7 @@ class WorkflowService
                                                'FUNDS_VERIFIED', 'SUBMITTED'],
             'INVOICE_VERIFIED'             => ['APPROVED', 'INVOICE_SUBMITTED', 'DECLINED',
                                                // ← backward
-                                               'INVOICE_SUBMITTED', 'FUNDS_VERIFIED', 'SUBMITTED'],
+                                               'FUNDS_VERIFIED', 'SUBMITTED'],
             'APPROVED'                     => ['REIMBURSED',
                                                // ← backward
                                                'INVOICE_VERIFIED', 'INVOICE_SUBMITTED', 'FUNDS_VERIFIED'],
@@ -387,6 +387,10 @@ class WorkflowService
         string $userRole,
         string $userName
     ): bool {
+        if (!$this->pdo instanceof PDO) {
+            throw new Exception('Database connection is required to execute workflow revert');
+        }
+
         // Validate the transition
         if (!$this->isBackwardTransition($requestType, $currentStatus, $targetStatus)) {
             throw new Exception("Invalid revert: {$currentStatus} to {$targetStatus} is not a backward transition");

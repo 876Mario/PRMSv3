@@ -4,7 +4,7 @@
  * POST-only. Authorized roles only. Full audit trail.
  * Uses WorkflowService for dynamic revert logic.
  */
-$REQUIRE_PERMISSION = 'approve_reimbursement';
+$REQUIRE_PERMISSION = 'approve_reimbursement_request';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
@@ -134,6 +134,6 @@ try {
 
 } catch (Throwable $e) {
     error_log('reimbursement/revert_status.php failed: ' . $e->getMessage());
-    modalPop('Error', 'Unable to revert workflow stage: ' . $e->getMessage(), '/reimbursement/view.php?id=' . $id, 'error');
+    modalPop('Error', 'Unable to revert workflow stage right now.', '/reimbursement/view.php?id=' . $id, 'error');
     exit;
 }

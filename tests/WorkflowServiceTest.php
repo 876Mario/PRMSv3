@@ -50,6 +50,9 @@ class WorkflowServiceTest
         
         // Test 6: Stage owner resolution
         $this->testStageOwnerResolution();
+
+        // Test 7: executeRevert requires DB connection
+        $this->testExecuteRevertRequiresConnection();
         
         // Print summary
         $this->printSummary();
@@ -214,6 +217,26 @@ class WorkflowServiceTest
         echo "\n";
     }
 
+    private function testExecuteRevertRequiresConnection(): void
+    {
+        echo "Test 7: executeRevert Requires DB Connection\n";
+        echo str_repeat("-", 50) . "\n";
+
+        $service = new WorkflowService(null);
+        try {
+            $service->executeRevert(1, 'REGULAR', 'DIRECTOR_APPROVED', 'HOD_APPROVED', 'test', 1, 'Admin', 'Tester');
+            echo "✗ FAIL: executeRevert should throw when DB connection is unavailable\n";
+            $this->results[] = ['test' => 'executeRevert should throw when DB connection is unavailable', 'status' => 'FAIL'];
+        } catch (Exception $e) {
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'Database connection is required'),
+                'executeRevert should fail fast with clear DB connection error'
+            );
+        }
+
+        echo "\n";
+    }
+
     // Helper assertion methods
     private function assertContains(string $needle, array $haystack, string $message): void
     {
@@ -289,12 +312,18 @@ class WorkflowServiceTest
         echo "Success Rate: " . round(($passed / $total) * 100, 2) . "%\n";
         echo str_repeat("=", 50) . "\n\n";
     }
+
+    public function hasFailures(): bool
+    {
+        return (bool)count(array_filter($this->results, fn($r) => $r['status'] === 'FAIL'));
+    }
 }
 
 // Run tests
 try {
     $test = new WorkflowServiceTest();
     $test->runAllTests();
+    exit($test->hasFailures() ? 1 : 0);
 } catch (Throwable $e) {
     echo "ERROR: " . $e->getMessage() . "\n";
     echo $e->getTraceAsString() . "\n";
