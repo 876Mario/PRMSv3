@@ -650,12 +650,105 @@ if (empty($_SESSION['csrf_token'])) {
               </button>
             </form>
           <?php endif; ?>
+
+          <?php 
+          // Finance marks payment as disbursed/reimbursed
+          $canMarkReimbursed = ($request['status'] === 'APPROVED') && $isFinanceOfficer;
+          ?>
+          
+          <?php if ($canMarkReimbursed): ?>
+            <div class="alert alert-info py-2 mb-2">
+              <small><strong>Action Required:</strong> Mark this reimbursement as paid/disbursed.</small>
+            </div>
+            <button type="button" class="btn btn-success btn-sm w-100 mb-2" data-bs-toggle="modal" data-bs-target="#markReimbursedModal">
+              <i class="bi bi-cash-coin"></i> Mark as Reimbursed
+            </button>
+          <?php endif; ?>
+
+          <?php 
+          // Requestor confirms receipt of reimbursement
+          $canConfirmReceipt = ($request['status'] === 'REIMBURSED') && ($_SESSION['user_id'] == $request['created_by']);
+          ?>
+          
+          <?php if ($canConfirmReceipt): ?>
+            <div class="alert alert-success py-2 mb-2">
+              <small><strong>Action Required:</strong> Please confirm you have received the reimbursement payment.</small>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm w-100 mb-2" data-bs-toggle="modal" data-bs-target="#confirmReceiptModal">
+              <i class="bi bi-check-circle-fill"></i> Confirm Receipt of Reimbursement
+            </button>
+          <?php endif; ?>
           
           <a href="/reimbursement/list.php" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-arrow-left"></i> Back to List
           </a>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Mark Reimbursed Modal -->
+<div class="modal fade" id="markReimbursedModal" tabindex="-1" aria-labelledby="markReimbursedModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="markReimbursedModalLabel">Mark Reimbursement as Paid</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/reimbursement/mark_reimbursed.php">
+        <div class="modal-body">
+          <input type="hidden" name="request_id" value="<?= $request_id ?>">
+          <div class="mb-3">
+            <label for="payment_reference" class="form-label">Payment Reference (Optional)</label>
+            <input type="text" class="form-control" id="payment_reference" name="payment_reference" placeholder="e.g., Check #12345 or Bank Transfer Ref">
+          </div>
+          <div class="mb-3">
+            <label for="payment_notes" class="form-label">Notes (Optional)</label>
+            <textarea class="form-control" id="payment_notes" name="payment_notes" rows="3" placeholder="Any additional notes about the payment"></textarea>
+          </div>
+          <div class="alert alert-info mb-0">
+            <small><i class="bi bi-info-circle"></i> After marking as reimbursed, the requestor will be notified to confirm receipt of payment.</small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success">
+            <i class="bi bi-cash-coin"></i> Mark as Reimbursed
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Receipt Modal -->
+<div class="modal fade" id="confirmReceiptModal" tabindex="-1" aria-labelledby="confirmReceiptModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmReceiptModalLabel">Confirm Receipt of Reimbursement</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/reimbursement/confirm_receipt.php">
+        <div class="modal-body">
+          <input type="hidden" name="request_id" value="<?= $request_id ?>">
+          <p>Please confirm that you have received the reimbursement payment for this request.</p>
+          <div class="mb-3">
+            <label for="confirmation_notes" class="form-label">Notes (Optional)</label>
+            <textarea class="form-control" id="confirmation_notes" name="confirmation_notes" rows="3" placeholder="Any additional notes or confirmation details"></textarea>
+          </div>
+          <div class="alert alert-success mb-0">
+            <small><i class="bi bi-check-circle"></i> Confirming receipt will mark this request as completed.</small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-circle-fill"></i> Confirm Receipt
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
