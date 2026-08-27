@@ -73,24 +73,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     try {
+        $pdo->beginTransaction();
+
         /* Re-check remaining balance before approving to guard against race conditions */
         if ($decision === 'APPROVED') {
             $poId = (int)$ap['po_id'];
 
-            $varStmt2 = $pdo->prepare("SELECT COALESCE(SUM(variation_amount),0) FROM po_variations WHERE po_id=? AND status='APPROVED'");
+            $varStmt2 = $pdo->prepare("SELECT COALESCE(SUM(variation_amount),0) FROM po_variations WHERE po_id=? AND status='APPROVED' FOR UPDATE");
             $varStmt2->execute([$poId]);
             $approvedPoTotal2 = (float)$ap['po_total'] + (float)$varStmt2->fetchColumn();
 
-            $invStmt2 = $pdo->prepare("SELECT COALESCE(SUM(invoice_amount),0) FROM invoices WHERE po_id=?");
+            $invStmt2 = $pdo->prepare("SELECT COALESCE(SUM(invoice_amount),0) FROM invoices WHERE po_id=? FOR UPDATE");
             $invStmt2->execute([$poId]);
             $totalInvoiced2 = (float)$invStmt2->fetchColumn();
 
-            $advStmt2 = $pdo->prepare("SELECT COALESCE(SUM(payment_amount),0) FROM po_advance_payments WHERE po_id=? AND status='APPROVED'");
+            $advStmt2 = $pdo->prepare("SELECT COALESCE(SUM(payment_amount),0) FROM po_advance_payments WHERE po_id=? AND status='APPROVED' FOR UPDATE");
             $advStmt2->execute([$poId]);
             $totalAdvApproved2 = (float)$advStmt2->fetchColumn();
 
             $remainingBalance2 = $approvedPoTotal2 - $totalInvoiced2 - $totalAdvApproved2;
             if ((float)$ap['payment_amount'] > $remainingBalance2) {
+                $pdo->rollBack();
                 modalPop('Balance Exceeded', 'This advance payment amount exceeds the current remaining PO balance and cannot be approved.', '', 'error');
                 exit;
             }
@@ -115,9 +118,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
 
         if ($upd->rowCount() === 0) {
+            $pdo->rollBack();
             pop('This advance payment has already been decided by another user.', "/po/view.php?po_id={$ap['po_id']}", POP_DEFAULT_DELAY_MS, 'warning');
             exit;
         }
+
+        $pdo->commit();
 
         $label = $decision === 'APPROVED' ? 'Approved' : 'Rejected';
         logAudit($pdo, 'po_advance_payments', $apId, $decision,
@@ -132,6 +138,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
 
     } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         modalPop('Error', extractDbMessage($e), "/po/view.php?po_id={$ap['po_id']}", 'error');
         exit;
     }
