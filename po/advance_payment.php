@@ -173,7 +173,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mkdir($uploadDir, 0775, true);
         }
 
-        $ext         = pathinfo($file['name'], PATHINFO_EXTENSION);
+        $mimeToExt = [
+            'application/pdf'      => 'pdf',
+            'image/jpeg'           => 'jpg',
+            'image/png'            => 'png',
+            'image/gif'            => 'gif',
+            'application/msword'   => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+        ];
+        $ext         = $mimeToExt[$mimeType] ?? 'bin';
         $serverName  = uniqid('AP_', true) . '_' . time() . '.' . $ext;
         $destPath    = $uploadDir . $serverName;
 
@@ -445,7 +453,7 @@ function updateAmountFeedback() {
             fb.textContent = 'Amount exceeds the remaining PO balance!';
         } else {
             fb.className = 'alert alert-light border border-warning mb-4';
-            fb.textContent = 'Remaining balance after this payment: JMD ' +
+            fb.textContent = 'Remaining balance after this payment: <?= htmlspecialchars($currency) ?> ' +
                 (balance - amount).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
         }
     } else {

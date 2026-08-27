@@ -122,6 +122,7 @@ ROW;
 </div>
 ADV;
 }
+$fmtTotal   = '$' . number_format((float)$r['po_total'], 2);
 $poNum      = htmlspecialchars($r['po_number']);
 $commitNum  = htmlspecialchars($r['commitment_number']);
 $poDate     = date('d M Y', strtotime($r['po_date']));

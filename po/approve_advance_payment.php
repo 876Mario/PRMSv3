@@ -27,11 +27,13 @@ $stmt = $pdo->prepare("
         po.po_total,
         po.status AS po_status,
         c.commitment_number,
+        pr.currency,
         u.full_name AS created_by_name,
         u.email     AS created_by_email
     FROM po_advance_payments ap
     JOIN purchase_orders po ON ap.po_id = po.po_id
     JOIN commitments     c  ON po.commitment_id = c.commitment_id
+    JOIN procurement_requests pr ON c.request_id = pr.request_id
     LEFT JOIN users      u  ON ap.created_by    = u.user_id
     WHERE ap.advance_payment_id = ?
     LIMIT 1
@@ -43,6 +45,8 @@ if (!$ap) {
     pop('Advance payment record not found.', '/po/list.php', POP_DEFAULT_DELAY_MS, 'error');
     exit;
 }
+
+$currency = (!empty($ap['currency'])) ? strtoupper(trim($ap['currency'])) : 'JMD';
 
 /* ================================
    Handle POST
@@ -69,6 +73,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     try {
+        /* Re-check remaining balance before approving to guard against race conditions */
+        if ($decision === 'APPROVED') {
+            $poId = (int)$ap['po_id'];
+
+            $varStmt2 = $pdo->prepare("SELECT COALESCE(SUM(variation_amount),0) FROM po_variations WHERE po_id=? AND status='APPROVED'");
+            $varStmt2->execute([$poId]);
+            $approvedPoTotal2 = (float)$ap['po_total'] + (float)$varStmt2->fetchColumn();
+
+            $invStmt2 = $pdo->prepare("SELECT COALESCE(SUM(invoice_amount),0) FROM invoices WHERE po_id=?");
+            $invStmt2->execute([$poId]);
+            $totalInvoiced2 = (float)$invStmt2->fetchColumn();
+
+            $advStmt2 = $pdo->prepare("SELECT COALESCE(SUM(payment_amount),0) FROM po_advance_payments WHERE po_id=? AND status='APPROVED'");
+            $advStmt2->execute([$poId]);
+            $totalAdvApproved2 = (float)$advStmt2->fetchColumn();
+
+            $remainingBalance2 = $approvedPoTotal2 - $totalInvoiced2 - $totalAdvApproved2;
+            if ((float)$ap['payment_amount'] > $remainingBalance2) {
+                modalPop('Balance Exceeded', 'This advance payment amount exceeds the current remaining PO balance and cannot be approved.', '', 'error');
+                exit;
+            }
+        }
+
         $upd = $pdo->prepare("
             UPDATE po_advance_payments
             SET status            = ?,
@@ -171,7 +198,7 @@ $statusBadge = $statusBadges[$ap['status']] ?? 'bg-secondary';
                 </div>
                 <div class="col-md-4">
                     <small class="text-muted d-block">Amount</small>
-                    <strong class="text-success fs-5">JMD <?= number_format((float)$ap['payment_amount'], 2) ?></strong>
+                    <strong class="text-success fs-5"><?= htmlspecialchars($currency) ?> <?= number_format((float)$ap['payment_amount'], 2) ?></strong>
                 </div>
                 <div class="col-md-4">
                     <small class="text-muted d-block">Payment Date</small>
@@ -321,7 +348,7 @@ function validateDecisionForm() {
         }
         return confirm('Reject this advance payment?');
     }
-    return confirm('Approve this advance payment for JMD <?= number_format((float)$ap['payment_amount'], 2) ?>?');
+    return confirm('Approve this advance payment for <?= htmlspecialchars($currency) ?> <?= number_format((float)$ap['payment_amount'], 2) ?>?');
 }
 </script>
 

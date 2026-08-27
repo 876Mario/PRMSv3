@@ -4441,8 +4441,14 @@ function notifyAdvancePaymentSubmitted(int $advancePaymentId): bool {
         $subject         = "Advance Payment Pending Approval — {$ap['po_number']}";
         $reviewUrl       = "{$appUrl}/po/approve_advance_payment.php?id={$advancePaymentId}";
 
+        $ePoNumber       = htmlspecialchars($ap['po_number']);
+        $ePaymentRef     = htmlspecialchars($ap['payment_reference']);
+        $ePaymentDate    = htmlspecialchars($ap['payment_date']);
+        $eSubmittedBy    = htmlspecialchars($ap['submitted_by_name'] ?? '');
+
         $notificationsSent = 0;
         foreach ($approvers as $approver) {
+            $eApproverName = htmlspecialchars($approver['full_name']);
             $html = <<<HTML
 <!DOCTYPE html>
 <html><head><meta charset="UTF-8">
@@ -4464,15 +4470,15 @@ function notifyAdvancePaymentSubmitted(int $advancePaymentId): bool {
         <p style="margin:5px 0 0 0;">Government Chemist — PIAMS</p>
     </div>
     <div class="content">
-        <p>Dear {$approver['full_name']},</p>
+        <p>Dear {$eApproverName},</p>
         <div class="status-box">⏳ {$typeLabel} of JMD \${$formattedAmount} Awaiting Your Decision</div>
         <div class="details">
-            <div class="detail-row"><span class="label">Purchase Order:</span> {$ap['po_number']}</div>
+            <div class="detail-row"><span class="label">Purchase Order:</span> {$ePoNumber}</div>
             <div class="detail-row"><span class="label">Payment Type:</span> {$typeLabel}</div>
             <div class="detail-row"><span class="label">Amount:</span> JMD \${$formattedAmount}</div>
-            <div class="detail-row"><span class="label">Reference:</span> {$ap['payment_reference']}</div>
-            <div class="detail-row"><span class="label">Payment Date:</span> {$ap['payment_date']}</div>
-            <div class="detail-row"><span class="label">Submitted By:</span> {$ap['submitted_by_name']}</div>
+            <div class="detail-row"><span class="label">Reference:</span> {$ePaymentRef}</div>
+            <div class="detail-row"><span class="label">Payment Date:</span> {$ePaymentDate}</div>
+            <div class="detail-row"><span class="label">Submitted By:</span> {$eSubmittedBy}</div>
         </div>
         <p><a href="{$reviewUrl}" class="button">Review &amp; Decide</a></p>
         <p style="margin-top:20px;font-size:12px;color:#777;">This is an automated notification from PIAMS.</p>
@@ -4543,7 +4549,7 @@ function notifyAdvancePaymentDecided(int $advancePaymentId, string $decision): b
         $typeLabel       = match ($ap['payment_type']) {
             'ADVANCE_PAYMENT' => 'Advance Payment',
             'PARTIAL_PAYMENT' => 'Partial Payment',
-            default           => $ap['payment_type'],
+            default           => htmlspecialchars($ap['payment_type']),
         };
         $formattedAmount = number_format((float)$ap['payment_amount'], 2);
         $statusColor     = $isApproved ? '#198754' : '#dc3545';
@@ -4560,6 +4566,11 @@ function notifyAdvancePaymentDecided(int $advancePaymentId, string $decision): b
             $comments     = htmlspecialchars($ap['approval_comments']);
             $extraSection .= "<div class=\"detail-row\"><span class=\"label\">Comments:</span> {$comments}</div>";
         }
+
+        $eSubmittedByName = htmlspecialchars($ap['submitted_by_name'] ?? '');
+        $ePoNumber        = htmlspecialchars($ap['po_number']);
+        $ePaymentRef      = htmlspecialchars($ap['payment_reference']);
+        $eDecidedByName   = htmlspecialchars($ap['decided_by_name'] ?? '');
 
         $html = <<<HTML
 <!DOCTYPE html>
@@ -4582,14 +4593,14 @@ function notifyAdvancePaymentDecided(int $advancePaymentId, string $decision): b
         <p style="margin:5px 0 0 0;">Government Chemist — PIAMS</p>
     </div>
     <div class="content">
-        <p>Dear {$ap['submitted_by_name']},</p>
+        <p>Dear {$eSubmittedByName},</p>
         <div class="status-box">{$statusLabel}</div>
         <div class="details">
-            <div class="detail-row"><span class="label">Purchase Order:</span> {$ap['po_number']}</div>
+            <div class="detail-row"><span class="label">Purchase Order:</span> {$ePoNumber}</div>
             <div class="detail-row"><span class="label">Payment Type:</span> {$typeLabel}</div>
             <div class="detail-row"><span class="label">Amount:</span> JMD \${$formattedAmount}</div>
-            <div class="detail-row"><span class="label">Reference:</span> {$ap['payment_reference']}</div>
-            <div class="detail-row"><span class="label">Decided By:</span> {$ap['decided_by_name']}</div>
+            <div class="detail-row"><span class="label">Reference:</span> {$ePaymentRef}</div>
+            <div class="detail-row"><span class="label">Decided By:</span> {$eDecidedByName}</div>
             {$extraSection}
         </div>
         <p><a href="{$poUrl}" class="button">View Purchase Order</a></p>
