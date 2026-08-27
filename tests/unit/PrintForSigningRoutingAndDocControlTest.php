@@ -9,6 +9,7 @@ class PrintForSigningRoutingAndDocControlTest extends PHPUnit\Framework\TestCase
     {
         $this->assertSame('reimbursement', requestTypeToModule('REIMBURSEMENT'));
         $this->assertSame('petty_cash', requestTypeToModule('  PETTY CASH  '));
+        $this->assertSame('procurement', requestTypeToModule('SERVICE_CONTRACT'));
         $this->assertSame('gc10_a', requestTypeToModule('GC10-A'));
     }
 
