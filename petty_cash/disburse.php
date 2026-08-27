@@ -97,6 +97,7 @@ try {
     $pdo->beginTransaction();
 
     // Update request status to DISBURSED
+    $previousStatus = $currentStatus;
     $newStatus = 'DISBURSED';
     $updateRequest = $pdo->prepare("
         UPDATE procurement_requests
@@ -114,6 +115,23 @@ try {
         WHERE disburse_id = ?
     ");
     $updateDisb->execute([(int)$disbursement['disburse_id']]);
+
+    /* ================================
+       Log Status Change to History
+    ================================ */
+    $historyInsert = $pdo->prepare("
+        INSERT INTO petty_cash_status_history
+        (request_id, old_status, new_status, changed_by, change_notes)
+        VALUES (?, ?, ?, ?, ?)
+    ");
+    $historyNotes = $disbursal_notes ?: "Cash disbursed by Finance Officer";
+    $historyInsert->execute([
+        $request_id,
+        $previousStatus,
+        $newStatus,
+        $_SESSION['user_id'],
+        $historyNotes
+    ]);
 
     // Audit logging
     logAudit(

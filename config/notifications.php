@@ -4092,4 +4092,294 @@ HTML;
     }
 }
 
+/**
+ * Notify requestor that reimbursement has been disbursed/paid
+ * Sent by Finance Officer after marking payment as reimbursed
+ *
+ * @param int $requestId The reimbursement request ID
+ * @param string $requestNumber The request reference number
+ * @return bool True if notification was sent successfully
+ */
+function notifyReimbursementDisbursed(int $requestId, string $requestNumber): bool {
+    global $pdo;
+    
+    try {
+        // Fetch request and requestor details
+        $stmt = $pdo->prepare("
+            SELECT 
+                pr.*,
+                u.full_name as requestor_name,
+                u.email as requestor_email,
+                b.branch_name
+            FROM procurement_requests pr
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$request || empty($request['requestor_email'])) {
+            return false;
+        }
+        
+        // Safe values for HTML
+        $safeRequestNumber = htmlspecialchars($requestNumber, ENT_QUOTES, 'UTF-8');
+        $safeRequestorName = htmlspecialchars($request['requestor_name'] ?? 'User', ENT_QUOTES, 'UTF-8');
+        $safeBranchName = htmlspecialchars($request['branch_name'] ?? 'N/A', ENT_QUOTES, 'UTF-8');
+        $safeDescription = htmlspecialchars($request['description'] ?? '', ENT_QUOTES, 'UTF-8');
+        $formattedAmount = 'XCD $' . number_format((float)($request['estimated_value'] ?? 0), 2);
+        
+        $confirmUrl = getenv('APP_BASE_URL') . "/reimbursement/view.php?request_id=" . urlencode((string)$requestId);
+        
+        $subject = "Reimbursement Payment Disbursed - Confirmation Required: {$safeRequestNumber}";
+        
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #ffffff; padding: 30px; border: 1px solid #e0e0e0; }
+        .detail-row { margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px; }
+        .label { font-weight: bold; color: #555; }
+        .value { color: #333; }
+        .action-box { background: #e7f5e9; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; border-radius: 4px; }
+        .button { display: inline-block; background: #28a745; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
+        .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0;">💰 Reimbursement Payment Disbursed</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px;">Your reimbursement has been paid</p>
+        </div>
+        <div class="content">
+            <p>Dear {$safeRequestorName},</p>
+            
+            <p><strong>Good news!</strong> Your reimbursement request has been processed and payment has been disbursed by Finance.</p>
+            
+            <div class="detail-row">
+                <span class="label">Request Number:</span>
+                <span class="value">{$safeRequestNumber}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Branch:</span>
+                <span class="value">{$safeBranchName}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Description:</span>
+                <span class="value">{$safeDescription}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Reimbursement Amount:</span>
+                <span class="value">{$formattedAmount}</span>
+            </div>
+
+            <div class="action-box">
+                <strong>⚠️ Action Required:</strong>
+                <ul style="margin: 10px 0; padding-left: 20px;">
+                    <li>Verify that you have received the payment</li>
+                    <li>Log in to the system</li>
+                    <li>Click the "Confirm Receipt of Reimbursement" button</li>
+                    <li>This will close the request and complete the workflow</li>
+                </ul>
+            </div>
+
+            <p>
+                <a href="{$confirmUrl}" class="button">
+                    ✓ Confirm Receipt Now
+                </a>
+            </p>
+
+            <p style="margin-top: 30px; font-size: 13px; color: #666;">
+                <strong>Reference:</strong> Request {$safeRequestNumber} | ID: {$requestId}
+            </p>
+        </div>
+        <div class="footer">
+            <p>This is an automated notification from the Procurement Request Management System (PIAMS).</p>
+            <p>Please do not reply to this email. Log in to the system to take action.</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        // Send in-app notification
+        NotificationService::createNotification($request['created_by'], NotificationService::TYPE_STATUS_CHANGE, [
+            'title'          => "Reimbursement Paid - Confirmation Required: {$requestNumber}",
+            'body'           => "Your reimbursement has been disbursed. Please confirm receipt.",
+            'request_id'     => $requestId,
+            'request_ref'    => $requestNumber,
+            'action_url'     => "/reimbursement/view.php?request_id=" . urlencode((string)$requestId),
+            'requestor_name' => $request['requestor_name'] ?? null,
+            'priority'       => 'high',
+        ]);
+
+        // Send email
+        sendMail($request['requestor_email'], $subject, $html);
+        
+        return true;
+
+    } catch (Exception $e) {
+        error_log("Notify reimbursement disbursed error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify stakeholders that reimbursement has been completed
+ * Sent after requestor confirms receipt of payment
+ *
+ * @param int $requestId The reimbursement request ID
+ * @param string $requestNumber The request reference number
+ * @return bool True if notifications were sent successfully
+ */
+function notifyReimbursementCompleted(int $requestId, string $requestNumber): bool {
+    global $pdo;
+    
+    try {
+        // Fetch request details
+        $stmt = $pdo->prepare("
+            SELECT 
+                pr.*,
+                u.full_name as requestor_name,
+                u.email as requestor_email,
+                b.branch_name
+            FROM procurement_requests pr
+            LEFT JOIN users u ON pr.created_by = u.user_id
+            LEFT JOIN branches b ON pr.branch_id = b.branch_id
+            WHERE pr.request_id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$request) {
+            return false;
+        }
+        
+        // Notify Finance Officers that request is completed
+        $financeStmt = $pdo->prepare("
+            SELECT u.user_id, u.full_name, u.email
+            FROM users u
+            INNER JOIN user_roles ur ON u.user_id = ur.user_id
+            INNER JOIN roles r ON ur.role_id = r.role_id
+            WHERE r.role_name = 'Finance Officer'
+              AND u.status = 'active'
+        ");
+        $financeStmt->execute();
+        $financeOfficers = $financeStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Safe values for HTML
+        $safeRequestNumber = htmlspecialchars($requestNumber, ENT_QUOTES, 'UTF-8');
+        $safeRequestorName = htmlspecialchars($request['requestor_name'] ?? 'User', ENT_QUOTES, 'UTF-8');
+        $safeBranchName = htmlspecialchars($request['branch_name'] ?? 'N/A', ENT_QUOTES, 'UTF-8');
+        $formattedAmount = 'XCD $' . number_format((float)($request['estimated_value'] ?? 0), 2);
+        
+        $viewUrl = getenv('APP_BASE_URL') . "/reimbursement/view.php?request_id=" . urlencode((string)$requestId);
+        
+        $subject = "Reimbursement Completed: {$safeRequestNumber}";
+        
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #198754 0%, #20c997 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #ffffff; padding: 30px; border: 1px solid #e0e0e0; }
+        .detail-row { margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px; }
+        .label { font-weight: bold; color: #555; }
+        .value { color: #333; }
+        .info-box { background: #d1e7dd; border-left: 4px solid #198754; padding: 15px; margin: 20px 0; border-radius: 4px; }
+        .button { display: inline-block; background: #198754; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
+        .footer { background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0;">✅ Reimbursement Request Completed</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px;">Requestor has confirmed receipt</p>
+        </div>
+        <div class="content">
+            <p><strong>Reimbursement request has been successfully completed.</strong></p>
+            
+            <p>The requestor has confirmed receipt of the reimbursement payment.</p>
+            
+            <div class="detail-row">
+                <span class="label">Request Number:</span>
+                <span class="value">{$safeRequestNumber}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Requestor:</span>
+                <span class="value">{$safeRequestorName}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Branch:</span>
+                <span class="value">{$safeBranchName}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Reimbursement Amount:</span>
+                <span class="value">{$formattedAmount}</span>
+            </div>
+
+            <div class="info-box">
+                <strong>ℹ️ Status:</strong> This reimbursement request is now closed and completed.
+            </div>
+
+            <p>
+                <a href="{$viewUrl}" class="button">
+                    📄 View Request Details
+                </a>
+            </p>
+
+            <p style="margin-top: 30px; font-size: 13px; color: #666;">
+                <strong>Reference:</strong> Request {$safeRequestNumber} | ID: {$requestId}
+            </p>
+        </div>
+        <div class="footer">
+            <p>This is an automated notification from the Procurement Request Management System (PIAMS).</p>
+            <p>Please do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        // Send notifications to Finance Officers
+        $notificationsSent = 0;
+        foreach ($financeOfficers as $officer) {
+            // In-app notification
+            if (NotificationService::createNotification($officer['user_id'], NotificationService::TYPE_STATUS_CHANGE, [
+                'title'          => "Reimbursement Completed: {$requestNumber}",
+                'body'           => "Requestor confirmed receipt - {$safeRequestorName}",
+                'request_id'     => $requestId,
+                'request_ref'    => $requestNumber,
+                'action_url'     => "/reimbursement/view.php?request_id=" . urlencode((string)$requestId),
+                'requestor_name' => $request['requestor_name'] ?? null,
+            ])) {
+                $notificationsSent++;
+            }
+
+            // Send email if available
+            if (!empty($officer['email'])) {
+                sendMail($officer['email'], $subject, $html);
+            }
+        }
+        
+        return $notificationsSent > 0;
+
+    } catch (Exception $e) {
+        error_log("Notify reimbursement completed error: {$e->getMessage()}");
+        return false;
+    }
+}
+
 ?>

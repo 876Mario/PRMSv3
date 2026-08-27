@@ -103,6 +103,17 @@ $pcApprovalsStmt = $pdo->prepare(
 $pcApprovalsStmt->execute([$request_id]);
 $approvals = $pcApprovalsStmt->fetchAll(PDO::FETCH_ASSOC);
 
+/* Fetch status history */
+$histStmt = $pdo->prepare("
+    SELECT pch.*, u.full_name
+    FROM petty_cash_status_history pch
+    LEFT JOIN users u ON pch.changed_by = u.user_id
+    WHERE pch.request_id = ?
+    ORDER BY pch.change_date DESC
+");
+$histStmt->execute([$request_id]);
+$statusHistory = $histStmt->fetchAll(PDO::FETCH_ASSOC);
+
 require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 
 // Initialize SignedRequestService
@@ -408,6 +419,38 @@ if (empty($_SESSION['csrf_token'])) {
         </div>
       </div>
 
+      <!-- Status Timeline -->
+      <div class="card shadow-sm mt-3">
+        <div class="card-header bg-light">
+          <h5 class="mb-0">📊 Status Timeline</h5>
+        </div>
+        <div class="card-body">
+          <?php if (empty($statusHistory)): ?>
+            <p class="text-muted mb-0">No status changes recorded yet.</p>
+          <?php else: ?>
+            <div class="timeline">
+              <?php foreach ($statusHistory as $hist): ?>
+                <div class="timeline-item mb-3">
+                  <div class="d-flex gap-2">
+                    <div class="timeline-marker"></div>
+                    <div class="flex-grow-1">
+                      <small class="text-muted d-block"><?= date('M d, Y \\a\\t g:i A', strtotime($hist['change_date'])) ?></small>
+                      <strong><?= htmlspecialchars($hist['new_status']) ?></strong>
+                      <br>
+                      <small><?= htmlspecialchars($hist['full_name'] ?? 'System') ?></small>
+                      <?php if ($hist['change_notes']): ?>
+                        <br>
+                        <small class="text-muted"><?= htmlspecialchars($hist['change_notes']) ?></small>
+                      <?php endif; ?>
+                    </div>
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+        </div>
+      </div>
+
       <!-- Signed Request Management -->
       <div class="card shadow-sm mb-4">
         <div class="card-header bg-light d-flex justify-content-between align-items-center">
@@ -665,6 +708,22 @@ if (empty($_SESSION['csrf_token'])) {
 </div>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
+
+<style>
+.timeline-item {
+  position: relative;
+  padding-left: 20px;
+}
+.timeline-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #0d6efd;
+  position: absolute;
+  left: 0;
+  top: 2px;
+}
+</style>
 
 <!-- MODALS for Finance Officer Actions -->
 

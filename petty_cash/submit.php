@@ -60,6 +60,9 @@ try {
     /* ================================
        Update Status & Ensure request_type
     ================================ */
+    $previousStatus = $request['status'];
+    $newStatus = 'SUBMITTED';
+    
     $update = $pdo->prepare("
         UPDATE procurement_requests
         SET status = 'SUBMITTED',
@@ -68,6 +71,22 @@ try {
         WHERE request_id = ?
     ");
     $update->execute([$request_id]);
+
+    /* ================================
+       Log Status Change to History
+    ================================ */
+    $historyInsert = $pdo->prepare("
+        INSERT INTO petty_cash_status_history
+        (request_id, old_status, new_status, changed_by, change_notes)
+        VALUES (?, ?, ?, ?, ?)
+    ");
+    $historyInsert->execute([
+        $request_id,
+        $previousStatus,
+        $newStatus,
+        $_SESSION['user_id'],
+        'Petty cash request submitted for approval'
+    ]);
 
     /* ================================
        Audit Log
