@@ -20,6 +20,45 @@ require_once $autoloadPath;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
+function logPrintForSigning(string $message, array $context = []): void
+{
+    $suffix = '';
+    if (!empty($context)) {
+        $encoded = json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $suffix = $encoded !== false ? " | {$encoded}" : '';
+    }
+    error_log("[print_for_signing] {$message}{$suffix}");
+}
+
+function requestTypeToModule(string $requestType): string
+{
+    $normalized = strtolower(trim($requestType));
+    $normalized = preg_replace('/[^a-z0-9]+/', '_', $normalized) ?? '';
+    return trim($normalized, '_');
+}
+
+function loadDocControlSettings(PDO $pdo, string $requestType): array
+{
+    try {
+        $typeStmt = $pdo->prepare("SELECT * FROM doc_ctrl_settings WHERE request_type = ? LIMIT 1");
+        $typeStmt->execute([$requestType]);
+        $settings = $typeStmt->fetch(PDO::FETCH_ASSOC);
+        if (is_array($settings) && !empty($settings)) {
+            return $settings;
+        }
+    } catch (Throwable $e) {
+        // Backward compatibility: older schemas may not have request_type column.
+    }
+
+    try {
+        $legacyStmt = $pdo->query("SELECT * FROM doc_ctrl_settings WHERE id = 1 LIMIT 1");
+        $settings = $legacyStmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($settings) ? $settings : [];
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
 // Get request ID from GET parameter
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     http_response_code(400);
@@ -27,6 +66,57 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 }
 
 $request_id = (int)$_GET['id'];
+logPrintForSigning('Print request received', ['request_id' => $request_id]);
+
+try {
+    $typeStmt = $pdo->prepare("
+        SELECT request_type
+        FROM procurement_requests
+        WHERE request_id = ?
+        LIMIT 1
+    ");
+    $typeStmt->execute([$request_id]);
+    $requestType = strtoupper((string)($typeStmt->fetchColumn() ?: ''));
+} catch (Throwable $e) {
+    logPrintForSigning('Failed to detect request type', [
+        'request_id' => $request_id,
+        'error' => $e->getMessage()
+    ]);
+    http_response_code(500);
+    exit('Unable to generate print document right now. Please try again later.');
+}
+
+if ($requestType === '') {
+    http_response_code(404);
+    exit('Request not found');
+}
+
+logPrintForSigning('Request type detected', ['request_id' => $request_id, 'request_type' => $requestType]);
+
+if ($requestType !== 'REGULAR') {
+    $module = requestTypeToModule($requestType);
+    $targetPath = '/' . $module . '/print_for_signing.php';
+    $targetFile = $_SERVER['DOCUMENT_ROOT'] . $targetPath;
+
+    if ($module !== '' && is_file($targetFile) && realpath($targetFile) !== realpath(__FILE__)) {
+        logPrintForSigning('Routing to request-type print endpoint', [
+            'request_id' => $request_id,
+            'request_type' => $requestType,
+            'target' => $targetPath
+        ]);
+        header('Location: ' . $targetPath . '?' . http_build_query([
+            'request_id' => $request_id,
+            'id' => $request_id
+        ]));
+        exit;
+    }
+
+    logPrintForSigning('No request-type endpoint found; using fallback renderer', [
+        'request_id' => $request_id,
+        'request_type' => $requestType,
+        'expected_target' => $targetPath
+    ]);
+}
 
 // Fetch request details
 try {
@@ -39,19 +129,25 @@ try {
         LEFT JOIN branches b ON pr.branch_id = b.branch_id
         LEFT JOIN users u1 ON pr.created_by = u1.user_id
         LEFT JOIN users u2 ON pr.approved_by = u2.user_id
-        WHERE pr.request_id = ? AND pr.request_type = 'REGULAR'
+        WHERE pr.request_id = ?
     ");
     $stmt->execute([$request_id]);
     $r = $stmt->fetch(PDO::FETCH_ASSOC);
-} catch (Exception $e) {
+} catch (Throwable $e) {
+    logPrintForSigning('Failed to fetch request details', [
+        'request_id' => $request_id,
+        'error' => $e->getMessage()
+    ]);
     http_response_code(500);
-    exit('Error fetching request details: ' . htmlspecialchars($e->getMessage()));
+    exit('Unable to load request details for printing right now.');
 }
 
 if (!$r) {
     http_response_code(404);
     exit('Request not found');
 }
+
+$requestType = strtoupper((string)($r['request_type'] ?? $requestType));
 
 // ── Document Control Settings ────────────────────────────────────────────────
 // If the request already has a stored snapshot, use it (historical integrity).
@@ -62,12 +158,7 @@ $docCtrlDcrNumber     = $r['doc_ctrl_dcr_number']      ?? null;
 
 if (empty($docCtrlFormRevision) && empty($docCtrlEffectiveDate) && empty($docCtrlDcrNumber)) {
     // No snapshot yet – fetch current settings
-    try {
-        $dcStmt = $pdo->query("SELECT * FROM doc_ctrl_settings WHERE id = 1 LIMIT 1");
-        $dc = $dcStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-    } catch (Exception $e) {
-        $dc = [];
-    }
+    $dc = loadDocControlSettings($pdo, $requestType);
 
     $missing = [];
     if (empty($dc['form_revision']))  $missing[] = '<strong>Form Revision</strong>';
@@ -96,7 +187,12 @@ if (empty($docCtrlFormRevision) && empty($docCtrlEffectiveDate) && empty($docCtr
             $dc['dcr_number'],
             $request_id,
         ]);
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
+        logPrintForSigning('Failed to persist doc-control snapshot', [
+            'request_id' => $request_id,
+            'request_type' => $requestType,
+            'error' => $e->getMessage()
+        ]);
         // Non-fatal – continue generating the PDF even if snapshot save fails
     }
 
@@ -120,30 +216,43 @@ try {
     ");
     $itemStmt->execute([$request_id]);
     $items = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {
+} catch (Throwable $e) {
+    logPrintForSigning('Failed to fetch request items', [
+        'request_id' => $request_id,
+        'error' => $e->getMessage()
+    ]);
     http_response_code(500);
-    exit('Error fetching request items: ' . htmlspecialchars($e->getMessage()));
+    exit('Unable to load request items for printing right now.');
 }
 
 // Pre-format values
 try {
-    $reqNum = htmlspecialchars($r['request_number']);
-    $reqDate = date('d M Y', strtotime($r['request_date']));
+    $requestNumber = (string)($r['request_number'] ?? '');
+    if ($requestNumber === '') {
+        $requestNumber = 'REQ-' . str_pad((string)$request_id, 6, '0', STR_PAD_LEFT);
+    }
+    $reqNum = htmlspecialchars($requestNumber);
+    $reqDate = !empty($r['request_date']) ? date('d M Y', strtotime((string)$r['request_date'])) : 'N/A';
     $branchName = htmlspecialchars($r['branch_name'] ?? 'N/A');
     $createdBy = htmlspecialchars($r['created_by_name'] ?? 'N/A');
     $description = htmlspecialchars($r['description'] ?? '');
     $currency = normalizeCurrency($r['currency'] ?? 'JMD');
     $currSymbol = $currency === 'USD' ? 'US$' : '$';
     $estValue = $currency . ' ' . $currSymbol . number_format((float)($r['estimated_value'] ?? 0), 2);
-    $procMethod = htmlspecialchars($r['procurement_method'] ?? 'SINGLE_SOURCE');
+    $procMethod = htmlspecialchars($r['procurement_method'] ?? 'N/A');
     $genDate = date('d M Y');
     $genTime = date('g:i A');
     $dcFormRevisionHtml  = htmlspecialchars($docCtrlFormRevision ?? '');
     $dcEffectiveDateHtml = htmlspecialchars($docCtrlEffectiveDateFmt);
     $dcDcrNumberHtml     = htmlspecialchars($docCtrlDcrNumber ?? '');
-} catch (Exception $e) {
+} catch (Throwable $e) {
+    logPrintForSigning('Failed to prepare template values', [
+        'request_id' => $request_id,
+        'request_type' => $requestType,
+        'error' => $e->getMessage()
+    ]);
     http_response_code(500);
-    exit('Error processing request data: ' . htmlspecialchars($e->getMessage()));
+    exit('Unable to prepare print data right now.');
 }
 
 // Build items list HTML
@@ -414,8 +523,13 @@ try {
     $pdf->setPaper('A4');
     $pdf->render();
     $pdf->stream("procurement_request_{$request_id}_for_signing.pdf", ["Attachment" => false]);
-} catch (Exception $e) {
+} catch (Throwable $e) {
+    logPrintForSigning('PDF generation failed', [
+        'request_id' => $request_id,
+        'request_type' => $requestType,
+        'error' => $e->getMessage()
+    ]);
     http_response_code(500);
-    exit('Error generating PDF: ' . htmlspecialchars($e->getMessage()));
+    exit('Unable to generate PDF right now. Please try again later.');
 }
 exit;
