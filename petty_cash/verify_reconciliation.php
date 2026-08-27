@@ -109,6 +109,7 @@ try {
            ================================================== */
         
         // Update request status to PROCUREMENT_VERIFIED
+        $previousStatus = $request['status'];
         $newStatus = 'PROCUREMENT_VERIFIED';
         $updateRequest = $pdo->prepare("
             UPDATE procurement_requests
@@ -117,6 +118,26 @@ try {
             WHERE request_id = ?
         ");
         $updateRequest->execute([$newStatus, $request_id]);
+
+        /* ================================
+           Log Status Change to History
+        ================================ */
+        $historyInsert = $pdo->prepare("
+            INSERT INTO petty_cash_status_history
+            (request_id, old_status, new_status, changed_by, change_notes)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        $historyNotes = 'Reconciliation verified by Finance Officer';
+        if ($verification_notes) {
+            $historyNotes .= ': ' . $verification_notes;
+        }
+        $historyInsert->execute([
+            $request_id,
+            $previousStatus,
+            $newStatus,
+            $_SESSION['user_id'],
+            $historyNotes
+        ]);
 
         // Update reconciliation with verification details
         $updateReconcile = $pdo->prepare("
@@ -198,6 +219,7 @@ try {
         }
 
         // Update request status to RECONCILIATION_DISCREPANCY
+        $previousStatus = $currentStatus;
         $newStatus = 'RECONCILIATION_DISCREPANCY';
         $updateRequest = $pdo->prepare("
             UPDATE procurement_requests
@@ -206,6 +228,23 @@ try {
             WHERE request_id = ?
         ");
         $updateRequest->execute([$newStatus, $request_id]);
+
+        /* ================================
+           Log Status Change to History
+        ================================ */
+        $historyInsert = $pdo->prepare("
+            INSERT INTO petty_cash_status_history
+            (request_id, old_status, new_status, changed_by, change_notes)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        $historyNotes = 'Discrepancy reported by Finance Officer: ' . $verification_notes;
+        $historyInsert->execute([
+            $request_id,
+            $previousStatus,
+            $newStatus,
+            $_SESSION['user_id'],
+            $historyNotes
+        ]);
 
         // Update reconciliation with verification details
         $updateReconcile = $pdo->prepare("
