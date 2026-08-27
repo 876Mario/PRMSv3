@@ -678,6 +678,30 @@ if (empty($_SESSION['csrf_token'])) {
               <i class="bi bi-check-circle-fill"></i> Confirm Receipt of Reimbursement
             </button>
           <?php endif; ?>
+
+          <?php
+          // Revert Stage — available to authorized roles when backward transitions exist
+          require_once $_SERVER['DOCUMENT_ROOT'].'/services/WorkflowService.php';
+          $workflowService = new WorkflowService($pdo);
+          $current = $request['status'];
+          $role = $_SESSION['role_name'] ?? '';
+          
+          $canRevertStage = $current !== 'PAUSED' 
+              && $workflowService->canUserRevert($role, 'REIMBURSEMENT')
+              && !in_array($current, ['DRAFT', 'COMPLETED', 'DECLINED'], true);
+          
+          $revertTargets = [];
+          if ($canRevertStage) {
+              $revertTargets = $workflowService->getValidRevertTargets('REIMBURSEMENT', $current);
+              $canRevertStage = !empty($revertTargets);
+          }
+          ?>
+          <?php if ($canRevertStage): ?>
+              <button type="button" class="btn btn-outline-secondary btn-sm w-100 mb-2"
+                      data-bs-toggle="modal" data-bs-target="#revertStageModal">
+                  <i class="bi bi-skip-backward me-1"></i>Revert Stage
+              </button>
+          <?php endif; ?>
           
           <a href="/reimbursement/list.php" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-arrow-left"></i> Back to List
@@ -754,6 +778,55 @@ if (empty($_SESSION['csrf_token'])) {
     </div>
   </div>
 </div>
+
+<!-- Revert Workflow Stage Modal -->
+<?php if ($canRevertStage ?? false): ?>
+<div class="modal fade" id="revertStageModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="POST" action="/reimbursement/revert_status.php" class="modal-content">
+            <div class="modal-header bg-secondary text-white">
+                <h5 class="modal-title"><i class="bi bi-skip-backward me-2"></i>Revert Workflow Stage</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" name="id" value="<?= $request_id ?>">
+                <div class="alert alert-warning small mb-3">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Reverting a workflow stage moves the request backwards. The workflow will need to be
+                    re-completed from the target stage.
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Revert to Stage</label>
+                    <select name="target_status" class="form-select" required>
+                        <option value="">— Select target stage —</option>
+                        <?php foreach ($revertTargets ?? [] as $target): ?>
+                        <option value="<?= htmlspecialchars($target['status']) ?>">
+                            <?= htmlspecialchars($target['label']) ?>
+                            <?php if (!empty($target['stage_owners'])): ?>
+                                (<?= htmlspecialchars(implode(', ', $target['stage_owners'])) ?>)
+                            <?php endif; ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small class="text-muted">The request will be returned to the selected stage for correction.</small>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label fw-bold">Reason <span class="text-danger">*</span></label>
+                    <textarea name="reason" class="form-control" rows="4" required
+                              placeholder="Explain why this request is being moved back to a prior stage..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-secondary"
+                        onclick="return confirm('Revert this request to the selected stage?')">
+                    <i class="bi bi-skip-backward me-1"></i>Revert Stage
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
 
 <style>
 .timeline-item {
