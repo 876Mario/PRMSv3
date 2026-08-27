@@ -36,8 +36,11 @@ if (!$ap || !$ap['supporting_document_path']) {
 
 $filePath = $_SERVER['DOCUMENT_ROOT'] . $ap['supporting_document_path'];
 
-if (!file_exists($filePath) || !is_file($filePath)) {
-    pop('File not found on server.', "/po/view.php?po_id={$ap['po_id']}", POP_DEFAULT_DELAY_MS, 'error');
+/* Enforce that the file is within the expected upload directory */
+$uploadBase = realpath($_SERVER['DOCUMENT_ROOT'] . '/uploads/advance_payments');
+$realPath   = realpath($filePath);
+if ($realPath === false || $uploadBase === false || strpos($realPath, $uploadBase . DIRECTORY_SEPARATOR) !== 0) {
+    pop('File not found or access denied.', "/po/view.php?po_id={$ap['po_id']}", POP_DEFAULT_DELAY_MS, 'error');
     exit;
 }
 
@@ -49,7 +52,7 @@ logAudit($pdo, 'po_advance_payments', $id, 'VIEW',
     "Supporting document accessed for advance payment #{$id} (PO #{$ap['po_number']})");
 
 header('Content-Type: ' . $mimeType);
-header('Content-Length: ' . filesize($filePath));
+header('Content-Length: ' . filesize($realPath));
 
 if ($action === 'view' && in_array($mimeType, ['application/pdf', 'image/jpeg', 'image/png'], true)) {
     header('Content-Disposition: inline; filename="' . rawurlencode($origName) . '"');
@@ -60,5 +63,5 @@ if ($action === 'view' && in_array($mimeType, ['application/pdf', 'image/jpeg', 
 header('Cache-Control: private, no-cache, no-store, must-revalidate');
 header('X-Content-Type-Options: nosniff');
 
-readfile($filePath);
+readfile($realPath);
 exit;

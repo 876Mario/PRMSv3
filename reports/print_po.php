@@ -12,6 +12,7 @@ $po_id = require_print_id('po_id');
 
 $stmt = $pdo->prepare("
     SELECT po.*, c.commitment_number,
+        pr.currency,
         CASE
             WHEN (
                 SELECT COUNT(*) FROM request_approvals ra
@@ -24,6 +25,7 @@ $stmt = $pdo->prepare("
         END AS fully_approved
     FROM purchase_orders po
     JOIN commitments c ON po.commitment_id = c.commitment_id
+    JOIN procurement_requests pr ON c.request_id = pr.request_id
     WHERE po.po_id = ?
 ");
 $stmt->execute([$po_id]);
@@ -56,6 +58,7 @@ $totalAdvancePrint = array_sum(array_column(
 ));
 
 /* Build advance payments table HTML for PDF injection */
+$poCurrency = (!empty($r['currency'])) ? strtoupper(trim($r['currency'])) : 'JMD';
 $advancePaymentsHtml = '';
 if (!empty($advancePaymentsPrint)) {
     $apRows = '';
@@ -72,7 +75,7 @@ if (!empty($advancePaymentsPrint)) {
             'CANCELLED'        => '#6c757d',
             default            => '#e0a800',
         };
-        $amt     = '$' . number_format((float)$ap['payment_amount'], 2);
+        $amt     = $poCurrency . ' ' . number_format((float)$ap['payment_amount'], 2);
         $date    = date('d M Y', strtotime($ap['payment_date']));
         $ref     = htmlspecialchars($ap['payment_reference']);
         $method  = htmlspecialchars($ap['payment_method'] ?? '—');
@@ -93,7 +96,7 @@ if (!empty($advancePaymentsPrint)) {
 </tr>
 ROW;
     }
-    $fmtAdvTotal = '$' . number_format((float)$totalAdvancePrint, 2);
+    $fmtAdvTotal = $poCurrency . ' ' . number_format((float)$totalAdvancePrint, 2);
     $advancePaymentsHtml = <<<ADV
 <div style="padding:0 24px 16px;">
   <h4 style="font-size:13px;color:#1a1a2e;margin:0 0 10px;font-weight:700;">Advance / Partial Payment History</h4>
@@ -122,6 +125,7 @@ ROW;
 </div>
 ADV;
 }
+$fmtTotal   = $poCurrency . ' ' . number_format((float)$r['po_total'], 2);
 $poNum      = htmlspecialchars($r['po_number']);
 $commitNum  = htmlspecialchars($r['commitment_number']);
 $poDate     = date('d M Y', strtotime($r['po_date']));

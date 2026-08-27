@@ -4405,9 +4405,12 @@ function notifyAdvancePaymentSubmitted(int $advancePaymentId): bool {
                 ap.payment_date,
                 po.po_number,
                 po.po_id,
+                pr.currency,
                 uc.full_name AS submitted_by_name
             FROM po_advance_payments ap
             JOIN purchase_orders po ON ap.po_id = po.po_id
+            JOIN commitments     c  ON po.commitment_id = c.commitment_id
+            JOIN procurement_requests pr ON c.request_id = pr.request_id
             LEFT JOIN users uc ON ap.created_by = uc.user_id
             WHERE ap.advance_payment_id = ?
         ");
@@ -4438,11 +4441,18 @@ function notifyAdvancePaymentSubmitted(int $advancePaymentId): bool {
             default           => htmlspecialchars($ap['payment_type']),
         };
         $formattedAmount = number_format((float)$ap['payment_amount'], 2);
+        $currency        = (!empty($ap['currency'])) ? strtoupper(trim($ap['currency'])) : 'JMD';
         $subject         = "Advance Payment Pending Approval — {$ap['po_number']}";
         $reviewUrl       = "{$appUrl}/po/approve_advance_payment.php?id={$advancePaymentId}";
 
+        $ePoNumber       = htmlspecialchars($ap['po_number']);
+        $ePaymentRef     = htmlspecialchars($ap['payment_reference']);
+        $ePaymentDate    = htmlspecialchars($ap['payment_date']);
+        $eSubmittedBy    = htmlspecialchars($ap['submitted_by_name'] ?? '');
+
         $notificationsSent = 0;
         foreach ($approvers as $approver) {
+            $eApproverName = htmlspecialchars($approver['full_name']);
             $html = <<<HTML
 <!DOCTYPE html>
 <html><head><meta charset="UTF-8">
@@ -4464,15 +4474,15 @@ function notifyAdvancePaymentSubmitted(int $advancePaymentId): bool {
         <p style="margin:5px 0 0 0;">Government Chemist — PIAMS</p>
     </div>
     <div class="content">
-        <p>Dear {$approver['full_name']},</p>
-        <div class="status-box">⏳ {$typeLabel} of JMD \${$formattedAmount} Awaiting Your Decision</div>
+        <p>Dear {$eApproverName},</p>
+        <div class="status-box">⏳ {$typeLabel} of {$currency} {$formattedAmount} Awaiting Your Decision</div>
         <div class="details">
-            <div class="detail-row"><span class="label">Purchase Order:</span> {$ap['po_number']}</div>
+            <div class="detail-row"><span class="label">Purchase Order:</span> {$ePoNumber}</div>
             <div class="detail-row"><span class="label">Payment Type:</span> {$typeLabel}</div>
-            <div class="detail-row"><span class="label">Amount:</span> JMD \${$formattedAmount}</div>
-            <div class="detail-row"><span class="label">Reference:</span> {$ap['payment_reference']}</div>
-            <div class="detail-row"><span class="label">Payment Date:</span> {$ap['payment_date']}</div>
-            <div class="detail-row"><span class="label">Submitted By:</span> {$ap['submitted_by_name']}</div>
+            <div class="detail-row"><span class="label">Amount:</span> {$currency} {$formattedAmount}</div>
+            <div class="detail-row"><span class="label">Reference:</span> {$ePaymentRef}</div>
+            <div class="detail-row"><span class="label">Payment Date:</span> {$ePaymentDate}</div>
+            <div class="detail-row"><span class="label">Submitted By:</span> {$eSubmittedBy}</div>
         </div>
         <p><a href="{$reviewUrl}" class="button">Review &amp; Decide</a></p>
         <p style="margin-top:20px;font-size:12px;color:#777;">This is an automated notification from PIAMS.</p>
@@ -4486,7 +4496,7 @@ HTML;
                 createUserNotification(
                     $approver['user_id'],
                     'ADVANCE_PAYMENT_PENDING',
-                    "Advance payment pending approval for PO {$ap['po_number']} — JMD \${$formattedAmount}",
+                    "Advance payment pending approval for PO {$ap['po_number']} — {$currency} {$formattedAmount}",
                     $reviewUrl
                 );
             }
@@ -4525,11 +4535,14 @@ function notifyAdvancePaymentDecided(int $advancePaymentId, string $decision): b
                 ap.created_by,
                 po.po_number,
                 po.po_id,
+                pr.currency,
                 uc.full_name AS submitted_by_name,
                 uc.email     AS submitted_by_email,
                 ua.full_name AS decided_by_name
             FROM po_advance_payments ap
             JOIN purchase_orders po ON ap.po_id = po.po_id
+            JOIN commitments     c  ON po.commitment_id = c.commitment_id
+            JOIN procurement_requests pr ON c.request_id = pr.request_id
             LEFT JOIN users uc ON ap.created_by  = uc.user_id
             LEFT JOIN users ua ON ap.approved_by = ua.user_id
             WHERE ap.advance_payment_id = ?
@@ -4543,9 +4556,10 @@ function notifyAdvancePaymentDecided(int $advancePaymentId, string $decision): b
         $typeLabel       = match ($ap['payment_type']) {
             'ADVANCE_PAYMENT' => 'Advance Payment',
             'PARTIAL_PAYMENT' => 'Partial Payment',
-            default           => $ap['payment_type'],
+            default           => htmlspecialchars($ap['payment_type']),
         };
         $formattedAmount = number_format((float)$ap['payment_amount'], 2);
+        $currency        = (!empty($ap['currency'])) ? strtoupper(trim($ap['currency'])) : 'JMD';
         $statusColor     = $isApproved ? '#198754' : '#dc3545';
         $statusLabel     = $isApproved ? 'APPROVED ✔' : 'REJECTED ✘';
         $subject         = "Advance Payment {$decision} — {$ap['po_number']}";
@@ -4560,6 +4574,11 @@ function notifyAdvancePaymentDecided(int $advancePaymentId, string $decision): b
             $comments     = htmlspecialchars($ap['approval_comments']);
             $extraSection .= "<div class=\"detail-row\"><span class=\"label\">Comments:</span> {$comments}</div>";
         }
+
+        $eSubmittedByName = htmlspecialchars($ap['submitted_by_name'] ?? '');
+        $ePoNumber        = htmlspecialchars($ap['po_number']);
+        $ePaymentRef      = htmlspecialchars($ap['payment_reference']);
+        $eDecidedByName   = htmlspecialchars($ap['decided_by_name'] ?? '');
 
         $html = <<<HTML
 <!DOCTYPE html>
@@ -4582,14 +4601,14 @@ function notifyAdvancePaymentDecided(int $advancePaymentId, string $decision): b
         <p style="margin:5px 0 0 0;">Government Chemist — PIAMS</p>
     </div>
     <div class="content">
-        <p>Dear {$ap['submitted_by_name']},</p>
+        <p>Dear {$eSubmittedByName},</p>
         <div class="status-box">{$statusLabel}</div>
         <div class="details">
-            <div class="detail-row"><span class="label">Purchase Order:</span> {$ap['po_number']}</div>
+            <div class="detail-row"><span class="label">Purchase Order:</span> {$ePoNumber}</div>
             <div class="detail-row"><span class="label">Payment Type:</span> {$typeLabel}</div>
-            <div class="detail-row"><span class="label">Amount:</span> JMD \${$formattedAmount}</div>
-            <div class="detail-row"><span class="label">Reference:</span> {$ap['payment_reference']}</div>
-            <div class="detail-row"><span class="label">Decided By:</span> {$ap['decided_by_name']}</div>
+            <div class="detail-row"><span class="label">Amount:</span> {$currency} {$formattedAmount}</div>
+            <div class="detail-row"><span class="label">Reference:</span> {$ePaymentRef}</div>
+            <div class="detail-row"><span class="label">Decided By:</span> {$eDecidedByName}</div>
             {$extraSection}
         </div>
         <p><a href="{$poUrl}" class="button">View Purchase Order</a></p>
@@ -4602,8 +4621,8 @@ HTML;
         /* In-app notification for the submitter */
         if (function_exists('createUserNotification') && !empty($ap['created_by'])) {
             $msg = $isApproved
-                ? "Your advance payment for PO {$ap['po_number']} (JMD \${$formattedAmount}) has been approved."
-                : "Your advance payment for PO {$ap['po_number']} (JMD \${$formattedAmount}) was rejected.";
+                ? "Your advance payment for PO {$ap['po_number']} ({$currency} {$formattedAmount}) has been approved."
+                : "Your advance payment for PO {$ap['po_number']} ({$currency} {$formattedAmount}) was rejected.";
             createUserNotification(
                 $ap['created_by'] ?? 0,
                 $isApproved ? 'ADVANCE_PAYMENT_APPROVED' : 'ADVANCE_PAYMENT_REJECTED',

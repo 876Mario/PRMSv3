@@ -863,7 +863,7 @@ $statusIcon = match($po['status']) {
                                     <i class="bi bi-check2"></i> Decide
                                 </a>
                                 <?php else: ?>
-                                <a href="/po/approve_advance_payment.php?id=<?= (int)$ap['advance_payment_id'] ?>"
+                                <a href="/po/view.php?po_id=<?= (int)$po_id ?>#advance-payments"
                                    class="btn btn-sm btn-outline-primary">
                                     <i class="bi bi-eye"></i> View
                                 </a>

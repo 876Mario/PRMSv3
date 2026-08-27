@@ -73,10 +73,14 @@ INSERT IGNORE INTO `permissions` (`name`, `description`, `module`, `operation`) 
 INSERT IGNORE INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT r.role_id, p.permission_id
 FROM (
-    SELECT 2 AS role_id UNION ALL
-    SELECT 3            UNION ALL
-    SELECT 5            UNION ALL
-    SELECT 6
+    SELECT 2  AS role_id UNION ALL   -- Procurement Officer
+    SELECT 3             UNION ALL   -- Finance Officer
+    SELECT 4             UNION ALL   -- HOD
+    SELECT 5             UNION ALL   -- Admin
+    SELECT 6             UNION ALL   -- SuperAdmin
+    SELECT 9             UNION ALL   -- Deputy Government Chemist
+    SELECT 11            UNION ALL   -- Director Procurement
+    SELECT 16                        -- Accounts/Finance Director
 ) r
 CROSS JOIN (
     SELECT id AS permission_id FROM `permissions` WHERE name = 'record_advance_payment'
