@@ -76,7 +76,7 @@ if (!empty($advancePaymentsPrint)) {
         $date    = date('d M Y', strtotime($ap['payment_date']));
         $ref     = htmlspecialchars($ap['payment_reference']);
         $method  = htmlspecialchars($ap['payment_method'] ?? '—');
-        $supplie = htmlspecialchars($ap['supplier_name'] ?? '—');
+        $supplier = htmlspecialchars($ap['supplier_name'] ?? '—');
         $approvedBy = htmlspecialchars($ap['approved_by_name'] ?? '—');
         $approvedAt = $ap['approved_at'] ? date('d M Y', strtotime($ap['approved_at'])) : '—';
         $status  = htmlspecialchars($ap['status']);
@@ -87,7 +87,7 @@ if (!empty($advancePaymentsPrint)) {
   <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$ref}</td>
   <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;text-align:right;font-weight:600;">{$amt}</td>
   <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$method}</td>
-  <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$supplie}</td>
+  <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$supplier}</td>
   <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;font-weight:bold;color:{$statusColor};">{$status}</td>
   <td style="padding:6px 8px;border-bottom:1px solid #dee2e6;font-size:11px;">{$approvedBy}</td>
 </tr>

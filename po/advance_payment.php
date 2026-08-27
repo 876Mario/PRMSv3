@@ -85,6 +85,9 @@ $totalAdvanceApproved = (float)$advStmt->fetchColumn();
 
 $remainingBalance = $approvedPoTotal - $totalInvoiced - $totalAdvanceApproved;
 $currency = 'JMD';
+if (!empty($po['currency'])) {
+    $currency = strtoupper(trim($po['currency']));
+}
 
 /* ================================
    Handle POST

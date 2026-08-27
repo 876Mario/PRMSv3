@@ -77,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 approval_comments = ?,
                 rejection_reason  = ?
             WHERE advance_payment_id = ?
+              AND status = 'PENDING_APPROVAL'
         ");
         $upd->execute([
             $decision,
@@ -85,6 +86,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ($decision === 'REJECTED') ? $rejectionReason : null,
             $apId,
         ]);
+
+        if ($upd->rowCount() === 0) {
+            pop('This advance payment has already been decided by another user.', "/po/view.php?po_id={$ap['po_id']}", POP_DEFAULT_DELAY_MS, 'warning');
+            exit;
+        }
 
         $label = $decision === 'APPROVED' ? 'Approved' : 'Rejected';
         logAudit($pdo, 'po_advance_payments', $apId, $decision,
