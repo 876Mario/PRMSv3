@@ -70,26 +70,34 @@ if ($requestType !== 'REGULAR') {
     $targetPath = '/' . $module . '/print_for_signing.php';
     $targetFile = $_SERVER['DOCUMENT_ROOT'] . $targetPath;
 
-    if ($module !== '' && is_file($targetFile) && realpath($targetFile) !== realpath(__FILE__)) {
-        logPrintForSigning('Routing to request-type print endpoint', [
+    if ($module !== '' && is_file($targetFile)) {
+        if (realpath($targetFile) !== realpath(__FILE__)) {
+            logPrintForSigning('Routing to request-type print endpoint', [
+                'request_id' => $request_id,
+                'request_type' => $requestType,
+                'target' => $targetPath
+            ]);
+            header('Location: ' . $targetPath . '?' . http_build_query([
+                'request_id' => $request_id,
+                'id' => $request_id
+            ]));
+            exit;
+        }
+
+        logPrintForSigning('Current endpoint handles request type directly', [
             'request_id' => $request_id,
             'request_type' => $requestType,
             'target' => $targetPath
         ]);
-        header('Location: ' . $targetPath . '?' . http_build_query([
+    } else {
+        logPrintForSigning('No request-type endpoint found; failing closed', [
             'request_id' => $request_id,
-            'id' => $request_id
-        ]));
-        exit;
+            'request_type' => $requestType,
+            'expected_target' => $targetPath
+        ]);
+        http_response_code(404);
+        exit('Print endpoint is not configured for this request type.');
     }
-
-    logPrintForSigning('No request-type endpoint found; failing closed', [
-        'request_id' => $request_id,
-        'request_type' => $requestType,
-        'expected_target' => $targetPath
-    ]);
-    http_response_code(404);
-    exit('Print endpoint is not configured for this request type.');
 }
 
 // Fetch request details

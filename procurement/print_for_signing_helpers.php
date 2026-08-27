@@ -2,7 +2,12 @@
 
 function requestTypeToModule(string $requestType): string
 {
-    $normalized = strtolower(trim($requestType));
+    $normalizedType = strtoupper(trim($requestType));
+    if ($normalizedType === 'SERVICE_CONTRACT') {
+        return 'procurement';
+    }
+
+    $normalized = strtolower($normalizedType);
     $normalized = preg_replace('/[^a-z0-9]+/', '_', $normalized) ?? '';
     return trim($normalized, '_');
 }
