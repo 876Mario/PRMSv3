@@ -2,7 +2,11 @@
 ## Date: 2026-08-27
 
 ## Executive Summary
-Successfully debugged and resolved three critical issues in the PIAMS application related to petty cash workflow timeline, request timeline sorting, and invoice verification functionality.
+Successfully debugged and resolved four critical issues in the PIAMS application:
+1. **Issue #1**: Petty cash workflow timeline blank after Finance approval - Implemented complete status history tracking
+2. **Issue #2**: Request timeline sorting - Verified working correctly (DESC order)
+3. **Issue #3**: Invoice verification button - Verified working correctly (fully implemented)
+4. **Issue #4**: Missing reimbursement completion step - Implemented APPROVED → REIMBURSED → COMPLETED workflow
 
 ---
 
@@ -300,21 +304,242 @@ Invoice verification functionality is fully implemented and should be working. I
 
 ---
 
+## Issue 4: Reimbursement Completion Step Missing After Finance Invoice Approval
+
+### Problem Statement
+After Finance successfully verifies/approves the uploaded invoice for a reimbursement request, there is no action button available to confirm that the reimbursement was received and close the request. The workflow stops at the APPROVED status.
+
+### Root Cause Analysis
+1. **Incomplete Workflow Implementation**:
+   - The workflow pipeline defines statuses: APPROVED → REIMBURSED → COMPLETED
+   - However, no code existed to handle these transitions
+   - After Finance approved invoice (INVOICE_VERIFIED → APPROVED), workflow stopped
+
+2. **Missing Action Handlers**:
+   - No file to mark payment as disbursed (APPROVED → REIMBURSED)
+   - No file for requestor to confirm receipt (REIMBURSED → COMPLETED)
+
+3. **Missing UI Components**:
+   - `reimbursement/view.php` had no buttons for APPROVED or REIMBURSED statuses
+   - No modal dialogs for payment confirmation actions
+
+### Solution Implemented
+
+#### 1. Finance Payment Disbursement Handler
+**File**: `reimbursement/mark_reimbursed.php` (NEW)
+
+Finance Officer marks that payment has been disbursed:
+- **Permission Required**: `approve_reimbursement_request` (Finance Officer only)
+- **Status Transition**: APPROVED → REIMBURSED
+- **Inputs**:
+  - Payment reference (optional) - e.g., check number, bank transfer reference
+  - Payment notes (optional)
+- **Actions**:
+  - Updates request status to REIMBURSED
+  - Logs transition to `reimbursement_status_history`
+  - Notifies requestor via `notifyReimbursementDisbursed()`
+- **Notification**: Requestor receives alert to confirm receipt
+
+#### 2. Requestor Receipt Confirmation Handler
+**File**: `reimbursement/confirm_receipt.php` (NEW)
+
+Requestor confirms they received the payment:
+- **Authorization**: Only the original requestor can confirm (user_id match)
+- **Status Transition**: REIMBURSED → COMPLETED
+- **Inputs**:
+  - Confirmation notes (optional)
+- **Actions**:
+  - Updates request status to COMPLETED
+  - Logs transition to `reimbursement_status_history`
+  - Notifies Finance Officers via `notifyReimbursementCompleted()`
+- **Result**: Request is closed and completed
+
+#### 3. View Page Updates
+**File**: `reimbursement/view.php` (MODIFIED)
+
+Added two new action button sections:
+
+**Section A: Finance - Mark as Reimbursed** (lines 654-666)
+```php
+$canMarkReimbursed = ($request['status'] === 'APPROVED') && $isFinanceOfficer;
+```
+- Shows when status = APPROVED and user is Finance Officer
+- Button: "Mark as Reimbursed"
+- Opens modal for payment reference and notes
+- Alert: "Action Required: Mark this reimbursement as paid/disbursed"
+
+**Section B: Requestor - Confirm Receipt** (lines 668-680)
+```php
+$canConfirmReceipt = ($request['status'] === 'REIMBURSED') && ($_SESSION['user_id'] == $request['created_by']);
+```
+- Shows when status = REIMBURSED and user is the requestor
+- Button: "Confirm Receipt of Reimbursement"
+- Opens modal for optional confirmation notes
+- Alert: "Action Required: Please confirm you have received the reimbursement payment"
+
+**Modal Dialogs Added** (lines 664-734):
+- `#markReimbursedModal` - For Finance to mark payment as sent
+- `#confirmReceiptModal` - For requestor to confirm payment received
+
+#### 4. Notification Functions
+**File**: `config/notifications.php` (MODIFIED)
+
+**Function A: `notifyReimbursementDisbursed()`** (lines 4094-4210)
+- Triggered when Finance marks payment as reimbursed
+- Notifies: Requestor only
+- Email & in-app notification
+- Subject: "Reimbursement Payment Disbursed - Confirmation Required"
+- Contains: Request details, payment info, action button to confirm receipt
+- Priority: High
+
+**Function B: `notifyReimbursementCompleted()`** (lines 4212-4362)
+- Triggered when requestor confirms receipt
+- Notifies: All active Finance Officers
+- Email & in-app notification
+- Subject: "Reimbursement Completed"
+- Contains: Request details, confirmation that requestor received payment
+- Info: Request is now closed and completed
+
+### Workflow Changes
+
+#### Before (Incomplete):
+```
+SUBMITTED → FUNDS_VERIFIED → INVOICE_SUBMITTED → INVOICE_VERIFIED → APPROVED ❌ (stopped here)
+```
+
+#### After (Complete):
+```
+SUBMITTED → FUNDS_VERIFIED → INVOICE_SUBMITTED → INVOICE_VERIFIED → APPROVED → REIMBURSED → COMPLETED ✅
+```
+
+### Testing Instructions
+
+#### Test Scenario 1: Mark as Reimbursed (Finance)
+1. Login as Finance Officer
+2. Navigate to a reimbursement with status = APPROVED
+3. Verify "Mark as Reimbursed" button appears in Actions section
+4. Click button, verify modal opens
+5. Enter payment reference: "CHECK-2024-001"
+6. Enter notes: "Paid via check on 2024-08-27"
+7. Click "Mark as Reimbursed"
+8. Verify:
+   - Status changes to REIMBURSED
+   - Redirect to view page with success message
+   - Entry added to status history
+   - Requestor receives notification
+
+**Database Check**:
+```sql
+SELECT status FROM procurement_requests WHERE request_id = X;
+-- Should be 'REIMBURSED'
+
+SELECT * FROM reimbursement_status_history 
+WHERE request_id = X 
+ORDER BY change_date DESC LIMIT 1;
+-- Should show: old_status='APPROVED', new_status='REIMBURSED'
+-- change_notes should include payment reference
+```
+
+#### Test Scenario 2: Confirm Receipt (Requestor)
+1. Login as the original requestor
+2. Navigate to reimbursement with status = REIMBURSED
+3. Verify "Confirm Receipt of Reimbursement" button appears
+4. Click button, verify modal opens
+5. Add optional notes: "Payment received successfully"
+6. Click "Confirm Receipt"
+7. Verify:
+   - Status changes to COMPLETED
+   - Redirect to view page with success message
+   - Entry added to status history
+   - Finance Officers receive notification
+
+**Database Check**:
+```sql
+SELECT status FROM procurement_requests WHERE request_id = X;
+-- Should be 'COMPLETED'
+
+SELECT * FROM reimbursement_status_history 
+WHERE request_id = X 
+ORDER BY change_date DESC LIMIT 1;
+-- Should show: old_status='REIMBURSED', new_status='COMPLETED'
+```
+
+#### Test Scenario 3: Authorization Checks
+1. **Finance button not shown to non-Finance users**:
+   - Login as HOD, Requestor, or PMO
+   - Navigate to APPROVED reimbursement
+   - Verify "Mark as Reimbursed" button does NOT appear
+
+2. **Requestor button not shown to other users**:
+   - Login as different user (not the requestor)
+   - Navigate to REIMBURSED reimbursement
+   - Verify "Confirm Receipt" button does NOT appear
+
+3. **Direct access blocked**:
+   ```bash
+   # Try to POST to mark_reimbursed.php as non-Finance
+   # Should redirect with error: "Only Finance Officers can mark reimbursements as paid"
+   
+   # Try to POST to confirm_receipt.php as different user
+   # Should redirect with error: "Only the requestor can confirm receipt"
+   ```
+
+### Error Handling
+
+Both handlers include:
+- **Status validation**: Prevents actions on wrong statuses
+- **Permission checks**: Ensures only authorized users can execute actions
+- **Transaction safety**: Uses PDO transactions with rollback on error
+- **Error logging**: Logs exceptions to error log
+- **User feedback**: Shows appropriate success/error modals
+
+### Timeline Integration
+
+All status changes are logged to `reimbursement_status_history`:
+- Records old status, new status, changed_by, change_date
+- Includes change_notes with action context
+- Timeline display in view.php automatically shows these entries
+- No additional timeline code changes needed
+
+### Expected User Experience
+
+**Finance Officer**:
+1. Approves invoice (INVOICE_VERIFIED → APPROVED)
+2. Processes actual payment (outside system)
+3. Returns to system, clicks "Mark as Reimbursed"
+4. Enters payment details
+5. Submits
+6. Requestor is notified
+
+**Requestor**:
+1. Receives notification: "Reimbursement Payment Disbursed"
+2. Verifies they received the payment (bank/check)
+3. Logs into system
+4. Clicks "Confirm Receipt of Reimbursement"
+5. Adds confirmation notes if desired
+6. Submits
+7. Request is completed, Finance is notified
+
+---
+
 ## Files Modified
 
 ### Created
 1. `migrations/2026_08_27_petty_cash_status_history.sql` - Database migration
+2. `reimbursement/mark_reimbursed.php` - Finance marks payment disbursed
+3. `reimbursement/confirm_receipt.php` - Requestor confirms receipt
 
 ### Modified
-2. `petty_cash/view.php` - Added status history query and timeline display
-3. `petty_cash/approve.php` - Added status history logging
-4. `petty_cash/disburse.php` - Added status history logging
-5. `petty_cash/submit.php` - Added status history logging
-6. `petty_cash/verify_reconciliation.php` - Added status history logging (both approve and reject paths)
+4. `petty_cash/view.php` - Added status history query and timeline display
+5. `petty_cash/approve.php` - Added status history logging
+6. `petty_cash/disburse.php` - Added status history logging
+7. `petty_cash/submit.php` - Added status history logging
+8. `petty_cash/verify_reconciliation.php` - Added status history logging (both approve and reject paths)
+9. `reimbursement/view.php` - Added Mark as Reimbursed and Confirm Receipt buttons with modals
+10. `config/notifications.php` - Added notifyReimbursementDisbursed() and notifyReimbursementCompleted()
 
 ### Analyzed (No Changes Needed)
-7. `reimbursement/view.php` - Timeline sorting confirmed working
-8. `reimbursement/verify_invoice.php` - Verification functionality confirmed working
+11. `reimbursement/verify_invoice.php` - Verification functionality confirmed working
 
 ---
 
