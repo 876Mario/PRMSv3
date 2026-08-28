@@ -29,7 +29,7 @@ class PrintForSigningRoutingAndDocControlTest extends PHPUnit\Framework\TestCase
         $this->assertSame('DCR-2', $settings['dcr_number'] ?? null);
     }
 
-    public function testLoadDocControlSettingsReturnsEmptyWhenTypeColumnExistsButNoMatch(): void
+    public function testLoadDocControlSettingsFallsBackToLegacyRowWhenTypeColumnExistsButNoMatch(): void
     {
         $pdo = new PDO('sqlite::memory:');
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -39,7 +39,8 @@ class PrintForSigningRoutingAndDocControlTest extends PHPUnit\Framework\TestCase
 
         $settings = loadDocControlSettings($pdo, 'PETTY_CASH');
 
-        $this->assertSame([], $settings);
+        $this->assertSame('v1.0', $settings['form_revision'] ?? null);
+        $this->assertSame('DCR-1', $settings['dcr_number'] ?? null);
     }
 
     public function testLoadDocControlSettingsFallsBackToLegacyRowWhenSchemaLacksTypeColumn(): void

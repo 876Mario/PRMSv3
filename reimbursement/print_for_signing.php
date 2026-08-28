@@ -19,7 +19,6 @@ function loadReimbursementDocControlSettings(PDO $pdo): array
         if (is_array($settings) && !empty($settings)) {
             return $settings;
         }
-        return [];
     } catch (Throwable $e) {
         // Backward compatibility fallback for legacy schema without request_type.
     }

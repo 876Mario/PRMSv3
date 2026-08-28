@@ -21,7 +21,6 @@ function loadDocControlSettings(PDO $pdo, string $requestType): array
         if (is_array($settings) && !empty($settings)) {
             return $settings;
         }
-        return [];
     } catch (Throwable $e) {
         // Backward compatibility: older schemas may not have request_type column.
     }

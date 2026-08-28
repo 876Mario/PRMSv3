@@ -39,6 +39,21 @@ class RequestPrintService {
                 LIMIT 1
             ");
             $stmt->execute([$this->requestType]);
+            $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (is_array($settings) && !empty($settings)) {
+                $this->documentControlSettings = $settings;
+                return;
+            }
+        } catch (Exception $e) {
+            // Fallback handled below for legacy/global single-row settings.
+        }
+
+        try {
+            $stmt = $this->pdo->query("
+                SELECT * FROM doc_ctrl_settings
+                WHERE id = 1
+                LIMIT 1
+            ");
             $this->documentControlSettings = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
         } catch (Exception $e) {
             $this->documentControlSettings = [];
