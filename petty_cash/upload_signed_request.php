@@ -9,6 +9,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SignedRequestService.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SignedRequestNoticeService.php';
 
 // Verify CSRF token
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
@@ -20,6 +21,46 @@ $request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 if ($request_id <= 0) {
     pop('Invalid petty cash request', '/petty_cash/list.php', 2500, 'error');
     exit;
+}
+
+
+SignedRequestNoticeService::seedDefaultSettings($pdo);
+$uploadNoticeEnabled = SignedRequestNoticeService::isUploadNoticeEnabled($pdo);
+if ($uploadNoticeEnabled) {
+    $acknowledged = (string)($_POST['signed_notice_upload_ack'] ?? '0') === '1';
+    if (!$acknowledged) {
+        modalPop(
+            'Confirmation Required',
+            'Please confirm that the original signed document will be submitted to Procurement first. Procurement will copy and forward the document to Finance.',
+            '/petty_cash/view.php?request_id=' . $request_id,
+            'warning'
+        );
+        exit;
+    }
+
+    $actionToken = trim((string)($_POST['signed_notice_action_token'] ?? ''));
+    SignedRequestNoticeService::logEvent(
+        $pdo,
+        $request_id,
+        'PETTY_CASH',
+        'UPLOAD',
+        'DISPLAYED',
+        (int)($_SESSION['user_id'] ?? 0),
+        (string)($_SESSION['full_name'] ?? ''),
+        $actionToken,
+        'Upload reminder displayed prior to finalization'
+    );
+    SignedRequestNoticeService::logEvent(
+        $pdo,
+        $request_id,
+        'PETTY_CASH',
+        'UPLOAD',
+        'ACKNOWLEDGED',
+        (int)($_SESSION['user_id'] ?? 0),
+        (string)($_SESSION['full_name'] ?? ''),
+        $actionToken,
+        'Upload reminder acknowledged by user'
+    );
 }
 
 // Verify file was uploaded

@@ -4,12 +4,15 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SignedRequestNoticeService.php';
 
 // Handle form submission BEFORE any output
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $enable_notifications = isset($_POST['enable_notifications']) ? 1 : 0;
         $enable_rfq_auto_email = isset($_POST['enable_rfq_auto_email']) ? 1 : 0;
+        $signedRequestPrintNoticeEnabled = isset($_POST['signed_request_print_notice_enabled']) ? 1 : 0;
+        $signedDocumentUploadNoticeEnabled = isset($_POST['signed_document_upload_notice_enabled']) ? 1 : 0;
         
         // Update notification setting
         $stmt = $pdo->prepare("
@@ -26,6 +29,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)
         ");
         $stmt->execute([$enable_rfq_auto_email]);
+
+
+        // Update signed request print notice setting
+        $stmt = $pdo->prepare("
+            INSERT INTO system_config (config_key, config_value, description, created_at)
+            VALUES ('signed_request_print_notice_enabled', ?, 'Enable/disable signed request document handling popup after printing (1=enabled, 0=disabled)', NOW())
+            ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)
+        ");
+        $stmt->execute([$signedRequestPrintNoticeEnabled]);
+
+        // Update signed document upload notice setting
+        $stmt = $pdo->prepare("
+            INSERT INTO system_config (config_key, config_value, description, created_at)
+            VALUES ('signed_document_upload_notice_enabled', ?, 'Enable/disable signed document upload confirmation popup (1=enabled, 0=disabled)', NOW())
+            ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)
+        ");
+        $stmt->execute([$signedDocumentUploadNoticeEnabled]);
 
         // Update procurement threshold if provided
         if (isset($_POST['direct_procurement_threshold'])) {
@@ -138,6 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'UPDATE',
             'System settings updated: enable_notifications=' . ($enable_notifications ? 'ON' : 'OFF')
                 . ', enable_rfq_auto_email=' . ($enable_rfq_auto_email ? 'ON' : 'OFF')
+                . ', signed_request_print_notice_enabled=' . ($signedRequestPrintNoticeEnabled ? 'ON' : 'OFF')
+                . ', signed_document_upload_notice_enabled=' . ($signedDocumentUploadNoticeEnabled ? 'ON' : 'OFF')
                 . (isset($newThreshold) ? ', threshold=' . number_format($newThreshold, 2) : '')
                 . (isset($newPCLimit)  ? ', petty_cash_limit=' . number_format($newPCLimit, 2) : '')
                 . (isset($newUsdRate)  ? ', usd_to_jmd_rate=' . number_format($newUsdRate, 4) : '')
@@ -179,6 +201,10 @@ try {
 } catch (Exception $e) {
     $rfqAutoEmailEnabled = true;
 }
+
+SignedRequestNoticeService::seedDefaultSettings($pdo);
+$signedRequestPrintNoticeEnabled = SignedRequestNoticeService::isPrintNoticeEnabled($pdo);
+$signedDocumentUploadNoticeEnabled = SignedRequestNoticeService::isUploadNoticeEnabled($pdo);
 
 // Get current threshold settings
 $currentThreshold = getDirectProcurementThreshold($pdo);
@@ -370,6 +396,41 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                                         </label>
                                         <p class="text-muted small mt-2 mb-0">
                                             When enabled, RFQ details are automatically emailed to vendors. Disable to suppress RFQ vendor emails without affecting other notifications.
+                                        </p>
+                                    </div>
+
+                                    <hr class="my-3">
+                                    <h6 class="fw-bold mb-2"><i class="bi bi-exclamation-octagon me-1"></i> Signed Document Handling Notice</h6>
+                                    <div class="form-check form-switch py-2">
+                                        <input 
+                                            class="form-check-input" 
+                                            type="checkbox" 
+                                            id="signed_request_print_notice_enabled" 
+                                            name="signed_request_print_notice_enabled"
+                                            value="1"
+                                            <?= $signedRequestPrintNoticeEnabled ? 'checked' : '' ?>
+                                        >
+                                        <label class="form-check-label fw-bold" for="signed_request_print_notice_enabled">
+                                            Enable popup after signed request printing
+                                        </label>
+                                        <p class="text-muted small mt-2 mb-0">
+                                            Shows the Procurement-first original-document handling reminder after users open the print form.
+                                        </p>
+                                    </div>
+                                    <div class="form-check form-switch py-2">
+                                        <input 
+                                            class="form-check-input" 
+                                            type="checkbox" 
+                                            id="signed_document_upload_notice_enabled" 
+                                            name="signed_document_upload_notice_enabled"
+                                            value="1"
+                                            <?= $signedDocumentUploadNoticeEnabled ? 'checked' : '' ?>
+                                        >
+                                        <label class="form-check-label fw-bold" for="signed_document_upload_notice_enabled">
+                                            Enable popup during signed document upload
+                                        </label>
+                                        <p class="text-muted small mt-2 mb-0">
+                                            Requires users to confirm the Procurement-first original-document handling reminder before upload completion.
                                         </p>
                                     </div>
                                 </div>

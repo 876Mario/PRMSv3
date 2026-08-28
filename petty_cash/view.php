@@ -118,10 +118,15 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 
 // Initialize SignedRequestService
 require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SignedRequestService.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SignedRequestNoticeService.php';
 $signedRequestService = new SignedRequestService($pdo);
 $signedRequestPending = $signedRequestService->isUploadPending($request_id, 'PETTY_CASH');
 $activeSignedDoc = $signedRequestService->getActiveDocument($request_id);
 $signedDocHistory = $signedRequestService->getDocumentHistory($request_id);
+
+SignedRequestNoticeService::seedDefaultSettings($pdo);
+$printNoticeEnabled = SignedRequestNoticeService::isPrintNoticeEnabled($pdo);
+$uploadNoticeEnabled = SignedRequestNoticeService::isUploadNoticeEnabled($pdo);
 
 // Generate CSRF token for uploads
 if (empty($_SESSION['csrf_token'])) {
@@ -477,7 +482,10 @@ if (empty($_SESSION['csrf_token'])) {
                   <h6 class="card-title">Step 1: Print Form</h6>
                   <p class="small text-muted mb-3">Print the approval form, review all information, and sign it.</p>
                   <a href="/petty_cash/print_for_signing.php?request_id=<?= $request_id ?>" 
-                     class="btn btn-primary btn-sm w-100" target="_blank">
+                     class="btn btn-primary btn-sm w-100 js-signed-print-btn" target="_blank"
+                     data-request-id="<?= (int)$request_id ?>"
+                     data-request-type="PETTY_CASH"
+                     data-print-notice-enabled="<?= $printNoticeEnabled ? '1' : '0' ?>">
                     <i class="bi bi-printer"></i> Print Approval Form
                   </a>
                 </div>
@@ -504,9 +512,11 @@ if (empty($_SESSION['csrf_token'])) {
           <?php if ($signedRequestService->canUserUpload($request_id, 'PETTY_CASH', $_SESSION['user_id'], $_SESSION['role_name'])): ?>
             <div class="collapse mt-3" id="uploadForm">
               <div class="card card-body">
-                <form method="post" action="/petty_cash/upload_signed_request.php" enctype="multipart/form-data">
+                <form method="post" action="/petty_cash/upload_signed_request.php" enctype="multipart/form-data" class="js-signed-upload-form" data-request-id="<?= (int)$request_id ?>" data-request-type="PETTY_CASH" data-upload-notice-enabled="<?= $uploadNoticeEnabled ? '1' : '0' ?>">
                   <input type="hidden" name="request_id" value="<?= $request_id ?>">
                   <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                  <input type="hidden" name="signed_notice_upload_ack" value="0">
+                  <input type="hidden" name="signed_notice_action_token" value="">
                   
                   <div class="mb-3">
                     <label for="signed_request_file" class="form-label">Select Signed Document (PDF, JPG, PNG, GIF, DOC, DOCX)</label>
@@ -779,6 +789,142 @@ if (empty($_SESSION['csrf_token'])) {
     </div>
 </div>
 <?php endif; ?>
+
+
+<div class="modal fade" id="signedRequestHandlingNoticeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-warning-subtle">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Important Document Handling Notice</h5>
+      </div>
+      <div class="modal-body">
+        <p id="signedRequestNoticeMessage" class="mb-0"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="signedRequestNoticeConfirmBtn">I Understand</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const modalEl = document.getElementById('signedRequestHandlingNoticeModal');
+  if (!modalEl || typeof bootstrap === 'undefined') return;
+
+  const modalMessageEl = document.getElementById('signedRequestNoticeMessage');
+  const confirmBtn = document.getElementById('signedRequestNoticeConfirmBtn');
+  const modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+  const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
+  let onConfirm = null;
+
+  function createActionToken(prefix, requestType, requestId) {
+    return [prefix, requestType, requestId, Date.now(), Math.random().toString(36).slice(2, 10)].join('-');
+  }
+
+  function postPrintNoticeEvent(payload) {
+    const body = new URLSearchParams(payload);
+    body.append('csrf_token', csrfToken || '');
+    return fetch('/api/signed_request_notice.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+      body: body.toString(),
+      credentials: 'same-origin'
+    }).catch(() => null);
+  }
+
+  function showNotice(message, buttonLabel, callback) {
+    modalMessageEl.textContent = message;
+    confirmBtn.textContent = buttonLabel;
+    onConfirm = callback;
+    modal.show();
+  }
+
+  confirmBtn.addEventListener('click', function () {
+    if (typeof onConfirm === 'function') {
+      onConfirm();
+    }
+    modal.hide();
+  });
+
+  document.querySelectorAll('.js-signed-print-btn').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      const enabled = btn.dataset.printNoticeEnabled === '1';
+      if (!enabled) return;
+
+      event.preventDefault();
+      if (btn.dataset.noticeInProgress === '1') return;
+      btn.dataset.noticeInProgress = '1';
+
+      const requestId = parseInt(btn.dataset.requestId || '0', 10);
+      const requestType = (btn.dataset.requestType || 'PETTY_CASH').toUpperCase();
+      const actionToken = createActionToken('print', requestType, requestId);
+      const printUrl = btn.getAttribute('href');
+      const printWindow = window.open(printUrl, '_blank', 'noopener');
+      if (!printWindow) {
+        btn.dataset.noticeInProgress = '0';
+        return;
+      }
+
+      postPrintNoticeEvent({
+        request_id: String(requestId),
+        request_type: requestType,
+        notice_context: 'PRINT',
+        event_type: 'DISPLAYED',
+        action_token: actionToken,
+        event_note: 'Print reminder displayed after print form launch'
+      });
+
+      showNotice(
+        'After signing, the original document must be submitted to Procurement first. Procurement will keep the original document, make a copy, and send the copy to Finance for processing.',
+        'I Understand',
+        function () {
+          postPrintNoticeEvent({
+            request_id: String(requestId),
+            request_type: requestType,
+            notice_context: 'PRINT',
+            event_type: 'ACKNOWLEDGED',
+            action_token: actionToken,
+            event_note: 'Print reminder acknowledged by user'
+          }).finally(function () {
+            btn.dataset.noticeInProgress = '0';
+          });
+        }
+      );
+    });
+  });
+
+  document.querySelectorAll('.js-signed-upload-form').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+      const enabled = form.dataset.uploadNoticeEnabled === '1';
+      const ackInput = form.querySelector('input[name="signed_notice_upload_ack"]');
+      const tokenInput = form.querySelector('input[name="signed_notice_action_token"]');
+
+      if (!enabled || (ackInput && ackInput.value === '1')) return;
+
+      event.preventDefault();
+      if (form.dataset.noticeInProgress === '1') return;
+      form.dataset.noticeInProgress = '1';
+
+      const requestId = parseInt(form.dataset.requestId || '0', 10);
+      const requestType = (form.dataset.requestType || 'PETTY_CASH').toUpperCase();
+      if (tokenInput && tokenInput.value.trim() === '') {
+        tokenInput.value = createActionToken('upload', requestType, requestId);
+      }
+
+      showNotice(
+        'Please confirm that the original signed document will be submitted to Procurement first. Procurement will copy and forward the document to Finance.',
+        'Continue Upload',
+        function () {
+          if (ackInput) ackInput.value = '1';
+          form.dataset.noticeInProgress = '0';
+          form.submit();
+        }
+      );
+    });
+  });
+})();
+</script>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
 

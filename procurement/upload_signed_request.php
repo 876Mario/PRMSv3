@@ -7,9 +7,15 @@ $REQUIRE_PERMISSION = 'upload_procurement_signed_request';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SignedRequestNoticeService.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: /procurement/list.php');
+    exit;
+}
+
+if (empty($_POST['csrf_token']) || empty($_SESSION['csrf_token']) || !hash_equals((string)$_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
+    pop('Invalid request (CSRF check failed).', '/procurement/list.php', 2500, 'error');
     exit;
 }
 
@@ -45,6 +51,45 @@ $canSeeRequest = in_array($_SESSION['role'] ?? '', ['HOD', 'Branch Head', 'Direc
 if (!$isRequestor && !$canSeeRequest) {
     pop("You don't have permission to upload signed requests for this request.", "/procurement/list.php", 2500, "error");
     exit;
+}
+
+SignedRequestNoticeService::seedDefaultSettings($pdo);
+$uploadNoticeEnabled = SignedRequestNoticeService::isUploadNoticeEnabled($pdo);
+if ($uploadNoticeEnabled) {
+    $acknowledged = (string)($_POST['signed_notice_upload_ack'] ?? '0') === '1';
+    if (!$acknowledged) {
+        modalPop(
+            'Confirmation Required',
+            'Please confirm that the original signed document will be submitted to Procurement first. Procurement will copy and forward the document to Finance.',
+            '/procurement/view.php?id=' . $request_id,
+            'warning'
+        );
+        exit;
+    }
+
+    $actionToken = trim((string)($_POST['signed_notice_action_token'] ?? ''));
+    SignedRequestNoticeService::logEvent(
+        $pdo,
+        $request_id,
+        'REGULAR',
+        'UPLOAD',
+        'DISPLAYED',
+        (int)($_SESSION['user_id'] ?? 0),
+        (string)($_SESSION['full_name'] ?? ''),
+        $actionToken,
+        'Upload reminder displayed prior to finalization'
+    );
+    SignedRequestNoticeService::logEvent(
+        $pdo,
+        $request_id,
+        'REGULAR',
+        'UPLOAD',
+        'ACKNOWLEDGED',
+        (int)($_SESSION['user_id'] ?? 0),
+        (string)($_SESSION['full_name'] ?? ''),
+        $actionToken,
+        'Upload reminder acknowledged by user'
+    );
 }
 
 try {
