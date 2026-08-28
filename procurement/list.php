@@ -99,12 +99,7 @@ if (isset($_SESSION['role_name']) && $_SESSION['role_name'] === 'Requestor') {
 $currentRole = $_SESSION['role'] ?? $_SESSION['role_name'] ?? '';
 $currentUserId = (int)($_SESSION['user_id'] ?? 0);
 
-// Director HRM&A: monitoring role — sees ALL branches (no branch restriction).
-// Deputy Government Chemist: restricted to their own branch.
-if ($currentRole === 'Deputy Government Chemist') {
-    $where[] = "pr.branch_id = :branch_filter";
-    $params[':branch_filter'] = 6; // Analytical & Advisory
-}
+// Director HRM&A and Deputy Government Chemist: monitoring roles — see ALL branches (no branch restriction).
 
 // Draft-visibility server-side enforcement:
 // Only the creator, oversight roles, or monitoring roles may see DRAFT requests.
