@@ -324,7 +324,7 @@ class SignedRequestService {
             }
 
             error_log("Signed request upload error for request $requestId: " . $e->getMessage());
-            return ['success' => false, 'message' => 'Error saving document: ' . htmlspecialchars($e->getMessage())];
+            return ['success' => false, 'message' => 'Unable to save the signed request right now. Please try again later.'];
         }
     }
 

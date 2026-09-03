@@ -71,4 +71,15 @@ class SignedRequestServiceTest extends PHPUnit\Framework\TestCase
         $this->assertStringContainsString('$successType = "warning";', $source);
         $this->assertStringContainsString('$successType', $source);
     }
+
+    public function testUploadSignedRequestReturnsGenericMessageOnFailure(): void
+    {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/services/SignedRequestService.php');
+
+        $this->assertStringContainsString(
+            "'Unable to save the signed request right now. Please try again later.'",
+            $source
+        );
+        $this->assertStringNotContainsString("htmlspecialchars(\$e->getMessage())", $source);
+    }
 }
