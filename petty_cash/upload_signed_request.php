@@ -4,7 +4,9 @@
  * Handles secure file upload for signed petty cash approval forms
  */
 
-$REQUIRE_PERMISSION = 'upload_signed_petty_cash_document';
+// Baseline guard mirrors the view page; SignedRequestService enforces
+// creator-or-upload-permission authorization for the actual upload.
+$REQUIRE_PERMISSION = 'view_petty_cash_requests';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';

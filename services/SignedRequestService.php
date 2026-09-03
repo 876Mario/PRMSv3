@@ -329,6 +329,125 @@ class SignedRequestService {
     }
 
     /**
+     * Register an already-stored file (e.g. uploaded via the Request Documents
+     * section) as the official signed request document, so the signed-request
+     * gate clears and approvers can act on the request.
+     * Returns array: ['success' => bool, 'message' => string, 'version' => int|null]
+     */
+    public function registerStoredDocument($requestId, $requestType, $relativePath, $originalName, $mimeType, $fileSize, $uploadedByUserId) {
+        if (!in_array($requestType, ['REGULAR', 'REIMBURSEMENT', 'PETTY_CASH'])) {
+            return ['success' => false, 'message' => 'Invalid request type'];
+        }
+
+        $stmt = $this->pdo->prepare("
+            SELECT request_id, request_type, created_by, status
+            FROM procurement_requests
+            WHERE request_id = ? AND request_type = ?
+        ");
+        $stmt->execute([$requestId, $requestType]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$request) {
+            return ['success' => false, 'message' => 'Request not found or type mismatch'];
+        }
+
+        $sessionUserId = (int)($_SESSION['user_id'] ?? 0);
+        $effectiveUserId = $sessionUserId > 0 ? $sessionUserId : (int)$uploadedByUserId;
+        $isAuthorized = (
+            $effectiveUserId > 0 && $effectiveUserId === (int)$request['created_by']
+        ) || $this->userHasUploadPermission($requestType);
+
+        if (!$isAuthorized) {
+            logAudit(
+                $this->pdo,
+                'signed_request_documents',
+                $requestId,
+                'UNAUTHORIZED_UPLOAD',
+                'User ' . ($_SESSION['full_name'] ?? $_SESSION['user_id']) .
+                ' attempted to register signed document without authorization'
+            );
+            return ['success' => false, 'message' => 'You do not have permission to upload signed documents for this request'];
+        }
+
+        try {
+            $this->pdo->beginTransaction();
+
+            $versionStmt = $this->pdo->prepare("
+                SELECT COALESCE(MAX(version_number), 0) as current_version
+                FROM signed_request_documents
+                WHERE request_id = ? AND is_deleted = 0
+            ");
+            $versionStmt->execute([$requestId]);
+            $versionResult = $versionStmt->fetch(PDO::FETCH_ASSOC);
+            $newVersion = $versionResult['current_version'] + 1;
+
+            $updatePrevStmt = $this->pdo->prepare("
+                UPDATE signed_request_documents
+                SET is_active = 0
+                WHERE request_id = ? AND is_active = 1
+            ");
+            $updatePrevStmt->execute([$requestId]);
+
+            $docStmt = $this->pdo->prepare("
+                INSERT INTO signed_request_documents
+                (request_id, request_type, document_path, file_name, original_file_name,
+                 file_type, file_size, version_number, is_active, uploaded_by_user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            ");
+            $docStmt->execute([
+                $requestId,
+                $requestType,
+                $relativePath,
+                basename($relativePath),
+                basename($originalName),
+                $mimeType,
+                $fileSize,
+                $newVersion,
+                $uploadedByUserId
+            ]);
+
+            $updateReqStmt = $this->pdo->prepare("
+                UPDATE procurement_requests
+                SET signed_request_document_path = ?,
+                    signed_request_received_date = NOW(),
+                    signed_by_user_id = ?,
+                    signed_request_version_count = ?,
+                    signed_request_active_since = NOW()
+                WHERE request_id = ?
+            ");
+            $updateReqStmt->execute([
+                $relativePath,
+                $uploadedByUserId,
+                $newVersion,
+                $requestId
+            ]);
+
+            $this->pdo->commit();
+
+            logAudit(
+                $this->pdo,
+                'signed_request_documents',
+                $requestId,
+                'DOCUMENT_UPLOADED',
+                'Signed ' . $requestType . ' request document registered via Request Documents by ' .
+                ($_SESSION['full_name'] ?? $_SESSION['user_id']) .
+                ' (version ' . $newVersion . '). File: ' . htmlspecialchars(basename($originalName))
+            );
+
+            return [
+                'success' => true,
+                'message' => 'Signed document registered successfully',
+                'version' => $newVersion
+            ];
+
+        } catch (Exception $e) {
+            $this->pdo->rollBack();
+            error_log("Signed request registration error for request $requestId: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Error registering signed document: ' . htmlspecialchars($e->getMessage())];
+        }
+    }
+
+    /**
      * Get active signed document for a request
      */
     public function getActiveDocument($requestId) {
