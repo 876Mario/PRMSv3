@@ -121,6 +121,7 @@ try {
     // official signed request so the approval gate clears and the branch head
     // can approve or deny the request.
     $successMessage = "$typeLabel uploaded successfully.";
+    $successType = "success";
     $requestType = strtoupper($request['request_type'] ?? 'REGULAR');
     if ($documentType === 'SIGNED_REQUEST' && in_array($requestType, ['REGULAR', 'REIMBURSEMENT', 'PETTY_CASH'], true)) {
         require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SignedRequestService.php';
@@ -147,7 +148,8 @@ try {
                 error_log('Warning: Failed to send notification for signed request ' . $request_id . ': ' . $e->getMessage());
             }
         } else {
-            $successMessage = "$typeLabel uploaded, but it could not be registered as the signed request: " . $registration['message'];
+            $successMessage = "$typeLabel uploaded, but it could not be registered as the signed request. " . $registration['message'];
+            $successType = "warning";
         }
     }
 
@@ -155,7 +157,7 @@ try {
         $successMessage,
         "/procurement/view.php?id=" . $request_id,
         2500,
-        "success"
+        $successType
     );
 
 } catch (Exception $e) {
