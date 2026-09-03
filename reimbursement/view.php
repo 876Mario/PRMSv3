@@ -887,6 +887,7 @@ if (empty($_SESSION['csrf_token'])) {
   }
 
   function postPrintNoticeEvent(payload) {
+    console.debug('[SignedUploadNotice] AJAX request sent', payload);
     const body = new URLSearchParams(payload);
     body.append('csrf_token', csrfToken || '');
     return fetch('/api/signed_request_notice.php', {
@@ -894,17 +895,34 @@ if (empty($_SESSION['csrf_token'])) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
       body: body.toString(),
       credentials: 'same-origin'
-    }).catch(() => null);
+    }).then(function (response) {
+      console.debug('[SignedUploadNotice] Server response received', { ok: response.ok, status: response.status });
+      return response;
+    }).catch(function (error) {
+      console.error('[SignedUploadNotice] AJAX request failed', error);
+      return null;
+    });
   }
 
   function showNotice(message, buttonLabel, callback) {
     modalMessageEl.textContent = message;
     confirmBtn.textContent = buttonLabel;
     onConfirm = callback;
+    console.debug('[SignedUploadNotice] Modal opened', { buttonLabel: buttonLabel });
     modal.show();
   }
 
+  function resumeUploadSubmission(form) {
+    console.debug('[SignedUploadNotice] Upload function called', { action: form.getAttribute('action') });
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+      return;
+    }
+    HTMLFormElement.prototype.submit.call(form);
+  }
+
   confirmBtn.addEventListener('click', function () {
+    console.debug('[SignedUploadNotice] User confirmed');
     if (typeof onConfirm === 'function') {
       onConfirm();
     }
@@ -963,8 +981,14 @@ if (empty($_SESSION['csrf_token'])) {
       const enabled = form.dataset.uploadNoticeEnabled === '1';
       const ackInput = form.querySelector('input[name="signed_notice_upload_ack"]');
       const tokenInput = form.querySelector('input[name="signed_notice_action_token"]');
+      const alreadyAcknowledged = ackInput && ackInput.value === '1';
 
-      if (!enabled || (ackInput && ackInput.value === '1')) return;
+      if (!enabled || alreadyAcknowledged) {
+        if (alreadyAcknowledged) {
+          console.debug('[SignedUploadNotice] Workflow updated: upload submission resumed after confirmation');
+        }
+        return;
+      }
 
       event.preventDefault();
       if (form.dataset.noticeInProgress === '1') return;
@@ -982,7 +1006,8 @@ if (empty($_SESSION['csrf_token'])) {
         function () {
           if (ackInput) ackInput.value = '1';
           form.dataset.noticeInProgress = '0';
-          form.submit();
+          console.debug('[SignedUploadNotice] Workflow updated: proceeding to upload submission');
+          resumeUploadSubmission(form);
         }
       );
     });
