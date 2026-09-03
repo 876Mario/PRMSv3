@@ -441,9 +441,11 @@ class SignedRequestService {
             ];
 
         } catch (Exception $e) {
-            $this->pdo->rollBack();
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             error_log("Signed request registration error for request $requestId: " . $e->getMessage());
-            return ['success' => false, 'message' => 'Error registering signed document: ' . htmlspecialchars($e->getMessage())];
+            return ['success' => false, 'message' => 'Unable to register the signed request right now. Please try again later.'];
         }
     }
 
