@@ -4,7 +4,9 @@
  * Handles secure file upload for signed procurement approval forms
  */
 
-$REQUIRE_PERMISSION = 'upload_procurement_signed_request';
+// Baseline guard mirrors the view page; SignedRequestService enforces
+// creator-or-upload-permission authorization for the actual upload.
+$REQUIRE_PERMISSION = 'view_requests';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';

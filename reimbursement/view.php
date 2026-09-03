@@ -923,8 +923,10 @@ if (empty($_SESSION['csrf_token'])) {
 
   confirmBtn.addEventListener('click', function () {
     console.debug('[SignedUploadNotice] User confirmed');
-    if (typeof onConfirm === 'function') {
-      onConfirm();
+    const callback = onConfirm;
+    onConfirm = null;
+    if (typeof callback === 'function') {
+      callback();
     }
     modal.hide();
   });

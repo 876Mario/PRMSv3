@@ -20,7 +20,7 @@ if ($request_id <= 0) {
 }
 
 // Verify request exists
-$stmt = $pdo->prepare("SELECT request_id, request_number FROM procurement_requests WHERE request_id = ?");
+$stmt = $pdo->prepare("SELECT request_id, request_number, request_type FROM procurement_requests WHERE request_id = ?");
 $stmt->execute([$request_id]);
 $request = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$request) {
@@ -117,8 +117,42 @@ try {
     logRequestTimeline($pdo, $request_id, 'DOCUMENT_UPLOADED',
                       "$typeLabel uploaded: $originalName");
 
+    // When a Signed Request Form is uploaded here, also register it as the
+    // official signed request so the approval gate clears and the branch head
+    // can approve or deny the request.
+    $successMessage = "$typeLabel uploaded successfully.";
+    $requestType = strtoupper($request['request_type'] ?? 'REGULAR');
+    if ($documentType === 'SIGNED_REQUEST' && in_array($requestType, ['REGULAR', 'REIMBURSEMENT', 'PETTY_CASH'], true)) {
+        require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SignedRequestService.php';
+        $signedService = new SignedRequestService($pdo);
+        $registration = $signedService->registerStoredDocument(
+            $request_id,
+            $requestType,
+            $documentPath,
+            $originalName,
+            $mimeType,
+            (int)$file['size'],
+            (int)$_SESSION['user_id']
+        );
+
+        if ($registration['success']) {
+            $successMessage = "$typeLabel uploaded and registered as the signed request (Version {$registration['version']}).";
+
+            try {
+                require_once $_SERVER['DOCUMENT_ROOT'] . '/config/notifications.php';
+                if (function_exists('notifySignedRequestReceived')) {
+                    notifySignedRequestReceived($request_id, $request['request_number']);
+                }
+            } catch (Exception $e) {
+                error_log('Warning: Failed to send notification for signed request ' . $request_id . ': ' . $e->getMessage());
+            }
+        } else {
+            $successMessage = "$typeLabel uploaded, but it could not be registered as the signed request: " . $registration['message'];
+        }
+    }
+
     pop(
-        "$typeLabel uploaded successfully.",
+        $successMessage,
         "/procurement/view.php?id=" . $request_id,
         2500,
         "success"
