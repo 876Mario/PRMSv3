@@ -46,6 +46,7 @@ class SignedRequestServiceTest extends PHPUnit\Framework\TestCase
     public function testRegisterStoredDocumentReturnsGenericMessageOnDatabaseFailure(): void
     {
         $service = new SignedRequestService($this->pdo);
+        $this->pdo->exec('DROP TABLE signed_request_documents');
 
         $result = $service->registerStoredDocument(
             1,
@@ -69,7 +70,10 @@ class SignedRequestServiceTest extends PHPUnit\Framework\TestCase
         $source = file_get_contents(dirname(__DIR__, 2) . '/procurement/upload_document.php');
 
         $this->assertStringContainsString('$successType = "warning";', $source);
-        $this->assertStringContainsString('$successType', $source);
+        $this->assertRegExp(
+            '/pop\\(\\s*\\$successMessage,\\s*"\\/procurement\\/view\\.php\\?id="\\s*\\.\\s*\\$request_id,\\s*2500,\\s*\\$successType\\s*\\);/m',
+            $source
+        );
     }
 
     public function testUploadSignedRequestReturnsGenericMessageOnFailure(): void
