@@ -71,7 +71,7 @@ class SignedRequestServiceTest extends PHPUnit\Framework\TestCase
 
         $this->assertStringContainsString('$successType = "warning";', $source);
         $this->assertStringNotContainsString('$registration[\'message\']', $source);
-        $this->assertMatchesRegularExpression(
+        $this->assertRegExp(
             '/pop\\(\\s*\\$successMessage,\\s*"\\/procurement\\/view\\.php\\?id="\\s*\\.\\s*\\$request_id,\\s*2500,\\s*\\$successType\\s*\\);/m',
             $source
         );
