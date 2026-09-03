@@ -70,7 +70,7 @@ class SignedRequestServiceTest extends PHPUnit\Framework\TestCase
         $source = file_get_contents(dirname(__DIR__, 2) . '/procurement/upload_document.php');
 
         $this->assertStringContainsString('$successType = "warning";', $source);
-        $this->assertRegExp(
+        $this->assertMatchesRegularExpression(
             '/pop\\(\\s*\\$successMessage,\\s*"\\/procurement\\/view\\.php\\?id="\\s*\\.\\s*\\$request_id,\\s*2500,\\s*\\$successType\\s*\\);/m',
             $source
         );
