@@ -148,7 +148,7 @@ try {
                 error_log('Warning: Failed to send notification for signed request ' . $request_id . ': ' . $e->getMessage());
             }
         } else {
-            $successMessage = "$typeLabel uploaded, but it could not be registered as the signed request. " . $registration['message'];
+            $successMessage = "$typeLabel uploaded, but it could not be registered as the signed request.";
             $successType = "warning";
         }
     }

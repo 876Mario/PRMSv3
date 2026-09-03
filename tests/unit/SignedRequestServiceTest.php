@@ -69,6 +69,10 @@ class SignedRequestServiceTest extends PHPUnit\Framework\TestCase
         $source = file_get_contents(dirname(__DIR__, 2) . '/procurement/upload_document.php');
 
         $this->assertStringContainsString('$successType = "warning";', $source);
+        $this->assertStringNotContainsString(
+            '"$typeLabel uploaded, but it could not be registered as the signed request. " . $registration[\'message\']',
+            $source
+        );
         $this->assertStringContainsString('$successType', $source);
     }
 
