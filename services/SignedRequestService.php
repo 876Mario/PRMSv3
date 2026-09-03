@@ -18,6 +18,28 @@ class SignedRequestService {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx'
     ];
 
+    private function getUploadPermissionForType($requestType) {
+        return match (strtoupper((string)$requestType)) {
+            'REGULAR' => 'upload_procurement_signed_request',
+            'REIMBURSEMENT' => 'upload_signed_reimbursement_document',
+            'PETTY_CASH' => 'upload_signed_petty_cash_document',
+            default => null
+        };
+    }
+
+    private function userHasUploadPermission($requestType) {
+        $permission = $this->getUploadPermissionForType($requestType);
+        if ($permission === null || !function_exists('has_permission')) {
+            return false;
+        }
+
+        try {
+            return has_permission($permission);
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+
     public function __construct(PDO $pdo, $uploadBasePath = null) {
         $this->pdo = $pdo;
         $this->uploadBasePath = $uploadBasePath ?? $_SERVER['DOCUMENT_ROOT'] . '/uploads/signed_requests';
@@ -163,12 +185,12 @@ class SignedRequestService {
             return ['success' => false, 'message' => 'Request not found or type mismatch'];
         }
 
-        // Verify permission: creator, HOD, Branch Head, or authorized roles
-        $authorizedRoles = ['Procurement Officer', 'Admin', 'SuperAdmin'];
+        // Verify permission: request creator or role with explicit upload permission
+        $sessionUserId = (int)($_SESSION['user_id'] ?? 0);
+        $effectiveUserId = $sessionUserId > 0 ? $sessionUserId : (int)$uploadedByUserId;
         $isAuthorized = (
-            $_SESSION['user_id'] == $request['created_by'] ||
-            in_array($_SESSION['role_name'] ?? '', $authorizedRoles)
-        );
+            $effectiveUserId > 0 && $effectiveUserId === (int)$request['created_by']
+        ) || $this->userHasUploadPermission($requestType);
 
         if (!$isAuthorized) {
             // Log unauthorized attempt
@@ -349,10 +371,9 @@ class SignedRequestService {
 
         if (!$request) return false;
 
-        $authorizedRoles = ['Procurement Officer', 'Admin', 'SuperAdmin'];
         return (
-            $userId == $request['created_by'] ||
-            in_array($userRole, $authorizedRoles)
+            (int)$userId === (int)$request['created_by'] ||
+            $this->userHasUploadPermission($requestType)
         );
     }
 
