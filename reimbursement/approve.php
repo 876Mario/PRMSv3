@@ -91,7 +91,7 @@ if (!$request) {
 // accepted here, a verified invoice had no way to advance the request.
 $allowedStatuses = $isHodOrBranchHeadApproval
     ? ['SUBMITTED']
-    : ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'INVOICE_VERIFIED'];
+    : ['SUBMITTED', 'HOD_APPROVED', 'INVOICE_VERIFIED'];
 
 if (!in_array(strtoupper($request['status']), $allowedStatuses, true)) {
     pop(

@@ -1870,6 +1870,15 @@ document.addEventListener('DOMContentLoaded', function () {
                             </a>
                         <?php elseif (in_array($current, ['SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'FUNDS_VERIFIED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE'])): ?>
                             <!-- ✅ NEW: Create RFQ after submission (all regular procurement needs RFQ) -->
+                            <?php if (in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin'], true) && $current !== 'PROCUREMENT_STAGE'): ?>
+                                <form method="post" action="/procurement/start_procurement.php" class="d-inline">
+                                    <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                    <button type="submit" class="btn btn-outline-dark btn-sm">
+                                        <i class="bi bi-play-circle me-1"></i>Start Procurement Stage
+                                    </button>
+                                </form>
+                            <?php endif; ?>
                             <a href="/rfq/create.php?request_id=<?= $request['request_id'] ?>" class="btn btn-outline-primary btn-sm">
                                 <i class="bi bi-plus-lg me-1"></i>Create RFQ & Generate Letters
                             </a>
