@@ -92,10 +92,20 @@ if (function_exists('signedRequestUploadPending') && signedRequestUploadPending(
 
 try {
     $pdo->beginTransaction();
+    $isInvoiceBypassApproval = false;
 
     if ($action === 'approve') {
         if (strtoupper($request['status']) === 'SUBMITTED') {
             $newStatus = 'FUNDS_VERIFIED';
+        } elseif (strtoupper($request['status']) === 'FUNDS_VERIFIED') {
+            if (!has_permission('approve_reimbursement_without_invoice_verification')) {
+                throw new Exception('Unauthorized: invoice-bypass approval requires additional permission.');
+            }
+            if (mb_strlen($comments) < 5) {
+                throw new Exception('An invoice-bypass reason of at least 5 characters is required.');
+            }
+            $newStatus = 'APPROVED';
+            $isInvoiceBypassApproval = true;
         } else {
             $newStatus = 'APPROVED';
         }
@@ -178,6 +188,12 @@ try {
         $previousStatus,
         $comments ?: null
     );
+
+    if ($isInvoiceBypassApproval) {
+        $bypassNote = 'Reimbursement invoice verification bypass approved by ' . $approverRole . '. Reason: ' . $comments;
+        logAudit($pdo, 'procurement_requests', $request_id, 'REIMBURSEMENT_INVOICE_BYPASS_APPROVAL', $bypassNote);
+        logRequestTimeline($pdo, $request_id, 'REIMBURSEMENT_INVOICE_BYPASS_APPROVAL', $bypassNote);
+    }
 
     /* ================================
        Notify Requestor

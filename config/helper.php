@@ -111,8 +111,138 @@ function validatePasswordPolicy(string $password): ?string
    Number Generators
 ================================ */
 
+function dbSupportsSelectForUpdate(PDO $pdo): bool
+{
+    try {
+        return $pdo->inTransaction() && $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite';
+    } catch (Throwable $e) {
+        return $pdo->inTransaction();
+    }
+}
+
+function numberSequencesTableExists(PDO $pdo): bool
+{
+    static $cache = [];
+
+    $cacheKey = spl_object_id($pdo);
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
+    try {
+        $pdo->query("SELECT 1 FROM number_sequences LIMIT 1");
+        return $cache[$cacheKey] = true;
+    } catch (Throwable $e) {
+        $message = $e->getMessage();
+        if (
+            strpos($message, '1146') !== false ||
+            strpos($message, '42S02') !== false ||
+            stripos($message, 'no such table') !== false
+        ) {
+            return $cache[$cacheKey] = false;
+        }
+        throw $e;
+    }
+}
+
+function nextSequenceValue(PDO $pdo, string $sequenceKey, int $seed = 1): int
+{
+    $startedTransaction = false;
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $startedTransaction = true;
+    }
+
+    try {
+        $insert = $pdo->prepare("
+            INSERT INTO number_sequences (sequence_key, next_value, created_at, updated_at)
+            SELECT ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM number_sequences WHERE sequence_key = ?
+            )
+        ");
+
+        try {
+            $insert->execute([$sequenceKey, $seed, $sequenceKey]);
+        } catch (Throwable $e) {
+            $duplicateInsert = stripos($e->getMessage(), 'duplicate') !== false
+                || stripos($e->getMessage(), 'UNIQUE constraint failed') !== false;
+            if (!$duplicateInsert) {
+                throw $e;
+            }
+        }
+
+        $selectSql = "SELECT next_value FROM number_sequences WHERE sequence_key = ?";
+        if (dbSupportsSelectForUpdate($pdo)) {
+            $selectSql .= " FOR UPDATE";
+        }
+
+        $select = $pdo->prepare($selectSql);
+        $select->execute([$sequenceKey]);
+        $currentValue = (int) $select->fetchColumn();
+
+        if ($currentValue <= 0) {
+            $currentValue = $seed;
+            $pdo->prepare("
+                UPDATE number_sequences
+                SET next_value = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE sequence_key = ?
+            ")->execute([$seed + 1, $sequenceKey]);
+        } else {
+            $pdo->prepare("
+                UPDATE number_sequences
+                SET next_value = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE sequence_key = ?
+            ")->execute([$currentValue + 1, $sequenceKey]);
+        }
+
+        if ($startedTransaction) {
+            $pdo->commit();
+        }
+
+        return $currentValue;
+    } catch (Throwable $e) {
+        if ($startedTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+function peekSequenceValue(PDO $pdo, string $sequenceKey, int $seed = 1): int
+{
+    $stmt = $pdo->prepare("SELECT next_value FROM number_sequences WHERE sequence_key = ?");
+    $stmt->execute([$sequenceKey]);
+    $value = $stmt->fetchColumn();
+
+    return $value !== false ? (int) $value : $seed;
+}
+
+function previewRequestNumber(PDO $pdo): string
+{
+    if (numberSequencesTableExists($pdo)) {
+        return 'PR' . str_pad((string) peekSequenceValue($pdo, 'procurement_request_number', 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    $last = $pdo->query("
+        SELECT request_number
+        FROM procurement_requests
+        WHERE request_number LIKE 'PR%'
+        ORDER BY request_id DESC
+        LIMIT 1
+    ")->fetchColumn();
+
+    return $last
+        ? 'PR' . str_pad((string) (((int) substr((string) $last, 2)) + 1), 3, '0', STR_PAD_LEFT)
+        : 'PR001';
+}
+
 function generateRequestNumber(PDO $pdo): string
 {
+    if (numberSequencesTableExists($pdo)) {
+        return 'PR' . str_pad((string) nextSequenceValue($pdo, 'procurement_request_number', 1), 3, '0', STR_PAD_LEFT);
+    }
+
     $query = "
         SELECT request_number
         FROM procurement_requests
@@ -120,7 +250,7 @@ function generateRequestNumber(PDO $pdo): string
         ORDER BY request_id DESC
         LIMIT 1
     ";
-    if ($pdo->inTransaction()) {
+    if (dbSupportsSelectForUpdate($pdo)) {
         $query .= " FOR UPDATE";
     }
 
@@ -133,6 +263,10 @@ function generateRequestNumber(PDO $pdo): string
 
 function generateCommitmentNumber(PDO $pdo): string
 {
+    if (numberSequencesTableExists($pdo)) {
+        return 'CM' . str_pad((string) nextSequenceValue($pdo, 'commitment_number', 1), 3, '0', STR_PAD_LEFT);
+    }
+
     $query = "
         SELECT commitment_number
         FROM commitments
@@ -140,7 +274,7 @@ function generateCommitmentNumber(PDO $pdo): string
         ORDER BY commitment_id DESC
         LIMIT 1
     ";
-    if ($pdo->inTransaction()) {
+    if (dbSupportsSelectForUpdate($pdo)) {
         $query .= " FOR UPDATE";
     }
 
@@ -153,6 +287,10 @@ function generateCommitmentNumber(PDO $pdo): string
 
 function generatePONumber(PDO $pdo): string
 {
+    if (numberSequencesTableExists($pdo)) {
+        return 'PO' . str_pad((string) nextSequenceValue($pdo, 'purchase_order_number', 1), 3, '0', STR_PAD_LEFT);
+    }
+
     $query = "
         SELECT po_number
         FROM purchase_orders
@@ -160,7 +298,7 @@ function generatePONumber(PDO $pdo): string
         ORDER BY po_id DESC
         LIMIT 1
     ";
-    if ($pdo->inTransaction()) {
+    if (dbSupportsSelectForUpdate($pdo)) {
         $query .= " FOR UPDATE";
     }
 
@@ -169,6 +307,82 @@ function generatePONumber(PDO $pdo): string
     return $last
         ? 'PO' . str_pad(((int)substr($last, 2)) + 1, 3, '0', STR_PAD_LEFT)
         : 'PO001';
+}
+
+function previewServiceContractNumber(PDO $pdo): string
+{
+    if (numberSequencesTableExists($pdo)) {
+        return 'SC' . str_pad((string) peekSequenceValue($pdo, 'service_contract_number', 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    $nextNum = (int) $pdo->query("SELECT COUNT(*) + 1 FROM service_contracts")->fetchColumn();
+    return 'SC' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
+}
+
+function generateServiceContractNumber(PDO $pdo): string
+{
+    if (numberSequencesTableExists($pdo)) {
+        return 'SC' . str_pad((string) nextSequenceValue($pdo, 'service_contract_number', 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    $nextNum = (int) $pdo->query("SELECT COUNT(*) + 1 FROM service_contracts")->fetchColumn();
+    return 'SC' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
+}
+
+function previewYearlyPONumber(PDO $pdo): string
+{
+    $year = date('Y');
+    $sequenceKey = 'purchase_order_number_' . $year;
+
+    if (numberSequencesTableExists($pdo)) {
+        return sprintf("PO-%s-%04d", $year, peekSequenceValue($pdo, $sequenceKey, 1));
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT po_number
+        FROM purchase_orders
+        WHERE po_number LIKE ?
+        ORDER BY po_id DESC
+        LIMIT 1
+    ");
+    $stmt->execute(["PO-$year-%"]);
+    $lastPo = $stmt->fetchColumn();
+    $nextNumber = $lastPo ? (int) substr((string) $lastPo, -4) + 1 : 1;
+
+    return sprintf("PO-%s-%04d", $year, $nextNumber);
+}
+
+function generateYearlyPONumber(PDO $pdo): string
+{
+    $year = date('Y');
+    $sequenceKey = 'purchase_order_number_' . $year;
+
+    if (numberSequencesTableExists($pdo)) {
+        return sprintf("PO-%s-%04d", $year, nextSequenceValue($pdo, $sequenceKey, 1));
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT po_number
+        FROM purchase_orders
+        WHERE po_number LIKE ?
+        ORDER BY po_id DESC
+        LIMIT 1
+    ");
+    if (dbSupportsSelectForUpdate($pdo)) {
+        $sql = "
+            SELECT po_number
+            FROM purchase_orders
+            WHERE po_number LIKE ?
+            ORDER BY po_id DESC
+            LIMIT 1 FOR UPDATE
+        ";
+        $stmt = $pdo->prepare($sql);
+    }
+    $stmt->execute(["PO-$year-%"]);
+    $lastPo = $stmt->fetchColumn();
+    $nextNumber = $lastPo ? (int) substr((string) $lastPo, -4) + 1 : 1;
+
+    return sprintf("PO-%s-%04d", $year, $nextNumber);
 }
 
 /* ================================

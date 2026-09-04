@@ -196,8 +196,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         /* Notify next approver or requestor of finalization */
         require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
-        notifyNextApprover($id, $nextApproval['role']);
-        if (in_array($nextStatus, ['AWARDED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE'])) {
+        $pendingApprovalCountStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM request_approvals
+            WHERE request_id = ?
+              AND status = 'pending'
+        ");
+        $pendingApprovalCountStmt->execute([$id]);
+        $hasPendingApprovals = ((int)$pendingApprovalCountStmt->fetchColumn()) > 0;
+
+        if ($hasPendingApprovals) {
+            notifyNextApprover($id, $nextApproval['role']);
+        } else {
             notifyRequestFinalized($id, $nextStatus);
         }
         if ($nextStatus === 'RFQ_LETTER_AVAILABLE') {

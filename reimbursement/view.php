@@ -612,11 +612,14 @@ $csrfToken = ensureCsrfToken();
           
           <?php 
           // Finance approval actions
-          $isFinanceOfficer = ($_SESSION['role_name'] ?? '') === 'Finance Officer';
-          $canApprove = $request['status'] === 'SUBMITTED' && $isFinanceOfficer;
+          $isFinanceApprover = in_array($_SESSION['role_name'] ?? '', ['Finance Officer', 'Admin', 'SuperAdmin'], true);
+          $canApprove = $request['status'] === 'SUBMITTED' && $isFinanceApprover;
           // Final approval once the invoice has cleared verification (or the
           // request bypassed the invoice stages while funds were verified).
-          $canFinalApprove = in_array($request['status'], ['FUNDS_VERIFIED', 'INVOICE_VERIFIED'], true) && $isFinanceOfficer;
+          $canBypassInvoiceVerification = $request['status'] === 'FUNDS_VERIFIED'
+              && $isFinanceApprover
+              && has_permission('approve_reimbursement_without_invoice_verification');
+          $canFinalApprove = ($request['status'] === 'INVOICE_VERIFIED' && $isFinanceApprover) || $canBypassInvoiceVerification;
           ?>
           
           <?php if ($canApprove): ?>
@@ -649,6 +652,13 @@ $csrfToken = ensureCsrfToken();
               <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <input type="hidden" name="action" value="approve">
+              <?php if ($canBypassInvoiceVerification): ?>
+                <div class="alert alert-warning py-2 mb-2">
+                  <small><strong>Invoice bypass:</strong> This request has not passed invoice verification. Provide a reason to use the exceptional bypass approval.</small>
+                </div>
+                <textarea name="comments" class="form-control form-control-sm mb-2" rows="3" minlength="5" required
+                          placeholder="Required bypass reason (minimum 5 characters)"></textarea>
+              <?php endif; ?>
               <button type="submit" class="btn btn-success btn-sm w-100 mb-2">
                 <i class="bi bi-check-circle"></i> Approve Reimbursement
               </button>
@@ -665,7 +675,7 @@ $csrfToken = ensureCsrfToken();
 
           <?php 
           // Finance marks payment as disbursed/reimbursed
-          $canMarkReimbursed = ($request['status'] === 'APPROVED') && $isFinanceOfficer;
+          $canMarkReimbursed = ($request['status'] === 'APPROVED') && $isFinanceApprover;
           ?>
           
           <?php if ($canMarkReimbursed): ?>

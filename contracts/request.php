@@ -46,15 +46,7 @@ try {
     $userBranch = (int)($contract['branch_id'] ?? 0);
 }
 
-/* Generate next request number */
-try {
-    $numStmt = $pdo->query("SELECT MAX(CAST(SUBSTRING(request_number, 3) AS UNSIGNED)) FROM procurement_requests WHERE request_number REGEXP '^PR[0-9]+$'");
-    $lastNum = (int)$numStmt->fetchColumn();
-} catch (Throwable $e) {
-    error_log('contracts/request.php: request number generation failed: ' . $e->getMessage());
-    $lastNum = 0;
-}
-$nextRequestNumber = 'PR' . str_pad($lastNum + 1, 3, '0', STR_PAD_LEFT);
+$nextRequestNumber = previewRequestNumber($pdo);
 
 /* ===============================
    Handle POST
@@ -81,6 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         try {
             $pdo->beginTransaction();
+            $nextRequestNumber = generateRequestNumber($pdo);
 
             // Insert procurement request with SERVICE_CONTRACT type
             $stmt = $pdo->prepare("

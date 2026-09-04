@@ -7,6 +7,7 @@
 if (!defined('UNIT_TESTING')) {
     require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 }
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 
 /* ================================================================
    MIGRATION CHECK
@@ -52,13 +53,18 @@ function inventoryComplianceTablesExist(PDO $pdo): bool
 
 function generateInventoryNumber(PDO $pdo, string $prefix, string $table, string $column): string
 {
+    if (numberSequencesTableExists($pdo)) {
+        $sequenceKey = 'inventory:' . $table . ':' . $column . ':' . $prefix;
+        return $prefix . str_pad((string) nextSequenceValue($pdo, $sequenceKey, 1), 5, '0', STR_PAD_LEFT);
+    }
+
     $sql = "
         SELECT $column FROM $table
         WHERE $column LIKE :prefix
         ORDER BY LENGTH($column) DESC, $column DESC
         LIMIT 1
     ";
-    if ($pdo->inTransaction()) {
+    if (dbSupportsSelectForUpdate($pdo)) {
         $sql .= " FOR UPDATE";
     }
 
@@ -121,11 +127,7 @@ function generateDocumentNumber(PDO $pdo, string $docType): string {
 
 function inventorySupportsForUpdate(PDO $pdo): bool
 {
-    try {
-        return $pdo->inTransaction() && $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite';
-    } catch (Throwable $e) {
-        return $pdo->inTransaction();
-    }
+    return dbSupportsSelectForUpdate($pdo);
 }
 
 function inventoryOptionalTableExists(PDO $pdo, string $tableName): bool

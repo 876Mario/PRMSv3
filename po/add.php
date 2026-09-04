@@ -6,30 +6,6 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/services/SecureFileStorage.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/workflow.php";
 
-function generateYearlyPONumber(PDO $pdo): string
-{
-    $year = date('Y');
-    $sql = "
-        SELECT po_number
-        FROM purchase_orders
-        WHERE po_number LIKE ?
-        ORDER BY po_id DESC
-        LIMIT 1
-    ";
-    if ($pdo->inTransaction()) {
-        $sql .= " FOR UPDATE";
-    }
-
-    $seqStmt = $pdo->prepare($sql);
-    $seqStmt->execute(["PO-$year-%"]);
-    $lastPo = $seqStmt->fetchColumn();
-    $nextNumber = $lastPo ? (int)substr((string)$lastPo, -4) + 1 : 1;
-
-    return sprintf("PO-%s-%04d", $year, $nextNumber);
-}
-
-
-
 /* ================================
    Validate commitment_id
 ================================ */
@@ -175,7 +151,7 @@ if (!in_array(strtoupper($commitment['request_status']), $allowedPOStatus)) {
 
 $request_id = (int)$commitment['request_id'];
 
-$po_number = generateYearlyPONumber($pdo);
+$po_number = previewYearlyPONumber($pdo);
 
 /* ================================
    Handle POST
