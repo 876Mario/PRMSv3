@@ -33,8 +33,8 @@ if (!$request) {
     exit;
 }
 
-if (!isRequestOwner($request)) {
-    pop("You can only submit your own procurement requests.", "/procurement/list.php", POP_DEFAULT_DELAY_MS, "error");
+if (!canCurrentUserEditOrSubmitRequest($request)) {
+    pop("You do not have permission to submit this procurement request.", "/procurement/list.php", POP_DEFAULT_DELAY_MS, "error");
     exit;
 }
 

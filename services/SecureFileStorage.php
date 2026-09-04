@@ -106,18 +106,11 @@ class SecureFileStorage
                 return null;
             }
 
-            $root = realpath($root);
-            if ($root === false) {
-                return null;
-            }
+            $root = realpath($root) ?: $root;
+            $root = rtrim(str_replace('\\', '/', $root), '/');
+            $relative = ltrim(str_replace('\\', '/', $relative), '/');
 
-            $path = $root . '/' . $relative;
-            $directory = realpath(dirname($path));
-            if ($directory === false || strpos($directory, $root) !== 0) {
-                return null;
-            }
-
-            return $path;
+            return $root . '/' . $relative;
         }
 
         if ($legacyRelativeDirectory !== null && !str_starts_with($storedPath, '/')) {

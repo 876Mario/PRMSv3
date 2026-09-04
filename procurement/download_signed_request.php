@@ -15,21 +15,31 @@ if ($requestId <= 0) {
 }
 
 $params = [];
-$sql = "\n    SELECT pr.request_id, pr.request_number, pr.status, pr.created_by,
-           srd.document_path, srd.file_type, srd.original_file_name, srd.version_number
-    FROM procurement_requests pr
-    LEFT JOIN signed_request_documents srd
-      ON srd.request_id = pr.request_id
-     AND srd.is_deleted = 0
-";
 if ($version > 0) {
-    $sql .= " AND srd.version_number = ?\n";
-    $params[] = $version;
+    $sql = "
+        SELECT pr.request_id, pr.request_number, pr.status, pr.created_by,
+               srd.document_path, srd.file_type, srd.original_file_name, srd.version_number
+        FROM signed_request_documents srd
+        INNER JOIN procurement_requests pr ON pr.request_id = srd.request_id
+        WHERE srd.request_id = ?
+          AND srd.version_number = ?
+          AND srd.is_deleted = 0
+        LIMIT 1
+    ";
+    $params = [$requestId, $version];
 } else {
-    $sql .= " AND srd.is_active = 1\n";
+    $sql = "
+        SELECT pr.request_id, pr.request_number, pr.status, pr.created_by,
+               srd.document_path, srd.file_type, srd.original_file_name, srd.version_number
+        FROM signed_request_documents srd
+        INNER JOIN procurement_requests pr ON pr.request_id = srd.request_id
+        WHERE srd.request_id = ?
+          AND srd.is_active = 1
+          AND srd.is_deleted = 0
+        LIMIT 1
+    ";
+    $params = [$requestId];
 }
-$sql .= "    WHERE pr.request_id = ? LIMIT 1";
-$params[] = $requestId;
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
