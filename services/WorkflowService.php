@@ -146,7 +146,7 @@ class WorkflowService
             'HOD_APPROVED'                 => ['FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED',
                                                // ← backward
                                                'SUBMITTED'],
-            'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'DECLINED',
+            'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'APPROVED', 'DECLINED',
                                                // ← backward
                                                'HOD_APPROVED', 'SUBMITTED', 'RETURNED_FOR_CORRECTION'],
             'INVOICE_SUBMITTED'            => ['INVOICE_VERIFIED', 'DECLINED',

@@ -71,7 +71,15 @@ try {
     ");
     $update->execute([$request_id]);
 
-    $pdo->prepare("DELETE FROM request_approvals WHERE request_id = ?")->execute([$request_id]);
+    $pdo->prepare("
+        UPDATE request_approvals
+        SET status = 'rejected',
+            comments = CONCAT(COALESCE(NULLIF(comments, ''), 'No comments'), ' [Superseded by resubmission]'),
+            approved_by = COALESCE(approved_by, ?),
+            approved_at = COALESCE(approved_at, NOW())
+        WHERE request_id = ?
+          AND status = 'pending'
+    ")->execute([$_SESSION['user_id'], $request_id]);
 
     logAudit(
         $pdo,
@@ -188,4 +196,3 @@ pop(
     1500,
     "success"
 );
-

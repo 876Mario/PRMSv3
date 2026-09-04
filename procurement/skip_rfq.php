@@ -48,6 +48,11 @@ if (!canCurrentUserAccessRequestRecord($request)) {
     exit;
 }
 
+if (!in_array((string)($_SESSION['role_name'] ?? ''), ['Procurement Officer', 'Admin', 'SuperAdmin'], true)) {
+    pop('You do not have permission to skip the RFQ stage for this request.', '/procurement/view.php?id=' . $id, POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
 /* Must be in an RFQ-eligible, post-approval stage */
 $eligibleStatuses = ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'FUNDS_VERIFIED', 'RFQ_LETTER_AVAILABLE'];
 if (!in_array(strtoupper($request['status']), $eligibleStatuses, true)) {

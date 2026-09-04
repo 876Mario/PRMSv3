@@ -119,7 +119,7 @@ class SecureFileStorage
             return null;
         }
 
-        $documentRoot = realpath((string)($_SERVER['DOCUMENT_ROOT'] ?? ''));
+        $documentRoot = realpath((string)($_SERVER['DOCUMENT_ROOT'] ?? dirname(__DIR__)));
         if ($documentRoot === false) {
             return null;
         }
