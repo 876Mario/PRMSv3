@@ -43,4 +43,21 @@ final class NumberSequenceHelperTest extends PHPUnit\Framework\TestCase
         $this->assertSame(sprintf('PO-%s-0001', $currentYear), generateYearlyPONumber($this->pdo));
         $this->assertSame(sprintf('PO-%s-0002', $currentYear), previewYearlyPONumber($this->pdo));
     }
+
+    public function testNextSortOrderValueReturnsNextPosition(): void
+    {
+        $this->pdo->exec("
+            CREATE TABLE job_titles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title_name TEXT,
+                sort_order INTEGER
+            )
+        ");
+
+        $this->assertSame(1, nextSortOrderValue($this->pdo, 'job_titles'));
+
+        $this->pdo->exec("INSERT INTO job_titles (title_name, sort_order) VALUES ('Analyst', 2), ('Manager', 5)");
+
+        $this->assertSame(6, nextSortOrderValue($this->pdo, 'job_titles'));
+    }
 }

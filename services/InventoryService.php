@@ -1562,27 +1562,49 @@ function lockDocument(PDO $pdo, int $documentId): void
 function getCategories(PDO $pdo, bool $activeOnly = true): array
 {
     $where = $activeOnly ? "WHERE is_active = 1" : "";
-    return $pdo->query("SELECT * FROM inv_categories $where ORDER BY sort_order, category_name")->fetchAll(PDO::FETCH_ASSOC);
+    return $pdo->query("
+        SELECT category_id, category_name, category_code, description, parent_category_id, is_active, sort_order
+        FROM inv_categories
+        $where
+        ORDER BY sort_order, category_name
+    ")->fetchAll(PDO::FETCH_ASSOC);
 }
 
 function getCriticalityClasses(PDO $pdo): array
 {
-    return $pdo->query("SELECT * FROM inv_criticality_classes ORDER BY sort_order")->fetchAll(PDO::FETCH_ASSOC);
+    return $pdo->query("
+        SELECT criticality_id, criticality_code, criticality_name, description, sort_order
+        FROM inv_criticality_classes
+        ORDER BY sort_order
+    ")->fetchAll(PDO::FETCH_ASSOC);
 }
 
 function getRiskClasses(PDO $pdo): array
 {
-    return $pdo->query("SELECT * FROM inv_risk_classes ORDER BY sort_order")->fetchAll(PDO::FETCH_ASSOC);
+    return $pdo->query("
+        SELECT risk_class_id, risk_code, risk_name, description, sort_order
+        FROM inv_risk_classes
+        ORDER BY sort_order
+    ")->fetchAll(PDO::FETCH_ASSOC);
 }
 
 function getAccountingClasses(PDO $pdo): array
 {
-    return $pdo->query("SELECT * FROM inv_accounting_classes ORDER BY sort_order")->fetchAll(PDO::FETCH_ASSOC);
+    return $pdo->query("
+        SELECT acct_class_id, acct_class_code, acct_class_name, description, sort_order
+        FROM inv_accounting_classes
+        ORDER BY sort_order
+    ")->fetchAll(PDO::FETCH_ASSOC);
 }
 
 function getUnitsOfMeasure(PDO $pdo): array
 {
-    return $pdo->query("SELECT * FROM inv_units_of_measure WHERE is_active = 1 ORDER BY uom_name")->fetchAll(PDO::FETCH_ASSOC);
+    return $pdo->query("
+        SELECT uom_id, uom_code, uom_name, is_active
+        FROM inv_units_of_measure
+        WHERE is_active = 1
+        ORDER BY uom_name
+    ")->fetchAll(PDO::FETCH_ASSOC);
 }
 
 /**
@@ -1593,7 +1615,12 @@ function getAssetTypes(PDO $pdo, bool $activeOnly = true): array
 {
     try {
         $where = $activeOnly ? "WHERE is_active = 1" : "";
-        return $pdo->query("SELECT * FROM asset_types $where ORDER BY sort_order, type_name")->fetchAll(PDO::FETCH_ASSOC);
+        return $pdo->query("
+            SELECT asset_type_id, type_code, type_name, description, is_active, sort_order
+            FROM asset_types
+            $where
+            ORDER BY sort_order, type_name
+        ")->fetchAll(PDO::FETCH_ASSOC);
     } catch (PDOException $e) {
         if (strpos($e->getMessage(), '1146') !== false || strpos($e->getMessage(), '42S02') !== false) {
             return [];
@@ -1610,7 +1637,12 @@ function getInventoryTypes(PDO $pdo, bool $activeOnly = true): array
 {
     try {
         $where = $activeOnly ? "WHERE is_active = 1" : "";
-        return $pdo->query("SELECT * FROM inventory_types $where ORDER BY sort_order, type_name")->fetchAll(PDO::FETCH_ASSOC);
+        return $pdo->query("
+            SELECT inventory_type_id, type_code, type_name, description, is_active, sort_order
+            FROM inventory_types
+            $where
+            ORDER BY sort_order, type_name
+        ")->fetchAll(PDO::FETCH_ASSOC);
     } catch (PDOException $e) {
         if (strpos($e->getMessage(), '1146') !== false || strpos($e->getMessage(), '42S02') !== false) {
             return [];
@@ -1628,7 +1660,10 @@ function getAssetItemTypeGroups(PDO $pdo, bool $activeOnly = true): array
     try {
         $where = $activeOnly ? "WHERE is_active = 1" : "";
         return $pdo->query(
-            "SELECT * FROM inv_asset_item_type_groups $where ORDER BY sort_order, group_name"
+            "SELECT group_id, group_code, group_name, description, sort_order, is_active
+             FROM inv_asset_item_type_groups
+             $where
+             ORDER BY sort_order, group_name"
         )->fetchAll(PDO::FETCH_ASSOC);
     } catch (PDOException $e) {
         if (strpos($e->getMessage(), '1146') !== false || strpos($e->getMessage(), '42S02') !== false) {
@@ -1661,7 +1696,8 @@ function getAssetItemTypes(PDO $pdo, ?int $groupId = null, bool $activeOnly = tr
         }
         $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
         $stmt  = $pdo->prepare(
-            "SELECT t.*, g.group_code, g.group_name
+            "SELECT t.item_type_id, t.group_id, t.type_code, t.type_name, t.description, t.sort_order, t.is_active,
+                    g.group_code, g.group_name
              FROM inv_asset_item_types t
              JOIN inv_asset_item_type_groups g ON t.group_id = g.group_id
              $where
@@ -1745,7 +1781,9 @@ function validatePrimaryAssetTypeSelection(PDO $pdo, ?string $itemDomain, $asset
 function getActiveLocations(PDO $pdo): array
 {
     return $pdo->query("
-        SELECT l.*, u.full_name AS custodian_name
+        SELECT l.location_id, l.location_code, l.site_campus, l.building, l.floor, l.room_storage_area,
+               l.bin_shelf_rack, l.security_level, l.temp_humidity_req, l.custodian_user_id,
+               l.capacity, l.is_active, l.location_type, u.full_name AS custodian_name
         FROM inv_locations l
         LEFT JOIN users u ON l.custodian_user_id = u.user_id
         WHERE l.is_active = 1
@@ -1755,7 +1793,11 @@ function getActiveLocations(PDO $pdo): array
 
 function getInvRoles(PDO $pdo): array
 {
-    return $pdo->query("SELECT * FROM inv_roles ORDER BY role_name")->fetchAll(PDO::FETCH_ASSOC);
+    return $pdo->query("
+        SELECT inv_role_id, role_code, role_name, description
+        FROM inv_roles
+        ORDER BY role_name
+    ")->fetchAll(PDO::FETCH_ASSOC);
 }
 
 /**

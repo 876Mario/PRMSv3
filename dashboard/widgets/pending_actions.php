@@ -128,14 +128,28 @@ if (!function_exists('isMonitoringRole') ||
     }
 
     if (!empty($myStatuses)) {
-        $placeholders = implode(',', array_fill(0, count($myStatuses), '?'));
+        $canOverrideRequestor = function_exists('hasPermission') && (hasPermission('override_requestor_review') || hasPermission('admin_override_approvals'));
+        $canOverrideBranchHead = function_exists('hasPermission') && (hasPermission('override_branch_head_approval') || hasPermission('admin_override_approvals'));
+        $statusPlaceholders = [];
+        $params = [
+            ':current_user_id' => $userId,
+            ':can_override_requestor' => $canOverrideRequestor ? 1 : 0,
+            ':can_override_branch_head' => $canOverrideBranchHead ? 1 : 0,
+            ':user_is_hrma_director' => $userRole === 'Director HRM&A' ? 1 : 0,
+            ':user_is_branch_head' => in_array($userRole, ['HOD', 'Branch Head'], true) ? 1 : 0,
+            ':user_branch_id' => $userBranchId,
+        ];
+        foreach ($myStatuses as $index => $status) {
+            $placeholder = ':status_' . $index;
+            $statusPlaceholders[] = $placeholder;
+            $params[$placeholder] = $status;
+        }
 
         // Deputy Government Chemist: restrict to their branch
         $branchFilter = '';
-        $branchParams = [];
         if ($userRole === 'Deputy Government Chemist') {
-            $branchFilter = 'AND pr.branch_id = ?';
-            $branchParams = [6];
+            $branchFilter = 'AND pr.branch_id = :dashboard_branch_id';
+            $params[':dashboard_branch_id'] = 6;
         }
 
         $workflowStmt = $pdo->prepare("
@@ -157,34 +171,38 @@ if (!function_exists('isMonitoringRole') ||
             LEFT JOIN rfqs r     ON r.request_id = pr.request_id
             LEFT JOIN branches b ON pr.branch_id = b.branch_id
             LEFT JOIN users u    ON pr.created_by = u.user_id
-            WHERE UPPER(pr.status) IN ({$placeholders})
+            WHERE UPPER(pr.status) IN (" . implode(',', $statusPlaceholders) . ")
               AND UPPER(pr.status) NOT IN ('CANCELLED','PAUSED')
               {$branchFilter}
+              AND (
+                    UPPER(pr.status) NOT IN ('QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING')
+                    OR (
+                        UPPER(pr.status) = 'QUOTE_REQUESTOR_REVIEW_PENDING'
+                        AND (
+                            :can_override_requestor = 1
+                            OR pr.created_by = :current_user_id
+                        )
+                    )
+                    OR (
+                        UPPER(pr.status) IN ('QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING')
+                        AND (
+                            :can_override_branch_head = 1
+                            OR (
+                                :user_is_hrma_director = 1
+                                AND (pr.branch_id = 5 OR UPPER(COALESCE(b.branch_name, '')) LIKE '%HRM%')
+                            )
+                            OR (
+                                :user_is_branch_head = 1
+                                AND :user_branch_id > 0
+                                AND pr.branch_id = :user_branch_id
+                            )
+                        )
+                    )
+              )
             ORDER BY {$dashboardOrderBy} {$dashboardDir}
         ");
-        $params = array_merge($myStatuses, $branchParams);
         $workflowStmt->execute($params);
         $workflowActions = $workflowStmt->fetchAll(PDO::FETCH_ASSOC);
-        $canOverrideRequestor = function_exists('hasPermission') && (hasPermission('override_requestor_review') || hasPermission('admin_override_approvals'));
-        $canOverrideBranchHead = function_exists('hasPermission') && (hasPermission('override_branch_head_approval') || hasPermission('admin_override_approvals'));
-        $workflowActions = array_values(array_filter($workflowActions, static function (array $row) use ($userId, $userRole, $userBranchId, $canOverrideRequestor, $canOverrideBranchHead): bool {
-            $status = strtoupper((string)($row['request_status'] ?? ''));
-            if ($status === 'QUOTE_REQUESTOR_REVIEW_PENDING') {
-                return $canOverrideRequestor || (int)($row['created_by'] ?? 0) === $userId;
-            }
-            if ($status === 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' || $status === 'QUOTE_REQUESTOR_REVIEW_APPROVED') {
-                if ($canOverrideBranchHead) {
-                    return true;
-                }
-                $branchId = (int)($row['branch_id'] ?? 0);
-                $isHrmaBranch = $branchId === 5;
-                if ($isHrmaBranch && $userRole === 'Director HRM&A') {
-                    return true;
-                }
-                return in_array($userRole, ['HOD', 'Branch Head'], true) && $userBranchId > 0 && $userBranchId === $branchId;
-            }
-            return true;
-        }));
     }
 }
 

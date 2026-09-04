@@ -120,6 +120,34 @@ function dbSupportsSelectForUpdate(PDO $pdo): bool
     }
 }
 
+function nextSortOrderValue(PDO $pdo, string $tableName, string $primaryKeyColumn = 'id', string $sortOrderColumn = 'sort_order'): int
+{
+    foreach ([$tableName, $primaryKeyColumn, $sortOrderColumn] as $identifier) {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier)) {
+            throw new InvalidArgumentException('Invalid identifier supplied for sort-order lookup.');
+        }
+    }
+
+    $query = sprintf(
+        "SELECT `%s`
+         FROM `%s`
+         ORDER BY `%s` DESC, `%s` DESC
+         LIMIT 1",
+        $sortOrderColumn,
+        $tableName,
+        $sortOrderColumn,
+        $primaryKeyColumn
+    );
+
+    if (dbSupportsSelectForUpdate($pdo)) {
+        $query .= " FOR UPDATE";
+    }
+
+    $lastSortOrder = $pdo->query($query)->fetchColumn();
+
+    return $lastSortOrder !== false ? ((int) $lastSortOrder) + 1 : 1;
+}
+
 function numberSequencesTableExists(PDO $pdo): bool
 {
     static $cache = [];
