@@ -55,6 +55,10 @@ class SecureFileStorage
         }
 
         @chmod($destination, 0640);
+        $fileSize = @filesize($destination);
+        if ($fileSize === false) {
+            throw new RuntimeException('Failed to read uploaded file metadata.');
+        }
 
         $relativePath = trim($relativeDirectory, '/') . '/' . $storedName;
 
@@ -62,7 +66,7 @@ class SecureFileStorage
             'stored_name' => $storedName,
             'storage_path' => self::PRIVATE_SCHEME . $relativePath,
             'mime_type' => $mimeType,
-            'file_size' => (int)filesize($destination),
+            'file_size' => (int)$fileSize,
             'original_name' => self::sanitizeOriginalFilename((string)($file['name'] ?? 'document')),
             'absolute_path' => $destination,
         ];
@@ -156,6 +160,20 @@ class SecureFileStorage
 
         readfile($absolutePath);
         exit;
+    }
+
+    public static function detectStoredMimeType(string $storedPath, ?string $legacyRelativeDirectory = null): string
+    {
+        $absolutePath = self::resolveStoredPath($storedPath, $legacyRelativeDirectory);
+        if ($absolutePath === null || !is_file($absolutePath) || !is_readable($absolutePath)) {
+            return 'application/octet-stream';
+        }
+
+        try {
+            return self::detectMimeType($absolutePath);
+        } catch (Throwable $e) {
+            return 'application/octet-stream';
+        }
     }
 
     public static function sanitizeOriginalFilename(string $name): string

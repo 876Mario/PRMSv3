@@ -788,3 +788,17 @@ function canCurrentUserEditOrSubmitRequest(array $request): bool
 
     return isRequestOwner($request);
 }
+
+function isEditableRequestStatus(string $requestType, string $status): bool
+{
+    $requestType = strtoupper(trim($requestType));
+    $status = strtoupper(trim($status));
+
+    $editableStatuses = [
+        'REGULAR' => ['DRAFT', 'RETURNED_FOR_CORRECTION'],
+        'REIMBURSEMENT' => ['DRAFT', 'RETURNED_FOR_CORRECTION'],
+        'PETTY_CASH' => ['DRAFT', 'RETURNED_FOR_CORRECTION'],
+    ];
+
+    return in_array($status, $editableStatuses[$requestType] ?? ['DRAFT'], true);
+}

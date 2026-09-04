@@ -30,9 +30,9 @@ if (!$existing) {
 /* Admin override: admins with the dedicated permission may edit any status */
 $isAdminEdit = has_permission('edit_reimbursement_request_admin');
 
-/* Only allow editing DRAFT, RETURNED_FOR_CORRECTION, or SUBMITTED status (unless admin override) */
-if (!$isAdminEdit && !in_array($existing['status'], ['DRAFT', 'SUBMITTED', 'RETURNED_FOR_CORRECTION'], true)) {
-    pop('Only DRAFT, RETURNED_FOR_CORRECTION, or SUBMITTED requests can be edited.', '/reimbursement/view.php?request_id=' . $id, 3000, 'warning');
+/* Only allow editing workflow-defined editable statuses (unless admin override) */
+if (!$isAdminEdit && !isEditableRequestStatus('REIMBURSEMENT', (string)$existing['status'])) {
+    pop('Only draft or returned requests can be edited.', '/reimbursement/view.php?request_id=' . $id, 3000, 'warning');
     exit;
 }
 

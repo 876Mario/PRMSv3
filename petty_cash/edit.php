@@ -30,9 +30,9 @@ if (!$existing) {
 /* Admin override: admins with the dedicated permission may edit any status */
 $isAdminEdit = has_permission('edit_petty_cash_request_admin');
 
-/* Only allow editing DRAFT or RETURNED_FOR_CORRECTION status (unless admin override) */
-if (!$isAdminEdit && !in_array($existing['status'], ['DRAFT', 'RETURNED_FOR_CORRECTION'], true)) {
-    pop('Only DRAFT or RETURNED_FOR_CORRECTION requests can be edited.', '/petty_cash/view.php?request_id=' . $id, 3000, 'warning');
+/* Only allow editing workflow-defined editable statuses (unless admin override) */
+if (!$isAdminEdit && !isEditableRequestStatus('PETTY_CASH', (string)$existing['status'])) {
+    pop('Only draft or returned requests can be edited.', '/petty_cash/view.php?request_id=' . $id, 3000, 'warning');
     exit;
 }
 

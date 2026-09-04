@@ -39,9 +39,14 @@ logAudit(
 );
 
 try {
+    $mimeType = SecureFileStorage::detectStoredMimeType(
+        (string)$document['document_path'],
+        'request_documents'
+    );
+
     SecureFileStorage::streamStoredFile(
         (string)$document['document_path'],
-        'application/octet-stream',
+        $mimeType,
         (string)($document['document_name'] ?: 'document'),
         $action,
         'request_documents'
