@@ -440,7 +440,7 @@ $existing_po_number = $existingPo ? $existingPo['po_number'] : null;
                         <label class="form-label text-muted small fw-bold mb-0">GFMS Document</label>
                         <p class="mb-0">
                             <?php if (!empty($c['document_path'])): ?>
-                                <a href="<?= htmlspecialchars($c['document_path']) ?>" target="_blank" class="text-decoration-none">
+                                <a href="/commitments/download_document.php?commitment_id=<?= (int)$c['commitment_id'] ?>" class="text-decoration-none">
                                     <i class="bi bi-file-earmark-pdf text-danger me-1"></i>View Document
                                 </a>
                             <?php else: ?>
@@ -633,7 +633,7 @@ $existing_po_number = $existingPo ? $existingPo['po_number'] : null;
 
         <div class="d-flex flex-wrap gap-2">
             <?php if (!empty($c['document_path'])): ?>
-                <a href="<?= htmlspecialchars($c['document_path']) ?>" target="_blank" class="btn btn-outline-success">
+                <a href="/commitments/download_document.php?commitment_id=<?= (int)$c['commitment_id'] ?>" class="btn btn-outline-success">
                     <i class="bi bi-file-earmark-pdf me-1"></i> View GFMS Document
                 </a>
             <?php endif; ?>

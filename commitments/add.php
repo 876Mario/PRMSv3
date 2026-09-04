@@ -4,6 +4,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/workflow.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/services/SecureFileStorage.php";
 
 // Allow Finance Officers AND Procurement Officers
 $allowedCommitmentRoles = ['Finance Officer', 'Procurement Officer', 'Admin', 'SuperAdmin'];
@@ -160,6 +161,7 @@ if ($quoteCurrency === 'USD' || $requestCurrency === 'USD') {
 
 /* ===== Handle POST ===== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/commitments/add.php?request_id=' . $request_id);
     $action = $_POST['action'] ?? null;
     $uploadedFilePaths = [];
     
@@ -251,32 +253,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Handle optional commitment form upload
             $formDocPath = null;
             if (isset($_FILES['commitment_form_doc']) && $_FILES['commitment_form_doc']['error'] === UPLOAD_ERR_OK) {
-                $file = $_FILES['commitment_form_doc'];
-                
-                $allowedTypes = array_keys($mimeToExtForms);
-                
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $mimeType = finfo_file($finfo, $file['tmp_name']);
-                finfo_close($finfo);
-                
-                if (!in_array($mimeType, $allowedTypes)) {
-                    throw new Exception("Invalid file type. Only PDF, Word, Excel, JPEG and PNG files are allowed.");
-                }
-                if ($file['size'] > 50 * 1024 * 1024) {
-                    throw new Exception("File size exceeds 50 MB limit.");
-                }
-                
-                $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
-                if (!is_dir($uploadDir)) {
-                    mkdir($uploadDir, 0755, true);
-                }
-                $ext = $mimeToExtForms[$mimeType] ?? 'bin';
-                $safeFilename = 'COMMIT_FORM_' . time() . '_' . uniqid() . '.' . $ext;
-                $uploadPath = $uploadDir . $safeFilename;
-                if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-                    throw new Exception("Failed to save commitment form document.");
-                }
-                $formDocPath = '/uploads/commitments/' . $safeFilename;
+                $storedFile = SecureFileStorage::storeUploadedFile(
+                    $_FILES['commitment_form_doc'],
+                    'commitments',
+                    'COMMIT_FORM_' . $request_id,
+                    $mimeToExtForms,
+                    50 * 1024 * 1024
+                );
+                $formDocPath = $storedFile['storage_path'];
+                $uploadedFilePaths[] = $formDocPath;
             }
             
             $pdo->beginTransaction();
@@ -383,92 +368,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $hasCommitmentDocumentUpload = isset($_FILES['commitment_document']) && $_FILES['commitment_document']['error'] !== UPLOAD_ERR_NO_FILE;
             $hasCommitmentFormUpload = isset($_FILES['commitment_form_doc']) && $_FILES['commitment_form_doc']['error'] !== UPLOAD_ERR_NO_FILE;
-            $commitmentUploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/commitments/';
-            if (($hasCommitmentDocumentUpload || $hasCommitmentFormUpload) && !is_dir($commitmentUploadDir) && !mkdir($commitmentUploadDir, 0755, true) && !is_dir($commitmentUploadDir)) {
-                throw new Exception("Failed to prepare commitment upload directory.");
-            }
-
-            $handleCommitmentUpload = function (
-                array $file,
-                array $mimeToExt,
-                string $filenamePrefix,
-                string $uploadDir,
-                string $webDir,
-                string $uploadError,
-                string $mimeDetectorError,
-                string $fileTypeError,
-                string $filenameError,
-                string $saveError
-            ): string {
-                if ($file['error'] !== UPLOAD_ERR_OK) {
-                    throw new Exception($uploadError);
-                }
-
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                if ($finfo === false) {
-                    throw new Exception($mimeDetectorError);
-                }
-                $mimeType = finfo_file($finfo, $file['tmp_name']);
-                finfo_close($finfo);
-
-                if (!array_key_exists($mimeType, $mimeToExt)) {
-                    throw new Exception($fileTypeError);
-                }
-                clearstatcache(true, $file['tmp_name']);
-                $actualFileSize = filesize($file['tmp_name']);
-                if ($actualFileSize === false) {
-                    throw new Exception("Unable to determine file size. Please try again.");
-                }
-                if ($actualFileSize > 50 * 1024 * 1024) {
-                    throw new Exception("File size exceeds 50 MB limit.");
-                }
-
-                $ext = $mimeToExt[$mimeType];
-                try {
-                    $filenameToken = bin2hex(random_bytes(16));
-                } catch (Throwable $e) {
-                    throw new Exception($filenameError);
-                }
-                $safeFilename = $filenamePrefix . '_' . $filenameToken . '.' . $ext;
-                $uploadPath = $uploadDir . $safeFilename;
-                if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-                    throw new Exception($saveError);
-                }
-
-                return $webDir . $safeFilename;
-            };
 
             $documentPath = $hasCommitmentDocumentUpload
-                ? $handleCommitmentUpload(
+                ? SecureFileStorage::storeUploadedFile(
                     $_FILES['commitment_document'],
+                    'commitments',
+                    'COMMITMENT_' . $request_id,
                     $mimeToExtDocuments,
-                    'COMMITMENT',
-                    $commitmentUploadDir,
-                    '/uploads/commitments/',
-                    "Commitment document upload failed. Please try again.",
-                    "Unable to validate commitment document type.",
-                    "Invalid file type. Only PDF, DOC, DOCX, XLS, and XLSX are allowed.",
-                    "Unable to generate a secure commitment document filename.",
-                    "Failed to save commitment document."
-                )
+                    50 * 1024 * 1024
+                )['storage_path']
                 : null;
             if ($documentPath !== null) {
                 $uploadedFilePaths[] = $documentPath;
             }
 
             $formDocPath = $hasCommitmentFormUpload
-                ? $handleCommitmentUpload(
+                ? SecureFileStorage::storeUploadedFile(
                     $_FILES['commitment_form_doc'],
+                    'commitments',
+                    'COMMIT_FORM_' . $request_id,
                     $mimeToExtForms,
-                    'COMMIT_FORM',
-                    $commitmentUploadDir,
-                    '/uploads/commitments/',
-                    "Commitment form upload failed. Please try again.",
-                    "Unable to validate commitment form document type.",
-                    "Invalid file type. Only PDF, Word, Excel, JPEG and PNG files are allowed.",
-                    "Unable to generate a secure commitment form filename.",
-                    "Failed to save commitment form document."
-                )
+                    50 * 1024 * 1024
+                )['storage_path']
                 : null;
             if ($formDocPath !== null) {
                 $uploadedFilePaths[] = $formDocPath;
@@ -589,14 +510,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->rollBack();
         }
         foreach ($uploadedFilePaths as $uploadedPath) {
-            if (str_starts_with($uploadedPath, '/uploads/commitments/')) {
-                $absoluteUploadedPath = $_SERVER['DOCUMENT_ROOT'] . $uploadedPath;
-                if (is_file($absoluteUploadedPath)) {
-                    if (!unlink($absoluteUploadedPath)) {
-                        error_log("Failed to clean up uploaded commitment file: " . $absoluteUploadedPath);
-                    }
-                }
-            }
+            SecureFileStorage::deleteStoredFile($uploadedPath, 'commitments');
         }
         pop(extractDbMessage($e), "/commitments/add.php?request_id=" . $request_id, 2500, "error");
         exit;
@@ -749,6 +663,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 
                 <div class="d-flex gap-2">
                     <form method="post" class="flex-grow-1">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                         <input type="hidden" name="action" value="verify_funds">
                         <button type="submit" class="btn btn-success btn-lg w-100" onclick="return confirm('Confirm that funds are available for this request?')">
                             <i class="bi bi-check-circle me-1"></i> Verify Funds Available
@@ -762,6 +677,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 <div class="mt-3">
                     <h6 class="text-danger"><i class="bi bi-x-circle me-1"></i> Or Decline</h6>
                     <form method="post">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                         <input type="hidden" name="action" value="decline">
                         <div class="mb-3">
                             <textarea name="decline_reason" class="form-control" rows="4" 
@@ -796,6 +712,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 </div>
 
                 <form method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                     <input type="hidden" name="action" value="submit_commitment_form">
                     
                     <!-- Optional: Upload scanned commitment form -->
@@ -841,13 +758,14 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 <?php if (!empty($request['commitment_form_path'])): ?>
                 <div class="alert alert-info mb-4">
                     <h6 class="fw-bold mb-2"><i class="bi bi-file-earmark me-1"></i> Uploaded Commitment Form</h6>
-                    <a href="<?= htmlspecialchars($request['commitment_form_path']) ?>" target="_blank" class="btn btn-sm btn-outline-primary">
+                    <a href="/commitments/download_form.php?request_id=<?= (int)$request_id ?>" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-file-earmark me-1"></i> View Uploaded Form
                     </a>
                 </div>
                 <?php endif; ?>
 
                 <form method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                     <input type="hidden" name="action" value="upload_commitment">
 
                     <?php if (empty($request['commitment_form_path'])): ?>
@@ -1000,6 +918,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 <div class="mt-3">
                     <h6 class="text-danger"><i class="bi bi-x-circle me-1"></i> Or Decline (Funds Not Available)</h6>
                     <form method="post">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                         <input type="hidden" name="action" value="decline">
                         <div class="mb-3">
                             <textarea name="decline_reason" class="form-control" rows="3"

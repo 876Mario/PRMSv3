@@ -80,6 +80,9 @@ $po_number = sprintf("PO-%s-%04d", $year, $nextNumber);
    Handle POST - Upload PO
 ================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/po/upload.php?commitment_id=' . $commitment_id);
+    $uploadedDocumentPath = null;
+
     try {
         $po_date  = $_POST['po_date'] ?? '';
         $po_total = (float)($_POST['po_total'] ?? 0);
@@ -117,29 +120,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception("PO document upload is required.");
         }
 
-        $file = $_FILES['po_file'];
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        $allowedExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx'];
-
-        if (!in_array($ext, $allowedExts)) {
-            throw new Exception("Invalid file type. Allowed: " . implode(', ', $allowedExts));
-        }
-
-        if ($file['size'] > 50 * 1024 * 1024) {
-            throw new Exception("File size exceeds 50 MB limit.");
-        }
-
-        $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/po/';
-        if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0755, true);
-        }
-
-        $filename = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', $file['name']);
-        $filepath = $uploadDir . $filename;
-
-        if (!move_uploaded_file($file['tmp_name'], $filepath)) {
-            throw new Exception("Failed to upload file.");
-        }
+        $storedFile = SecureFileStorage::storeUploadedFile(
+            $_FILES['po_file'],
+            'po',
+            'PO_' . $commitment_id,
+            [
+                'application/pdf' => 'pdf',
+                'application/msword' => 'doc',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                'application/vnd.ms-excel' => 'xls',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+            ],
+            50 * 1024 * 1024
+        );
+        $uploadedDocumentPath = $storedFile['storage_path'];
 
         $pdo->beginTransaction();
 
@@ -152,15 +146,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $stmt = $pdo->prepare("
             INSERT INTO purchase_orders
-            (commitment_id, po_number, po_date, po_total, po_file, uploaded_by, upload_date, status, gfms_po_number)
-            VALUES (?, ?, ?, ?, ?, ?, NOW(), 'Open', ?)
+            (commitment_id, po_number, po_date, po_total, po_file, document_path, uploaded_by, upload_date, status, gfms_po_number)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'Open', ?)
         ");
         $stmt->execute([
             $commitment_id,
             $po_number,
             $po_date,
             $po_total,
-            $filename,
+            $uploadedDocumentPath,
+            $uploadedDocumentPath,
             $_SESSION['user_id'],
             !empty($gfmsPoNumber) ? $gfmsPoNumber : null
         ]);
@@ -201,6 +196,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
+        }
+        if ($uploadedDocumentPath !== null) {
+            SecureFileStorage::deleteStoredFile($uploadedDocumentPath, 'po');
         }
         pop(extractDbMessage($e), "/po/upload.php?commitment_id=" . $commitment_id, POP_DEFAULT_DELAY_MS, 'error');
         exit;
@@ -264,6 +262,7 @@ $commitmentTotal = (float)$commitment['commitment_total'];
         </div>
         <div class="card-body">
             <form method="post" enctype="multipart/form-data" id="poUploadForm">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
 
                 <div class="mb-4">
                     <label class="form-label"><i class="bi bi-hash"></i> PO Number</label>

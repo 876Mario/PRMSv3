@@ -379,7 +379,7 @@ require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
         </td>
         <td style="padding: 1rem; border: none; text-align: center;">
             <?php if (!empty($row['document_path'])): ?>
-                <a href="<?= htmlspecialchars($row['document_path']) ?>" target="_blank" class="text-success" title="View Document"><i class="bi bi-file-earmark-pdf-fill"></i></a>
+                <a href="/commitments/download_document.php?commitment_id=<?= (int)$row['commitment_id'] ?>" class="text-success" title="View Document"><i class="bi bi-file-earmark-pdf-fill"></i></a>
             <?php else: ?>
                 <span class="text-muted"><i class="bi bi-dash"></i></span>
             <?php endif; ?>

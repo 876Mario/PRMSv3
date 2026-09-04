@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'view_purchase_orders';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
+require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
 $warning = false;
 
 /* ================================
@@ -37,6 +38,24 @@ if (!$po) {
     pop("Purchase Order not found.", "/po/list.php", POP_DEFAULT_DELAY_MS);
     exit;
 }
+
+$requestScopeStmt = $pdo->prepare("
+    SELECT pr.request_id, pr.created_by, pr.status
+    FROM purchase_orders po
+    JOIN commitments c ON po.commitment_id = c.commitment_id
+    JOIN procurement_requests pr ON c.request_id = pr.request_id
+    WHERE po.po_id = ?
+    LIMIT 1
+");
+$requestScopeStmt->execute([$po_id]);
+$requestScope = $requestScopeStmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$requestScope) {
+    pop("Linked procurement request not found.", "/po/list.php", POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
+enforceRequestRecordAccess($requestScope, "/po/list.php");
 
 /* ================================
    Check for PO limit warning
@@ -578,9 +597,14 @@ $statusIcon = match($po['status']) {
                 <?php endif; ?>
 
                 <div class="d-grid gap-2">
-                    <?php if (empty($po['po_file']) && has_permission('upload_purchase_order')): ?>
+                    <?php if (empty($po['po_file']) && empty($po['document_path']) && has_permission('upload_purchase_order')): ?>
                         <a href="/po/upload.php?commitment_id=<?= (int)$po['commitment_id'] ?>" class="btn btn-warning">
                             <i class="bi bi-cloud-upload me-1"></i>Upload PO Document
+                        </a>
+                    <?php endif; ?>
+                    <?php if (!empty($po['document_path']) || !empty($po['po_file'])): ?>
+                        <a href="/po/download_document.php?po_id=<?= (int)$po_id ?>" class="btn btn-outline-primary">
+                            <i class="bi bi-file-earmark-arrow-down me-1"></i>View PO Document
                         </a>
                     <?php endif; ?>
                     <?php if ($isFullyApproved && $po['status'] === 'Open' && has_permission('create_invoice')): ?>
