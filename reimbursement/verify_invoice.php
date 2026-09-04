@@ -22,7 +22,8 @@ if ($reimb_invoice_id <= 0) {
 
 /* Fetch invoice with its parent request */
 $stmt = $pdo->prepare("
-    SELECT ri.*, pr.request_id, pr.request_number, pr.status AS request_status,
+    SELECT ri.reimb_invoice_id, ri.request_id, ri.invoice_amount, ri.invoice_stage,
+           ri.goods_service_verified, ri.submitted_by, pr.request_number, pr.status AS request_status,
            pr.currency, pr.created_by, u.full_name AS submitted_by_name
     FROM reimbursement_invoices ri
     INNER JOIN procurement_requests pr ON ri.request_id = pr.request_id
@@ -94,7 +95,8 @@ if ((int)$invoice['goods_service_verified'] === 1) {
 
 /* Fetch attachments for this invoice so the verifier can inspect the invoice copy */
 $attStmt = $pdo->prepare("
-    SELECT * FROM reimbursement_invoice_attachments
+    SELECT id, original_file_name, file_size, uploaded_date
+    FROM reimbursement_invoice_attachments
     WHERE reimb_invoice_id = ? AND is_deleted = 0
     ORDER BY uploaded_date ASC
 ");

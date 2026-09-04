@@ -10,7 +10,13 @@ $editMode = false;
 $loc = [];
 if (!empty($_GET['id'])) {
     $editMode = true;
-    $stmt = $pdo->prepare("SELECT * FROM inv_locations WHERE location_id = ?");
+    $stmt = $pdo->prepare("
+        SELECT location_id, location_code, site_campus, building, floor, room_storage_area,
+               bin_shelf_rack, security_level, temp_humidity_req, custodian_user_id,
+               capacity, is_active, location_type
+        FROM inv_locations
+        WHERE location_id = ?
+    ");
     $stmt->execute([(int) $_GET['id']]);
     $loc = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$loc) { pop("Location not found.", "/inventory/locations/list.php", 1800, 'warning'); exit; }

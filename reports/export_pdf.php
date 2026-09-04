@@ -245,18 +245,25 @@ HTML;
 
     case 'branch_outstanding':
     default:
-        $data = $pdo->query("SELECT * FROM vw_branch_outstanding")->fetchAll();
+        $data = $pdo->query("
+            SELECT branch_name, total_invoiced, total_paid, outstanding
+            FROM vw_branch_outstanding
+            ORDER BY outstanding DESC, branch_name ASC
+        ")->fetchAll(PDO::FETCH_ASSOC);
         $title = "Branch Outstanding Report";
         $subtitle = "Financial summary of invoiced, paid & outstanding amounts per branch";
-        
-        $grandInvoiced = 0;
-        $grandPaid = 0;
-        $grandOutstanding = 0;
-        foreach ($data as $r) {
-            $grandInvoiced    += floatval($r['total_invoiced'] ?? 0);
-            $grandPaid        += floatval($r['total_paid'] ?? 0);
-            $grandOutstanding += floatval($r['outstanding'] ?? 0);
-        }
+
+        $totalsStmt = $pdo->query("
+            SELECT
+                COALESCE(SUM(total_invoiced), 0) AS grand_invoiced,
+                COALESCE(SUM(total_paid), 0) AS grand_paid,
+                COALESCE(SUM(outstanding), 0) AS grand_outstanding
+            FROM vw_branch_outstanding
+        ");
+        $totals = $totalsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $grandInvoiced = (float) ($totals['grand_invoiced'] ?? 0);
+        $grandPaid = (float) ($totals['grand_paid'] ?? 0);
+        $grandOutstanding = (float) ($totals['grand_outstanding'] ?? 0);
         
         $fmtInvoiced    = '$' . number_format($grandInvoiced, 2);
         $fmtPaid        = '$' . number_format($grandPaid, 2);

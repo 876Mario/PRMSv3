@@ -5,18 +5,25 @@ require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
 
-$data = $pdo->query("SELECT * FROM vw_branch_outstanding")->fetchAll();
+$data = $pdo->query("
+    SELECT branch_name, total_invoiced, total_paid, outstanding
+    FROM vw_branch_outstanding
+    ORDER BY outstanding DESC, branch_name ASC
+")->fetchAll(PDO::FETCH_ASSOC);
 
-// Compute totals
-$grandInvoiced = 0;
-$grandPaid = 0;
-$grandOutstanding = 0;
-foreach ($data as $r) {
-    $grandInvoiced    += $r['total_invoiced'];
-    $grandPaid        += $r['total_paid'];
-    $grandOutstanding += $r['outstanding'];
-}
-$maxOutstanding = max(array_column($data, 'outstanding') ?: [1]);
+$totalsStmt = $pdo->query("
+    SELECT
+        COALESCE(SUM(total_invoiced), 0) AS grand_invoiced,
+        COALESCE(SUM(total_paid), 0) AS grand_paid,
+        COALESCE(SUM(outstanding), 0) AS grand_outstanding,
+        COALESCE(MAX(outstanding), 0) AS max_outstanding
+    FROM vw_branch_outstanding
+");
+$totals = $totalsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+$grandInvoiced = (float) ($totals['grand_invoiced'] ?? 0);
+$grandPaid = (float) ($totals['grand_paid'] ?? 0);
+$grandOutstanding = (float) ($totals['grand_outstanding'] ?? 0);
+$maxOutstanding = max((float) ($totals['max_outstanding'] ?? 0), 1.0);
 ?>
 
 <div class="container-fluid mt-2">

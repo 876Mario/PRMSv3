@@ -13,7 +13,11 @@ if (!$id || !ctype_digit((string)$id)) {
     exit;
 }
 
-$stmt = $pdo->prepare("SELECT * FROM vendors WHERE vendor_id = ?");
+$stmt = $pdo->prepare("
+    SELECT vendor_id, vendor_name, contact_person, email, phone, address, status, total_awards, performance_rating, created_at
+    FROM vendors
+    WHERE vendor_id = ?
+");
 $stmt->execute([$id]);
 $vendor = $stmt->fetch(PDO::FETCH_ASSOC);
 
