@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/SecureFileStorage.php';
 /**
  * RequestDocumentService - Handle signed request document uploads
  * 
@@ -23,15 +24,15 @@ class RequestDocumentService {
     private $currentUserName;
     
     // Configuration
-    const UPLOAD_DIR_BASE = '/uploads/signed_requests/';
+    const STORAGE_DIRECTORY = 'signed_requests';
     const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
     const ALLOWED_MIME_TYPES = [
-        'application/pdf',
-        'image/jpeg',
-        'image/png',
-        'image/gif',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        'application/pdf' => 'pdf',
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/gif' => 'gif',
+        'application/msword' => 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx'
     ];
     
     public function __construct($pdo, $requestId, $currentUserId, $currentUserRole, $currentUserName) {
@@ -40,6 +41,28 @@ class RequestDocumentService {
         $this->currentUserId = (int)$currentUserId;
         $this->currentUserRole = $currentUserRole;
         $this->currentUserName = $currentUserName;
+    }
+
+    private function getUploadPermissionForType($requestType) {
+        return match (strtoupper((string)$requestType)) {
+            'REGULAR' => 'upload_procurement_signed_request',
+            'REIMBURSEMENT' => 'upload_signed_reimbursement_document',
+            'PETTY_CASH' => 'upload_signed_petty_cash_document',
+            default => null,
+        };
+    }
+
+    private function userHasUploadPermission($requestType) {
+        $permission = $this->getUploadPermissionForType($requestType);
+        if ($permission === null || !function_exists('has_permission')) {
+            return false;
+        }
+
+        try {
+            return has_permission($permission);
+        } catch (Throwable $e) {
+            return false;
+        }
     }
     
     /**
@@ -74,19 +97,12 @@ class RequestDocumentService {
      * @return array ['authorized' => bool, 'reason' => string]
      */
     public function checkUploadAuthorization($request) {
-        // SuperAdmin and Admin can always upload
-        if (in_array($this->currentUserRole, ['SuperAdmin', 'Admin'])) {
-            return ['authorized' => true, 'reason' => ''];
-        }
-        
         // Requestor can upload their own
         if ((int)$request['created_by'] === $this->currentUserId) {
             return ['authorized' => true, 'reason' => ''];
         }
-        
-        // Other authorized roles
-        $authorizedRoles = ['Branch Head', 'HOD', 'Director HRM&A', 'Deputy Government Chemist', 'Finance Officer'];
-        if (in_array($this->currentUserRole, $authorizedRoles)) {
+
+        if ($this->userHasUploadPermission($request['request_type'] ?? null)) {
             return ['authorized' => true, 'reason' => ''];
         }
         
@@ -167,7 +183,7 @@ class RequestDocumentService {
         $mimeType = finfo_file($finfo, $file['tmp_name']);
         finfo_close($finfo);
         
-        if ($mimeType === false || !in_array($mimeType, self::ALLOWED_MIME_TYPES)) {
+        if ($mimeType === false || !array_key_exists($mimeType, self::ALLOWED_MIME_TYPES)) {
             return [
                 'valid' => false,
                 'error' => 'Invalid file type. Only PDF, images (JPG/PNG/GIF), and Word documents are allowed.'
@@ -191,43 +207,29 @@ class RequestDocumentService {
             return ['success' => false, 'path' => '', 'error' => $validation['error']];
         }
         
-        // Create upload directory if needed
-        $uploadDir = $_SERVER['DOCUMENT_ROOT'] . self::UPLOAD_DIR_BASE;
-        if (!is_dir($uploadDir)) {
-            if (!@mkdir($uploadDir, 0755, true)) {
-                return ['success' => false, 'path' => '', 'error' => 'Failed to create upload directory.'];
-            }
+        try {
+            $storedFile = SecureFileStorage::storeUploadedFile(
+                $file,
+                self::STORAGE_DIRECTORY,
+                sprintf(
+                    'SIGNED_%s_%d',
+                    strtoupper(substr((string)($request['request_type'] ?? 'R'), 0, 1)),
+                    $this->requestId
+                ),
+                self::ALLOWED_MIME_TYPES,
+                self::MAX_FILE_SIZE_BYTES
+            );
+        } catch (Throwable $e) {
+            return ['success' => false, 'path' => '', 'error' => $e->getMessage()];
         }
-        
-        // Generate safe filename
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        $safeFilename = sprintf(
-            'SIGNED_%s_%d_%d_%s.%s',
-            strtoupper(substr($request['request_type'], 0, 1)),  // S for SIGNED, R for REIMBURSEMENT, P for PETTY_CASH
-            $this->requestId,
-            time(),
-            uniqid('', true),
-            $ext
-        );
-        
-        $uploadPath = $uploadDir . $safeFilename;
-        
-        // Move uploaded file
-        if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-            return ['success' => false, 'path' => '', 'error' => 'Failed to save document.'];
-        }
-        
-        // Get file info for database storage
-        $fileSize = filesize($uploadPath);
-        $documentPath = self::UPLOAD_DIR_BASE . $safeFilename;
-        
+
         return [
             'success' => true,
-            'path' => $documentPath,
-            'safeName' => $safeFilename,
-            'originalName' => $file['name'],
-            'size' => $fileSize,
-            'mimeType' => $validation['mimeType']
+            'path' => $storedFile['storage_path'],
+            'safeName' => $storedFile['stored_name'],
+            'originalName' => $storedFile['original_name'],
+            'size' => $storedFile['file_size'],
+            'mimeType' => $storedFile['mime_type']
         ];
     }
     
