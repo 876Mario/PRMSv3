@@ -14,9 +14,7 @@ if (!isset($_GET['id'])) {
 
 $request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
+$csrfToken = ensureCsrfToken();
 
 if ($request_id <= 0) {
     pop(
@@ -127,7 +125,8 @@ $items = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 // Commitments (Original + Supplementary)
 // Exclude remediated (soft-deleted/voided) commitments from display
 $commitStmt = $pdo->prepare("
-    SELECT *
+    SELECT commitment_id, request_id, commitment_number, commitment_date, commitment_total,
+           status, approved_at, commitment_type, document_path, po_required
     FROM commitments
     WHERE request_id = ?
     AND (is_remediated IS NULL OR is_remediated = 0)
@@ -159,7 +158,7 @@ foreach ($commitments as $c) {
 $po = null;
 if ($originalCommitment) {
     $poStmt = $pdo->prepare("
-        SELECT *
+        SELECT po_id, commitment_id, po_number, po_total, status
         FROM purchase_orders
         WHERE commitment_id = ?
         LIMIT 1
@@ -1228,10 +1227,13 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                             <i class="bi bi-file-earmark-text me-1"></i>View Contract
                         </a>
                         <?php endif; ?>
-                        <a href="<?= $submitUrl ?>?id=<?= $request['request_id'] ?>"
-                           class="btn btn-primary" onclick="return confirm('Submit this request?')">
-                            <i class="bi bi-send me-1"></i>Submit Request
-                        </a>
+                        <form method="post" action="<?= $submitUrl ?>" class="d-grid">
+                            <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                            <button type="submit" class="btn btn-primary" onclick="return confirm('Submit this request?')">
+                                <i class="bi bi-send me-1"></i>Submit Request
+                            </button>
+                        </form>
                     <?php endif; ?>
 
                     <?php 
@@ -1466,10 +1468,13 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                             $resubmitUrl = '/petty_cash/resubmit.php';
                         }
                         ?>
-                        <a href="<?= $resubmitUrl ?>?id=<?= (int)$request['request_id'] ?>"
-                           class="btn btn-warning" onclick="return confirm('Resubmit this request for approval?')">
-                            <i class="bi bi-arrow-repeat me-1"></i>Resubmit Request
-                        </a>
+                        <form method="post" action="<?= $resubmitUrl ?>" class="d-inline">
+                            <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                            <button type="submit" class="btn btn-warning" onclick="return confirm('Resubmit this request for approval?')">
+                                <i class="bi bi-arrow-repeat me-1"></i>Resubmit Request
+                            </button>
+                        </form>
                     <?php endif; ?>
                 </div>
             </div>
@@ -1682,7 +1687,7 @@ $canDeleteRequestDocument = hasPermission('procurement_delete_request_document')
                         <td class="small"><?= date('d M Y H:i', strtotime($doc['uploaded_at'])) ?></td>
                         <td class="small text-muted"><?= htmlspecialchars($doc['notes'] ?? '') ?></td>
                         <td>
-                            <a href="<?= htmlspecialchars($doc['document_path']) ?>" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <a href="/procurement/download_document.php?id=<?= (int)$doc['document_id'] ?>&action=download" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-download"></i>
                             </a>
                             <?php if ($canDeleteRequestDocument): ?>
@@ -1707,6 +1712,7 @@ $canDeleteRequestDocument = hasPermission('procurement_delete_request_document')
         <div class="border-top pt-3">
             <h6 class="fw-bold"><i class="bi bi-cloud-upload me-1"></i> Upload Document</h6>
             <form method="post" action="/procurement/upload_document.php" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <input type="hidden" name="request_id" value="<?= $request_id ?>">
                 <div class="row g-2 align-items-end">
                     <div class="col-md-3">
@@ -1866,6 +1872,15 @@ document.addEventListener('DOMContentLoaded', function () {
                             </a>
                         <?php elseif (in_array($current, ['SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'FUNDS_VERIFIED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE'])): ?>
                             <!-- ✅ NEW: Create RFQ after submission (all regular procurement needs RFQ) -->
+                            <?php if (in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin'], true) && $current !== 'PROCUREMENT_STAGE'): ?>
+                                <form method="post" action="/procurement/start_procurement.php" class="d-inline">
+                                    <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                                    <button type="submit" class="btn btn-outline-dark btn-sm">
+                                        <i class="bi bi-play-circle me-1"></i>Start Procurement Stage
+                                    </button>
+                                </form>
+                            <?php endif; ?>
                             <a href="/rfq/create.php?request_id=<?= $request['request_id'] ?>" class="btn btn-outline-primary btn-sm">
                                 <i class="bi bi-plus-lg me-1"></i>Create RFQ & Generate Letters
                             </a>
@@ -1876,11 +1891,15 @@ document.addEventListener('DOMContentLoaded', function () {
                             $rfqOptional = $estimatedValue <= getDirectProcurementThreshold($pdo);
                             ?>
                             <?php if ($rfqOptional && $current !== 'SUBMITTED' && in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin'], true)): ?>
-                                <a href="/procurement/skip_rfq.php?id=<?= $request['request_id'] ?>"
-                                   class="btn btn-outline-secondary btn-sm"
-                                   onclick="return confirm('You are proceeding without an RFQ. The request will move to Awarded, and you will still need to complete Commitment, Purchase Order, Invoice, and Payment steps before the request can be closed. Continue?')">
-                                    <i class="bi bi-skip-forward me-1"></i>Proceed Without RFQ (Optional)
-                                </a>
+                                <form method="post" action="/procurement/skip_rfq.php" class="d-inline">
+                                    <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                                    <button type="submit"
+                                            class="btn btn-outline-secondary btn-sm"
+                                            onclick="return confirm('You are proceeding without an RFQ. The request will move to Awarded, and you will still need to complete Commitment, Purchase Order, Invoice, and Payment steps before the request can be closed. Continue?')">
+                                        <i class="bi bi-skip-forward me-1"></i>Proceed Without RFQ (Optional)
+                                    </button>
+                                </form>
                             <?php endif; ?>
                         <?php endif; ?>
                     <?php endif; ?>
@@ -1979,7 +1998,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
                     
                     <!-- View Signed Document -->
-                    <a href="<?= htmlspecialchars($request['signed_request_document_path']) ?>"
+                    <a href="/procurement/download_signed_request.php?request_id=<?= (int)$request_id ?>&action=view"
                        target="_blank" class="btn btn-outline-success btn-sm w-100">
                         <i class="bi bi-download me-1"></i> View Signed Document
                     </a>
@@ -2011,7 +2030,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <h6 class="fw-bold mb-3">Upload Signed Request</h6>
                 <form method="post" action="/procurement/upload_signed_request.php" enctype="multipart/form-data" class="js-signed-upload-form" data-request-id="<?= (int)$request_id ?>" data-request-type="REGULAR" data-upload-notice-enabled="<?= $uploadNoticeEnabled ? '1' : '0' ?>">
                     <input type="hidden" name="request_id" value="<?= $request_id ?>">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                     <input type="hidden" name="signed_notice_upload_ack" value="0">
                     <input type="hidden" name="signed_notice_action_token" value="">
                     
@@ -2325,11 +2344,19 @@ function timelineMeta(string $action): array {
     const modalMessageEl = document.getElementById('signedRequestNoticeMessage');
     const confirmBtn = document.getElementById('signedRequestNoticeConfirmBtn');
     const modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
-    const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
+    const csrfToken = <?= json_encode($csrfToken) ?>;
     let onConfirm = null;
 
     function createActionToken(prefix, requestType, requestId) {
-        return [prefix, requestType, requestId, Date.now(), Math.random().toString(36).slice(2, 10)].join('-');
+        const randomPart = (() => {
+            if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+                const bytes = new Uint8Array(8);
+                window.crypto.getRandomValues(bytes);
+                return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+            }
+            return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+        })();
+        return [prefix, requestType, requestId, Date.now(), randomPart].join('-');
     }
 
     function postPrintNoticeEvent(payload) {

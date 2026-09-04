@@ -5,6 +5,9 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
 
+requirePostRequest('/procurement/list.php');
+requireCsrfToken('/procurement/list.php');
+
 $id = (int)($_POST['id'] ?? 0);
 $reason = trim($_POST['reason'] ?? ($_POST['rejection_reason'] ?? ''));
 

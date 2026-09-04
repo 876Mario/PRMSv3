@@ -37,7 +37,7 @@ if (!$canAct) {
 }
 
 $disbStmt = $pdo->prepare("
-    SELECT *
+    SELECT disburse_id, amount_authorized, disbursement_date, disbursement_deadline
     FROM petty_cash_disbursements
     WHERE request_id = ?
     LIMIT 1

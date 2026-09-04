@@ -18,11 +18,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Title name is required.';
         } else {
             try {
-                $pdo->prepare("INSERT INTO job_titles (title_name, sort_order) VALUES (?, (SELECT COALESCE(MAX(sort_order),0)+1 FROM job_titles t2))")
-                    ->execute([$title_name]);
+                $pdo->beginTransaction();
+                $nextSortOrder = nextSortOrderValue($pdo, 'job_titles');
+                $pdo->prepare("INSERT INTO job_titles (title_name, sort_order) VALUES (?, ?)")
+                    ->execute([$title_name, $nextSortOrder]);
+                $pdo->commit();
                 logAudit($pdo, 'job_titles', $pdo->lastInsertId(), 'CREATE', "Job title '{$title_name}' added.");
                 $message = "Job title added successfully.";
             } catch (Exception $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 $error = 'Error: ' . htmlspecialchars(extractDbMessage($e));
             }
         }

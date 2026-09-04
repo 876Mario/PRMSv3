@@ -92,7 +92,9 @@ class WorkflowService
             'COMMITTEE_RECOMMENDED'  => ['GC_APPROVED', 'QUOTE_REVIEW_PENDING', 'AWARDED',
                                          // ← backward
                                          'EVALUATION_STAGE'],
-            'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING', 'INVOICE_RECEIVED'],
+            'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING', 'INVOICE_RECEIVED',
+                                         // ← controlled backward recovery
+                                         'GC_APPROVED', 'COMMITTEE_RECOMMENDED', 'PROCUREMENT_STAGE'],
         ];
     }
 
@@ -103,13 +105,14 @@ class WorkflowService
     {
         return [
             'DRAFT'                    => ['SUBMITTED'],
-            'SUBMITTED'                => ['FUNDS_VERIFIED', 'DECLINED'],
+            'RETURNED_FOR_CORRECTION'  => ['SUBMITTED', 'DECLINED'],
+            'SUBMITTED'                => ['FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
             'FUNDS_VERIFIED'           => ['FINANCE_AUTHORIZED', 'DECLINED',
                                            // ← backward
-                                           'SUBMITTED'],
+                                           'SUBMITTED', 'RETURNED_FOR_CORRECTION'],
             'FINANCE_AUTHORIZED'       => ['DISBURSED',
                                            // ← backward
-                                           'FUNDS_VERIFIED', 'SUBMITTED'],
+                                           'FUNDS_VERIFIED', 'SUBMITTED', 'RETURNED_FOR_CORRECTION'],
             'DISBURSED'                => ['PENDING_RECONCILIATION',
                                            // ← backward
                                            'FINANCE_AUTHORIZED'],
@@ -137,10 +140,11 @@ class WorkflowService
     {
         return [
             'DRAFT'                        => ['SUBMITTED'],
-            'SUBMITTED'                    => ['FUNDS_VERIFIED', 'DECLINED'],
+            'RETURNED_FOR_CORRECTION'      => ['SUBMITTED', 'DECLINED'],
+            'SUBMITTED'                    => ['FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
             'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'APPROVED', 'DECLINED',
                                                // ← backward
-                                               'SUBMITTED'],
+                                               'SUBMITTED', 'RETURNED_FOR_CORRECTION'],
             'INVOICE_SUBMITTED'            => ['INVOICE_VERIFIED', 'DECLINED',
                                                // ← backward
                                                'FUNDS_VERIFIED', 'SUBMITTED'],
@@ -171,12 +175,12 @@ class WorkflowService
         
         return match ($requestType) {
             'PETTY_CASH' => [
-                'DRAFT', 'SUBMITTED', 'FUNDS_VERIFIED', 'FINANCE_AUTHORIZED', 'DISBURSED',
+                'DRAFT', 'RETURNED_FOR_CORRECTION', 'SUBMITTED', 'FUNDS_VERIFIED', 'FINANCE_AUTHORIZED', 'DISBURSED',
                 'PENDING_RECONCILIATION', 'PROCUREMENT_VERIFIED', 'RECONCILIATION_DISCREPANCY',
                 'REVIEWED', 'COMPLETED'
             ],
             'REIMBURSEMENT' => [
-                'DRAFT', 'SUBMITTED', 'FUNDS_VERIFIED', 'INVOICE_SUBMITTED', 'INVOICE_VERIFIED',
+                'DRAFT', 'RETURNED_FOR_CORRECTION', 'SUBMITTED', 'FUNDS_VERIFIED', 'INVOICE_SUBMITTED', 'INVOICE_VERIFIED',
                 'APPROVED', 'REIMBURSED', 'COMPLETED'
             ],
             'REGULAR', 'SERVICE_CONTRACT' => [
@@ -402,13 +406,14 @@ class WorkflowService
         }
 
         $this->pdo->beginTransaction();
+        $currentTimestampSql = $this->currentTimestampSql();
 
         try {
             // Update request status
             $stmt = $this->pdo->prepare("
                 UPDATE procurement_requests
                 SET status = ?,
-                    updated_at = NOW()
+                    updated_at = {$currentTimestampSql}
                 WHERE request_id = ?
             ");
             $stmt->execute([$targetStatus, $requestId]);
@@ -422,7 +427,7 @@ class WorkflowService
             $stmt->execute([$requestId]);
 
             // Recreate approval chain if reverting to an approval stage
-            if (in_array(strtoupper($targetStatus), ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'], true)) {
+            if ($this->shouldRebuildApprovalChainOnRevert($requestType, $targetStatus)) {
                 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/workflow.php';
                 
                 $reqStmt = $this->pdo->prepare("
@@ -456,7 +461,7 @@ class WorkflowService
                 $stmt = $this->pdo->prepare("
                     INSERT INTO workflow_transition_history
                       (request_id, from_status, to_status, is_backward, actor_user_id, actor_role, reason, created_at)
-                    VALUES (?, ?, ?, 1, ?, ?, ?, NOW())
+                    VALUES (?, ?, ?, 1, ?, ?, ?, {$currentTimestampSql})
                 ");
                 $stmt->execute([$requestId, $currentStatus, $targetStatus, $userId, $userRole, $reason]);
             } catch (Throwable $e) {
@@ -472,5 +477,24 @@ class WorkflowService
             }
             throw $e;
         }
+    }
+
+    private function shouldRebuildApprovalChainOnRevert(string $requestType, string $targetStatus): bool
+    {
+        $requestType = strtoupper($requestType);
+        $targetStatus = strtoupper($targetStatus);
+
+        return match ($requestType) {
+            'PETTY_CASH', 'REIMBURSEMENT' => $targetStatus === 'SUBMITTED',
+            'REGULAR', 'SERVICE_CONTRACT' => in_array($targetStatus, ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'], true),
+            default => false,
+        };
+    }
+
+    private function currentTimestampSql(): string
+    {
+        return $this->pdo?->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite'
+            ? 'CURRENT_TIMESTAMP'
+            : 'NOW()';
     }
 }

@@ -51,6 +51,7 @@ if (signedRequestUploadPending($request)) {
    Handle POST (Approve / Reject)
 ================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/procurement/approve_finance.php?id=' . $id);
 
     $action = $_POST['action'] ?? '';
 
@@ -205,6 +206,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                 <strong>Description:</strong> <?= htmlspecialchars(substr($request['description'] ?? 'N/A', 0, 100)) ?>...
             </div>
             <form method="post">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                 <input type="hidden" name="id" value="<?= (int)$id ?>">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Rejection Reason <span class="text-danger">*</span> (Required if rejecting)</label>

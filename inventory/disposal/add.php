@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'dispose_stock';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_setup.php';
 
 $locations = $pdo->query("SELECT location_id, location_code, site_name FROM inv_locations WHERE is_active=1 ORDER BY site_name")->fetchAll(PDO::FETCH_ASSOC);
@@ -10,6 +11,7 @@ $disposalMethods = ['SALE','AUCTION','DONATION','DESTRUCTION','RECYCLING','TRADE
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
+        requireCsrfToken('/inventory/disposal/add.php');
         $pdo->beginTransaction();
 
         $method    = $_POST['disposal_method']  ?? '';
@@ -46,6 +48,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $qty = (float) ($qtys[$i] ?? 0);
             if ($qty <= 0) continue;
 
+            $available = InventoryService::getAvailableStockLevel($pdo, $iid, $locationId);
+            if ($available < $qty) {
+                $itemName = $pdo->query("SELECT item_name FROM inv_items WHERE item_id = " . (int) $iid)->fetchColumn();
+                throw new Exception("Insufficient available stock for $itemName. Available: $available, Requested: $qty");
+            }
+
             $insertItem->execute([$dispId, $iid, $qty,
                 $conditions[$i] ?? '', (float) ($values[$i] ?? 0)]);
         }
@@ -76,6 +84,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 <?php endif; ?>
 
 <form method="POST">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-dark text-dark"><i class="bi bi-info-circle"></i> Disposal Details</div>
         <div class="card-body">

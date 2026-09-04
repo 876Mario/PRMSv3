@@ -21,12 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = "Both password fields are required.";
     } elseif ($_POST['new_password'] !== $_POST['confirm_password']) {
         $error = "Passwords do not match.";
-    } elseif (strlen($_POST['new_password']) < 8) {
-        $error = "Password must be at least 8 characters long.";
-    } elseif (!preg_match('/[A-Z]/', $_POST['new_password'])) {
-        $error = "Password must contain at least one uppercase letter.";
-    } elseif (!preg_match('/[0-9]/', $_POST['new_password'])) {
-        $error = "Password must contain at least one number.";
+    } elseif (($passwordPolicyError = validatePasswordPolicy($_POST['new_password'])) !== null) {
+        $error = $passwordPolicyError;
     } else {
         try {
             $hash = password_hash($_POST['new_password'], PASSWORD_DEFAULT);

@@ -29,7 +29,18 @@ $sourceAssetDetail = [];
 $isAssetDomain = in_array($source['item_domain'] ?? 'INVENTORY', ['ASSET', 'BOTH']);
 if ($assetDetailsTableExists && $isAssetDomain) {
     try {
-        $adStmt = $pdo->prepare("SELECT * FROM inv_asset_details WHERE item_id = ? LIMIT 1");
+        $adStmt = $pdo->prepare("
+            SELECT asset_detail_id, item_id, asset_code, reference_number, make, serial_number, acquired_date,
+                   department_branch_id, custodian_user_id, custodian_name, custodian_role, asset_status,
+                   asset_condition, delivery_date, placed_in_service_date, warranty_expiration, warranty_provider,
+                   warranty_start_date, warranty_end_date, warranty_period, warranty_reference, warranty_notes,
+                   warranty_status, address, location_id, site, building, floor_room, purchase_cost,
+                   accountable_officer, accumulated_depreciation, carrying_value, disposal_date, disposal_amount,
+                   is_disposed, secondary_custodian
+            FROM inv_asset_details
+            WHERE item_id = ?
+            LIMIT 1
+        ");
         $adStmt->execute([$sourceId]);
         $sourceAssetDetail = $adStmt->fetch(PDO::FETCH_ASSOC) ?: [];
     } catch (Throwable $e) { /* ignore */ }

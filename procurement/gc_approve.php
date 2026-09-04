@@ -51,6 +51,7 @@ if (signedRequestUploadPending($request)) {
    Handle POST (Approve / Reject)
 ================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/procurement/gc_approve.php?id=' . $id);
 
     $action = $_POST['action'] ?? '';
 
@@ -105,14 +106,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             UPDATE procurement_requests
             SET status = ?,
                 approved_by = ?,
-                approved_at = NOW(),
-                funds_available = 1,
-                finance_reviewed_by = ?,
-                finance_reviewed_at = NOW()
+                approved_at = NOW()
             WHERE request_id = ?
-        ")->execute([$nextStatus, $user_id, $user_id, $id]);
+        ")->execute([$nextStatus, $user_id, $id]);
 
-        logAudit($pdo, 'procurement_requests', $id, 'STATUS_CHANGE', 'GC Approved (funds certified) — Status changed to ' . $nextStatus);
+        logAudit($pdo, 'procurement_requests', $id, 'STATUS_CHANGE', 'GC Approved — Status changed to ' . $nextStatus);
         logRequestTimeline($pdo, $id, $nextStatus, 'GC approval by ' . ($_SESSION['full_name'] ?? 'Unknown'));
 
         /* Notify requestor of finalization */
@@ -227,6 +225,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                 <?php endif; ?>
             </div>
             <form method="post">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                 <input type="hidden" name="id" value="<?= (int)$id ?>">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Rejection Reason <span class="text-danger">*</span> (Required if rejecting)</label>

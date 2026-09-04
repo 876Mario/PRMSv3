@@ -51,7 +51,7 @@ $totalRows = (int)$countStmt->fetchColumn();
    Vendors List
 ================================ */
 $stmt = $pdo->prepare("
-    SELECT *
+    SELECT vendor_id, vendor_name, email, phone, status, total_awards
     FROM vendors
     $whereSQL
     ORDER BY vendor_name ASC

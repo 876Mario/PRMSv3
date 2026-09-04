@@ -19,19 +19,6 @@ if ($commitment_id <= 0) {
 }
 
 /* ================================
-   Fetch Commitment
-================================ */
-$stmt = $pdo->prepare("
-    SELECT *
-    FROM commitments
-    WHERE commitment_id = ?
-    LIMIT 1
-");
-$stmt->execute([$commitment_id]);
-
-$commitment = $stmt->fetch(PDO::FETCH_ASSOC);
-
-/* ================================
    Fetch Approval Stages
 ================================ */
 $stageStmt = $pdo->prepare("
@@ -63,14 +50,19 @@ foreach ($approvalStages as $stage) {
     }
 }
 
-if (!$commitment) {
-    pop("Commitment not found.", "/commitments/list.php");
-    exit;
-}
-
 $stmt = $pdo->prepare("
     SELECT 
-        c.*,
+        c.commitment_id,
+        c.request_id,
+        c.commitment_number,
+        c.commitment_date,
+        c.commitment_total,
+        c.status,
+        c.approved_at,
+        c.commitment_type,
+        c.gfms_commitment_number,
+        c.document_path,
+        c.rfq_id,
         pr.request_number,
 
         -- HOD approval
@@ -109,6 +101,11 @@ $stmt = $pdo->prepare("
 
 $stmt->execute([$commitment_id]);
 $c = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$c) {
+    pop("Commitment not found.", "/commitments/list.php");
+    exit;
+}
 
 // ================================
 // Fetch Supplementary Commitments
@@ -158,7 +155,7 @@ $suppStmt = $pdo->prepare("
     GROUP BY c.commitment_id
     ORDER BY c.commitment_date ASC
 ");
-$suppStmt->execute([$c['request_id']]);
+$suppStmt->execute([(int)$c['request_id']]);
 $supplementaries = $suppStmt->fetchAll(PDO::FETCH_ASSOC);
 
 
@@ -185,31 +182,9 @@ $stmt = $pdo->prepare("
             OR ra.id IS NULL
           )
 ");
-$stmt->execute([$commitment['commitment_id']]);
+$stmt->execute([(int)$c['commitment_id']]);
 
 $totalAuthorized = (float)$stmt->fetchColumn();
-
-
-if (!isset($c['commitment_id'])) {
-    pop(
-        "Invalid commitment record.",
-        "/commitments/list.php",
-        2000,
-        "danger"
-    );
-    exit;
-}
-
-
-if (!$c) {
-    pop(
-        "Commitment not found.",
-        "/commitments/list.php",
-        2000,
-        "danger"
-    );
-    exit;
-}
 
 ?>
 
@@ -440,7 +415,7 @@ $existing_po_number = $existingPo ? $existingPo['po_number'] : null;
                         <label class="form-label text-muted small fw-bold mb-0">GFMS Document</label>
                         <p class="mb-0">
                             <?php if (!empty($c['document_path'])): ?>
-                                <a href="<?= htmlspecialchars($c['document_path']) ?>" target="_blank" class="text-decoration-none">
+                                <a href="/commitments/download_document.php?commitment_id=<?= (int)$c['commitment_id'] ?>" class="text-decoration-none">
                                     <i class="bi bi-file-earmark-pdf text-danger me-1"></i>View Document
                                 </a>
                             <?php else: ?>
@@ -633,7 +608,7 @@ $existing_po_number = $existingPo ? $existingPo['po_number'] : null;
 
         <div class="d-flex flex-wrap gap-2">
             <?php if (!empty($c['document_path'])): ?>
-                <a href="<?= htmlspecialchars($c['document_path']) ?>" target="_blank" class="btn btn-outline-success">
+                <a href="/commitments/download_document.php?commitment_id=<?= (int)$c['commitment_id'] ?>" class="btn btn-outline-success">
                     <i class="bi bi-file-earmark-pdf me-1"></i> View GFMS Document
                 </a>
             <?php endif; ?>

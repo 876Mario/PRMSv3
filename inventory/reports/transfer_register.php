@@ -77,7 +77,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="col-md-2">
         <select name="status" class="form-select">
             <option value="">All Statuses</option>
-            <?php foreach (['DRAFT','PENDING_APPROVAL','PENDING_FS_APPROVAL','APPROVED','IN_TRANSIT','COMPLETED','CANCELLED','REJECTED'] as $s): ?>
+            <?php foreach (['DRAFT','PENDING_APPROVAL','PENDING_FS_APPROVAL','APPROVED','IN_TRANSIT','COMPLETED','RECEIVED_WITH_DISCREPANCY','CANCELLED','REJECTED'] as $s): ?>
             <option value="<?= $s ?>" <?= $statusF === $s ? 'selected' : '' ?>><?= str_replace('_', ' ', $s) ?></option>
             <?php endforeach; ?>
         </select>
@@ -129,6 +129,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         <td>
                             <?php $sc = match($r['status']) {
                                 'COMPLETED'  => 'success',
+                                'RECEIVED_WITH_DISCREPANCY' => 'warning',
                                 'REJECTED','CANCELLED' => 'danger',
                                 'IN_TRANSIT' => 'info',
                                 'APPROVED'   => 'primary',

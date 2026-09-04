@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'manage_users';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/page_guard.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
+require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
 
 /* Admin only */
 
@@ -29,6 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($_POST['password'] !== $_POST['confirm']) {
         $error = "Passwords do not match.";
+    } elseif (($passwordPolicyError = validatePasswordPolicy($_POST['password'])) !== null) {
+        $error = $passwordPolicyError;
     } else {
 
         $hash = password_hash($_POST['password'], PASSWORD_DEFAULT);
@@ -52,7 +55,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header("Location: /users/list.php?reset=1");
         exit;
         } catch (Throwable $e) {
-            require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
             $error = extractDbMessage($e);
         }
     }

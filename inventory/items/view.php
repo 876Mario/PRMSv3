@@ -57,7 +57,16 @@ $assetDetail = [];
 $isAssetDomain = in_array($item['item_domain'] ?? 'INVENTORY', ['ASSET', 'BOTH']);
 if ($isAssetDomain) {
     try {
-        $adStmt = $pdo->prepare("SELECT * FROM inv_asset_details WHERE item_id = ? LIMIT 1");
+        $adStmt = $pdo->prepare("
+            SELECT asset_detail_id, item_id, asset_code, acquired_date, custodian_name, custodian_role,
+                   asset_status, asset_condition, warranty_expiration, warranty_provider, warranty_start_date,
+                   warranty_end_date, warranty_period, warranty_reference, warranty_notes, warranty_status,
+                   address, site, building, floor_room, purchase_cost, accumulated_depreciation, carrying_value,
+                   disposal_date, disposal_amount, is_disposed, secondary_custodian
+            FROM inv_asset_details
+            WHERE item_id = ?
+            LIMIT 1
+        ");
         $adStmt->execute([$itemId]);
         $assetDetail = $adStmt->fetch(PDO::FETCH_ASSOC) ?: [];
     } catch (Throwable $e) { /* table may not be migrated yet */ }
@@ -70,7 +79,8 @@ $depRecorded = 0;
 if ($isAssetDomain && has_permission('view_asset_depreciation')) {
     try {
         $dsStmt = $pdo->prepare("
-            SELECT s.*,
+            SELECT s.schedule_id, s.method, s.cost_basis, s.salvage_value, s.useful_life_years,
+                   s.total_production_units, s.declining_balance_rate, s.start_date, s.end_date, s.is_active,
                    (SELECT COUNT(*) FROM asset_depreciation_periods p WHERE p.schedule_id = s.schedule_id AND p.is_recorded = 1) AS recorded_periods,
                    (SELECT COUNT(*) FROM asset_depreciation_periods p WHERE p.schedule_id = s.schedule_id) AS total_periods
             FROM asset_depreciation_schedules s
@@ -81,7 +91,9 @@ if ($isAssetDomain && has_permission('view_asset_depreciation')) {
         $depSchedule = $dsStmt->fetch(PDO::FETCH_ASSOC) ?: null;
         if ($depSchedule) {
             $dpStmt = $pdo->prepare("
-                SELECT * FROM asset_depreciation_periods
+                SELECT period_id, schedule_id, period_number, period_end_date, depreciation_charge,
+                       accumulated_depreciation, book_value_end, is_recorded
+                FROM asset_depreciation_periods
                 WHERE schedule_id = ?
                 ORDER BY period_number ASC LIMIT 5
             ");

@@ -30,9 +30,9 @@ if (!$existing) {
 /* Admin override: admins with the dedicated permission may edit any status */
 $isAdminEdit = has_permission('edit_petty_cash_request_admin');
 
-/* Only allow editing DRAFT status (unless admin override) */
-if (!$isAdminEdit && $existing['status'] !== 'DRAFT') {
-    pop('Only DRAFT requests can be edited.', '/petty_cash/view.php?request_id=' . $id, 3000, 'warning');
+/* Only allow editing workflow-defined editable statuses (unless admin override) */
+if (!$isAdminEdit && !isEditableRequestStatus('PETTY_CASH', (string)$existing['status'])) {
+    pop('Only draft or returned requests can be edited.', '/petty_cash/view.php?request_id=' . $id, 3000, 'warning');
     exit;
 }
 
@@ -46,6 +46,7 @@ if ($existing['created_by'] != $_SESSION['user_id'] && !$isAdminEdit && !has_per
    Handle POST - Update Petty Cash Request
 ═══════════════════════════════════════════════════════ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/petty_cash/edit.php?id=' . $id);
     try {
         $branch_id         = (int)($_POST['branch_id'] ?? 0);
         $requested_amount  = (float)($_POST['requested_amount'] ?? 0);
@@ -142,6 +143,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
       <?php endif; ?>
 
       <form method="post" class="needs-validation" novalidate>
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
 
         <!-- Process Reminder -->
         <div class="alert alert-info mb-4">

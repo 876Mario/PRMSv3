@@ -86,12 +86,172 @@ function require_valid_id(string $key, string $redirect): int
     return (int)$_GET[$key];
 }
 
+/**
+ * Validate password policy consistently across reset/change/admin flows.
+ * Returns null when the password satisfies the current policy.
+ */
+function validatePasswordPolicy(string $password): ?string
+{
+    if (strlen($password) < 8) {
+        return "Password must be at least 8 characters long.";
+    }
+
+    if (!preg_match('/[A-Z]/', $password)) {
+        return "Password must contain at least one uppercase letter.";
+    }
+
+    if (!preg_match('/[0-9]/', $password)) {
+        return "Password must contain at least one number.";
+    }
+
+    return null;
+}
+
 /* ================================
    Number Generators
 ================================ */
 
-function generateRequestNumber(PDO $pdo): string
+function dbSupportsSelectForUpdate(PDO $pdo): bool
 {
+    try {
+        return $pdo->inTransaction() && $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite';
+    } catch (Throwable $e) {
+        return $pdo->inTransaction();
+    }
+}
+
+function nextSortOrderValue(PDO $pdo, string $tableName, string $primaryKeyColumn = 'id', string $sortOrderColumn = 'sort_order'): int
+{
+    foreach ([$tableName, $primaryKeyColumn, $sortOrderColumn] as $identifier) {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier)) {
+            throw new InvalidArgumentException('Invalid identifier supplied for sort-order lookup.');
+        }
+    }
+
+    $query = sprintf(
+        "SELECT `%s`
+         FROM `%s`
+         ORDER BY `%s` DESC, `%s` DESC
+         LIMIT 1",
+        $sortOrderColumn,
+        $tableName,
+        $sortOrderColumn,
+        $primaryKeyColumn
+    );
+
+    if (dbSupportsSelectForUpdate($pdo)) {
+        $query .= " FOR UPDATE";
+    }
+
+    $lastSortOrder = $pdo->query($query)->fetchColumn();
+
+    return $lastSortOrder !== false ? ((int) $lastSortOrder) + 1 : 1;
+}
+
+function numberSequencesTableExists(PDO $pdo): bool
+{
+    static $cache = [];
+
+    $cacheKey = spl_object_id($pdo);
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
+    try {
+        $pdo->query("SELECT 1 FROM number_sequences LIMIT 1");
+        return $cache[$cacheKey] = true;
+    } catch (Throwable $e) {
+        $message = $e->getMessage();
+        if (
+            strpos($message, '1146') !== false ||
+            strpos($message, '42S02') !== false ||
+            stripos($message, 'no such table') !== false
+        ) {
+            return $cache[$cacheKey] = false;
+        }
+        throw $e;
+    }
+}
+
+function nextSequenceValue(PDO $pdo, string $sequenceKey, int $seed = 1): int
+{
+    $startedTransaction = false;
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $startedTransaction = true;
+    }
+
+    try {
+        $insert = $pdo->prepare("
+            INSERT INTO number_sequences (sequence_key, next_value, created_at, updated_at)
+            SELECT ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1 FROM number_sequences WHERE sequence_key = ?
+            )
+        ");
+
+        try {
+            $insert->execute([$sequenceKey, $seed, $sequenceKey]);
+        } catch (Throwable $e) {
+            $duplicateInsert = stripos($e->getMessage(), 'duplicate') !== false
+                || stripos($e->getMessage(), 'UNIQUE constraint failed') !== false;
+            if (!$duplicateInsert) {
+                throw $e;
+            }
+        }
+
+        $selectSql = "SELECT next_value FROM number_sequences WHERE sequence_key = ?";
+        if (dbSupportsSelectForUpdate($pdo)) {
+            $selectSql .= " FOR UPDATE";
+        }
+
+        $select = $pdo->prepare($selectSql);
+        $select->execute([$sequenceKey]);
+        $currentValue = (int) $select->fetchColumn();
+
+        if ($currentValue <= 0) {
+            $currentValue = $seed;
+            $pdo->prepare("
+                UPDATE number_sequences
+                SET next_value = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE sequence_key = ?
+            ")->execute([$seed + 1, $sequenceKey]);
+        } else {
+            $pdo->prepare("
+                UPDATE number_sequences
+                SET next_value = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE sequence_key = ?
+            ")->execute([$currentValue + 1, $sequenceKey]);
+        }
+
+        if ($startedTransaction) {
+            $pdo->commit();
+        }
+
+        return $currentValue;
+    } catch (Throwable $e) {
+        if ($startedTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+function peekSequenceValue(PDO $pdo, string $sequenceKey, int $seed = 1): int
+{
+    $stmt = $pdo->prepare("SELECT next_value FROM number_sequences WHERE sequence_key = ?");
+    $stmt->execute([$sequenceKey]);
+    $value = $stmt->fetchColumn();
+
+    return $value !== false ? (int) $value : $seed;
+}
+
+function previewRequestNumber(PDO $pdo): string
+{
+    if (numberSequencesTableExists($pdo)) {
+        return 'PR' . str_pad((string) peekSequenceValue($pdo, 'procurement_request_number', 1), 3, '0', STR_PAD_LEFT);
+    }
+
     $last = $pdo->query("
         SELECT request_number
         FROM procurement_requests
@@ -101,19 +261,52 @@ function generateRequestNumber(PDO $pdo): string
     ")->fetchColumn();
 
     return $last
+        ? 'PR' . str_pad((string) (((int) substr((string) $last, 2)) + 1), 3, '0', STR_PAD_LEFT)
+        : 'PR001';
+}
+
+function generateRequestNumber(PDO $pdo): string
+{
+    if (numberSequencesTableExists($pdo)) {
+        return 'PR' . str_pad((string) nextSequenceValue($pdo, 'procurement_request_number', 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    $query = "
+        SELECT request_number
+        FROM procurement_requests
+        WHERE request_number LIKE 'PR%'
+        ORDER BY request_id DESC
+        LIMIT 1
+    ";
+    if (dbSupportsSelectForUpdate($pdo)) {
+        $query .= " FOR UPDATE";
+    }
+
+    $last = $pdo->query($query)->fetchColumn();
+
+    return $last
         ? 'PR' . str_pad(((int)substr($last, 2)) + 1, 3, '0', STR_PAD_LEFT)
         : 'PR001';
 }
 
 function generateCommitmentNumber(PDO $pdo): string
 {
-    $last = $pdo->query("
+    if (numberSequencesTableExists($pdo)) {
+        return 'CM' . str_pad((string) nextSequenceValue($pdo, 'commitment_number', 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    $query = "
         SELECT commitment_number
         FROM commitments
         WHERE commitment_number LIKE 'CM%'
         ORDER BY commitment_id DESC
         LIMIT 1
-    ")->fetchColumn();
+    ";
+    if (dbSupportsSelectForUpdate($pdo)) {
+        $query .= " FOR UPDATE";
+    }
+
+    $last = $pdo->query($query)->fetchColumn();
 
     return $last
         ? 'CM' . str_pad(((int)substr($last, 2)) + 1, 3, '0', STR_PAD_LEFT)
@@ -122,17 +315,121 @@ function generateCommitmentNumber(PDO $pdo): string
 
 function generatePONumber(PDO $pdo): string
 {
-    $last = $pdo->query("
+    if (numberSequencesTableExists($pdo)) {
+        return 'PO' . str_pad((string) nextSequenceValue($pdo, 'purchase_order_number', 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    $query = "
         SELECT po_number
         FROM purchase_orders
         WHERE po_number LIKE 'PO%'
         ORDER BY po_id DESC
         LIMIT 1
-    ")->fetchColumn();
+    ";
+    if (dbSupportsSelectForUpdate($pdo)) {
+        $query .= " FOR UPDATE";
+    }
+
+    $last = $pdo->query($query)->fetchColumn();
 
     return $last
         ? 'PO' . str_pad(((int)substr($last, 2)) + 1, 3, '0', STR_PAD_LEFT)
         : 'PO001';
+}
+
+function previewServiceContractNumber(PDO $pdo): string
+{
+    if (numberSequencesTableExists($pdo)) {
+        return 'SC' . str_pad((string) peekSequenceValue($pdo, 'service_contract_number', 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    $query = "
+        SELECT contract_number
+        FROM service_contracts
+        WHERE contract_number LIKE 'SC%'
+        ORDER BY contract_id DESC
+        LIMIT 1
+    ";
+    $last = $pdo->query($query)->fetchColumn();
+    $nextNum = $last ? ((int) substr((string) $last, 2)) + 1 : 1;
+    return 'SC' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
+}
+
+function generateServiceContractNumber(PDO $pdo): string
+{
+    if (numberSequencesTableExists($pdo)) {
+        return 'SC' . str_pad((string) nextSequenceValue($pdo, 'service_contract_number', 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    $query = "
+        SELECT contract_number
+        FROM service_contracts
+        WHERE contract_number LIKE 'SC%'
+        ORDER BY contract_id DESC
+        LIMIT 1
+    ";
+    if (dbSupportsSelectForUpdate($pdo)) {
+        $query .= " FOR UPDATE";
+    }
+    $last = $pdo->query($query)->fetchColumn();
+    $nextNum = $last ? ((int) substr((string) $last, 2)) + 1 : 1;
+    return 'SC' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
+}
+
+function previewYearlyPONumber(PDO $pdo): string
+{
+    $year = date('Y');
+    $sequenceKey = 'purchase_order_number_' . $year;
+
+    if (numberSequencesTableExists($pdo)) {
+        return sprintf("PO-%s-%04d", $year, peekSequenceValue($pdo, $sequenceKey, 1));
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT po_number
+        FROM purchase_orders
+        WHERE po_number LIKE ?
+        ORDER BY po_id DESC
+        LIMIT 1
+    ");
+    $stmt->execute(["PO-$year-%"]);
+    $lastPo = $stmt->fetchColumn();
+    $nextNumber = $lastPo ? (int) substr((string) $lastPo, -4) + 1 : 1;
+
+    return sprintf("PO-%s-%04d", $year, $nextNumber);
+}
+
+function generateYearlyPONumber(PDO $pdo): string
+{
+    $year = date('Y');
+    $sequenceKey = 'purchase_order_number_' . $year;
+
+    if (numberSequencesTableExists($pdo)) {
+        return sprintf("PO-%s-%04d", $year, nextSequenceValue($pdo, $sequenceKey, 1));
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT po_number
+        FROM purchase_orders
+        WHERE po_number LIKE ?
+        ORDER BY po_id DESC
+        LIMIT 1
+    ");
+    if (dbSupportsSelectForUpdate($pdo)) {
+        $sql = "
+            SELECT po_number
+            FROM purchase_orders
+            WHERE po_number LIKE ?
+            ORDER BY po_id DESC
+            LIMIT 1 FOR UPDATE
+        ";
+        $stmt = $pdo->prepare($sql);
+    }
+    $stmt->execute(["PO-$year-%"]);
+    $lastPo = $stmt->fetchColumn();
+    $nextNumber = $lastPo ? (int) substr((string) $lastPo, -4) + 1 : 1;
+
+    return sprintf("PO-%s-%04d", $year, $nextNumber);
 }
 
 /* ================================
@@ -140,38 +437,41 @@ function generatePONumber(PDO $pdo): string
    Strips the PDO/MySQL prefix (e.g. "SQLSTATE[45000]: <HY000>: 1644 ")
    from trigger SIGNAL errors, returning just the human-readable MESSAGE_TEXT.
 ================================ */
-function extractDbMessage(Throwable $e): string {
-    $msg = $e->getMessage();
+if (!function_exists('extractDbMessage')) {
+    function extractDbMessage(Throwable $e): string {
+        $msg = $e->getMessage();
 
-    // MySQL error 1442: a trigger/stored function tried to modify a table
-    // that is already being modified by the statement that invoked it
-    // (recursive trigger execution). Log full diagnostics — including a
-    // backtrace pinpointing the exact workflow action/file/line that issued
-    // the offending statement — so the specific trigger/procedure at fault
-    // can be identified quickly, then return a clear, actionable message.
-    if (strpos($msg, '1442') !== false && stripos($msg, "can't update table") !== false) {
-        $trace = $e->getTraceAsString();
-        error_log(
-            "[DB ERROR 1442 - RECURSIVE TRIGGER] {$msg}\n" .
-            "Triggering call site: {$e->getFile()}:{$e->getLine()}\n" .
-            "Backtrace:\n{$trace}"
-        );
-        return 'Database error: This action could not be completed because it triggered a '
-             . 'conflicting update on the same record (Error 1442). This has been logged for '
-             . 'investigation — please contact the system administrator if the problem persists.';
-    }
+        // MySQL error 1442: a trigger/stored function tried to modify a table
+        // that is already being modified by the statement that invoked it
+        // (recursive trigger execution). Log full diagnostics — including a
+        // backtrace pinpointing the exact workflow action/file/line that issued
+        // the offending statement — so the specific trigger/procedure at fault
+        // can be identified quickly, then return a clear, actionable message.
+        if (strpos($msg, '1442') !== false && stripos($msg, "can't update table") !== false) {
+            $trace = $e->getTraceAsString();
+            error_log(
+                "[DB ERROR 1442 - RECURSIVE TRIGGER] {$msg}\n" .
+                "Triggering call site: {$e->getFile()}:{$e->getLine()}\n" .
+                "Backtrace:\n{$trace}"
+            );
+            return 'Database error: This action could not be completed because it triggered a '
+                 . 'conflicting update on the same record (Error 1442). This has been logged for '
+                 . 'investigation — please contact the system administrator if the problem persists.';
+        }
 
-    // PDO trigger error format: "SQLSTATE[XXXXX]: <YYYYY>: NNNN Actual message"
-    if (preg_match('/SQLSTATE\[[^\]]*\]:\s*<[^>]*>:\s*\d*\s*(.+)$/s', $msg, $matches)) {
-        return trim($matches[1]);
+        // PDO trigger error format: "SQLSTATE[XXXXX]: <YYYYY>: NNNN Actual message"
+        if (preg_match('/SQLSTATE\[[^\]]*\]:\s*<[^>]*>:\s*\d*\s*(.+)$/s', $msg, $matches)) {
+            return trim($matches[1]);
+        }
+        return $msg;
     }
-    return $msg;
 }
 
 /* ================================
    pop() — SIMPLE ALERT
 ================================ */
 
+if (!function_exists('pop')) {
 function pop(
     string $message,
     string $redirect = '',
@@ -298,11 +598,13 @@ HTML;
 
     exit;
 }
+}
 
 
 /* ================================
    modalPop() — MODAL UI
 ================================ */
+if (!function_exists('modalPop')) {
 function modalPop(
     string $title,
     string $message,
@@ -387,6 +689,7 @@ function modalPop(
 HTML;
 
     exit;
+}
 }
 
 
@@ -671,65 +974,27 @@ function formatFileSize(int $bytes): string {
  * @throws Exception on validation or upload failure
  */
 function saveReimbursementAttachment(PDO $pdo, array $file, int $reimb_invoice_id, int $uploaded_by): int {
-    if ($file['error'] !== UPLOAD_ERR_OK) {
-        throw new Exception('File upload failed. Please try again.');
-    }
+    require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SecureFileStorage.php';
 
-    // Validate file type via MIME
-    $allowedMimes = [
-        'application/pdf',
-        'image/jpeg',
-        'image/png',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    $mimeMap = [
+        'application/pdf' => 'pdf',
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'application/msword' => 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+        'application/vnd.ms-excel' => 'xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
     ];
 
-    $finfo    = finfo_open(FILEINFO_MIME_TYPE);
-    $mimeType = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
-
-    if (!in_array($mimeType, $allowedMimes, true)) {
-        throw new Exception('Invalid file type. Allowed types: PDF, JPG, JPEG, PNG, DOC, DOCX, XLS, XLSX.');
-    }
-
-    // Also validate by extension as a secondary guard
-    $allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
-    $ext         = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, $allowedExts, true)) {
-        throw new Exception('Invalid file extension. Allowed: PDF, JPG, JPEG, PNG, DOC, DOCX, XLS, XLSX.');
-    }
-
-    // Validate file size (10 MB max) using actual file size, not client-reported size
-    $maxBytes = 10 * 1024 * 1024;
-    $actualFileSize = filesize($file['tmp_name']);
-    if ($actualFileSize === false || $actualFileSize > $maxBytes) {
-        throw new Exception('File size exceeds the 10 MB limit.');
-    }
-
-    // Build upload directory
-    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/reimbursement_invoice_attachments/';
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
-    }
-
-    // Sanitize and generate unique filename
-    $safeExt      = preg_replace('/[^a-zA-Z0-9]/', '', $ext);
-    $uniqueName   = 'REIMB_' . $reimb_invoice_id . '_' . time() . '_' . bin2hex(random_bytes(6)) . '.' . $safeExt;
-    $uploadPath   = $uploadDir . $uniqueName;
-    $relativePath = '/uploads/reimbursement_invoice_attachments/' . $uniqueName;
+    $stored = SecureFileStorage::storeUploadedFile(
+        $file,
+        'reimbursement_invoice_attachments',
+        'REIMB_' . $reimb_invoice_id,
+        $mimeMap,
+        10 * 1024 * 1024
+    );
 
     try {
-        // Move uploaded file and ensure cleanup on failure
-        if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-            throw new Exception('Failed to save the file. Please try again.');
-        }
-
-        // Sanitize original filename for storage
-        $originalName = preg_replace('/[^\w.\-]/', '_', basename($file['name']));
-
-        // Persist to database
         $ins = $pdo->prepare("
             INSERT INTO reimbursement_invoice_attachments
                 (reimb_invoice_id, file_name, original_file_name, file_path, file_type, file_size, uploaded_by)
@@ -737,20 +1002,108 @@ function saveReimbursementAttachment(PDO $pdo, array $file, int $reimb_invoice_i
         ");
         $ins->execute([
             $reimb_invoice_id,
-            $uniqueName,
-            $originalName,
-            $relativePath,
-            $mimeType,
-            (int)$actualFileSize,
+            $stored['stored_name'],
+            $stored['original_name'],
+            $stored['storage_path'],
+            $stored['mime_type'],
+            $stored['file_size'],
             $uploaded_by,
         ]);
 
         return (int)$pdo->lastInsertId();
     } catch (Exception $e) {
-        // Clean up file on any error (upload or DB)
-        if (file_exists($uploadPath)) {
-            unlink($uploadPath);
-        }
+        SecureFileStorage::deleteStoredFile($stored['storage_path']);
         throw $e;
     }
+}
+
+
+function ensureCsrfToken(): string
+{
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+
+    return $_SESSION['csrf_token'];
+}
+
+function requirePostRequest(string $redirect = '/'): void
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        header('Location: ' . $redirect);
+        exit;
+    }
+}
+
+function requireCsrfToken(string $redirect = '/', string $message = 'Invalid or expired request token. Please try again.'): void
+{
+    $submitted = (string)($_POST['csrf_token'] ?? '');
+    $stored = (string)($_SESSION['csrf_token'] ?? '');
+
+    if ($submitted === '' || $stored === '' || !hash_equals($stored, $submitted)) {
+        pop($message, $redirect, POP_DEFAULT_DELAY_MS, 'error');
+        exit;
+    }
+}
+
+function isRequestOwner(array $request): bool
+{
+    return (int)($request['created_by'] ?? 0) > 0
+        && (int)($request['created_by'] ?? 0) === (int)($_SESSION['user_id'] ?? 0);
+}
+
+function canCurrentUserAccessRequestRecord(array $request): bool
+{
+    $role = (string)($_SESSION['role_name'] ?? '');
+
+    if (isRequestOwner($request)) {
+        return true;
+    }
+
+    if (strtoupper((string)($request['status'] ?? '')) === 'DRAFT') {
+        return function_exists('canViewDraft') ? canViewDraft($request) : false;
+    }
+
+    return $role !== 'Requestor';
+}
+
+function enforceRequestRecordAccess(array $request, string $redirect): void
+{
+    if (!canCurrentUserAccessRequestRecord($request)) {
+        if (($GLOBALS['pdo'] ?? null) instanceof PDO) {
+            logAudit(
+                $GLOBALS['pdo'],
+                'procurement_requests',
+                (int)($request['request_id'] ?? 0),
+                'ACCESS_DENIED',
+                'User ' . ($_SESSION['full_name'] ?? $_SESSION['user_id'] ?? 'unknown') . ' attempted to access request outside permitted scope'
+            );
+        }
+        pop('You do not have permission to access this request.', $redirect, POP_DEFAULT_DELAY_MS, 'error');
+        exit;
+    }
+}
+
+function canCurrentUserEditOrSubmitRequest(array $request): bool
+{
+    $role = (string)($_SESSION['role_name'] ?? '');
+    if (in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin'], true)) {
+        return true;
+    }
+
+    return isRequestOwner($request);
+}
+
+function isEditableRequestStatus(string $requestType, string $status): bool
+{
+    $requestType = strtoupper(trim($requestType));
+    $status = strtoupper(trim($status));
+
+    $editableStatuses = [
+        'REGULAR' => ['DRAFT', 'RETURNED_FOR_CORRECTION'],
+        'REIMBURSEMENT' => ['DRAFT', 'RETURNED_FOR_CORRECTION'],
+        'PETTY_CASH' => ['DRAFT', 'RETURNED_FOR_CORRECTION'],
+    ];
+
+    return in_array($status, $editableStatuses[$requestType] ?? ['DRAFT'], true);
 }

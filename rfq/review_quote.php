@@ -274,7 +274,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
                 <div class="mb-3">
                     <label class="form-label text-muted small">Supporting Document</label>
                     <div>
-                        <a href="/uploads/quotes/<?= htmlspecialchars($quote['quote_file']) ?>"
+                        <a href="/rfq/download_quote.php?id=<?= (int)$quote['quote_id'] ?>&action=view"
                            target="_blank"
                            class="btn btn-outline-primary btn-sm rounded-pill">
                             <i class="bi bi-file-earmark-pdf me-1"></i>View Quote Document

@@ -51,10 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         );
     }
 
-    if (strlen($password) < 8) {
+    $passwordPolicyError = validatePasswordPolicy($password);
+    if ($passwordPolicyError !== null) {
         modalPop(
             "Weak Password",
-            "Password must be at least 8 characters long.",
+            $passwordPolicyError,
             "",
             "warning"
         );

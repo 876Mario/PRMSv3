@@ -215,6 +215,7 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
 
         <?php if (has_permission('upload_payment_voucher')): ?>
         <form method="post" action="/payment/upload_voucher.php" enctype="multipart/form-data" class="mb-4">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <input type="hidden" name="payment_id" value="<?= $id ?>">
             <div class="row g-2 align-items-end">
                 <div class="col-md-8">

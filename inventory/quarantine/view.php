@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'manage_quarantine';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_compliance_setup.php';
 
 $quarantineId = (int) ($_GET['id'] ?? 0);
@@ -24,6 +25,7 @@ if (!$qr) { pop("Quarantine record not found.", "/inventory/quarantine/list.php"
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     try {
+        requireCsrfToken('/inventory/quarantine/view.php?id=' . $quarantineId);
         $pdo->beginTransaction();
 
         if ($action === 'start_inspection' && $qr['status'] === 'QUARANTINED') {
@@ -31,16 +33,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute([$quarantineId]);
             logInventoryAudit($pdo, 'inv_quarantine_log', $quarantineId, 'UNDER_INSPECTION', "Inspection started");
 
-        } elseif ($action === 'release' && in_array($qr['status'], ['QUARANTINED', 'UNDER_INSPECTION'])) {
+        } elseif ($action === 'release' && in_array($qr['status'], ['QUARANTINED', 'UNDER_INSPECTION'], true)) {
             $decision = $_POST['release_decision'] ?? '';
             $notes = trim($_POST['decision_notes'] ?? '');
-            if (!in_array($decision, ['RETURN_TO_STOCK', 'DISPOSE', 'RETURN_TO_SUPPLIER'])) {
-                throw new Exception("Invalid decision.");
-            }
             if (empty($notes)) throw new Exception("Decision notes are required.");
 
-            releaseFromQuarantine($pdo, $quarantineId, $decision, $notes);
+            InventoryService::resolveQuarantineRelease($pdo, $quarantineId, $decision, $notes);
             logInventoryAudit($pdo, 'inv_quarantine_log', $quarantineId, 'RELEASED', "Decision: $decision — $notes");
+        } else {
+            throw new Exception("Invalid action for current quarantine state.");
         }
 
         $pdo->commit();
@@ -100,6 +101,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="col-md-4">
         <?php if ($qr['status'] === 'QUARANTINED'): ?>
         <form method="POST" class="mb-3">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="start_inspection" class="btn btn-warning w-100 btn-lg mb-3">
                 <i class="bi bi-search"></i> Start Inspection
             </button>
@@ -108,6 +110,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if (in_array($qr['status'], ['QUARANTINED', 'UNDER_INSPECTION'])): ?>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <div class="mb-2">
                 <label class="form-label fw-bold">Release Decision</label>
                 <select name="release_decision" class="form-select" required>

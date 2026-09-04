@@ -75,6 +75,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $maxStmt = $pdo->prepare(
                     "SELECT type_code FROM inv_asset_item_types WHERE group_id = ? ORDER BY sort_order DESC, item_type_id DESC LIMIT 1"
                 );
+                if (dbSupportsSelectForUpdate($pdo)) {
+                    $maxStmt = $pdo->prepare(
+                        "SELECT type_code FROM inv_asset_item_types WHERE group_id = ? ORDER BY sort_order DESC, item_type_id DESC LIMIT 1 FOR UPDATE"
+                    );
+                }
                 $maxStmt->execute([$groupId]);
                 $lastCode = $maxStmt->fetchColumn() ?: '';
                 preg_match('/(\d+)$/', $lastCode, $m);
@@ -125,15 +130,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ((int) $dupChk->fetchColumn() > 0) {
                     $errors[] = "Group code '$groupCode' already exists.";
                 } else {
-                    $maxOrd = $pdo->query("SELECT COALESCE(MAX(sort_order),0)+1 FROM inv_asset_item_type_groups")->fetchColumn();
+                    $pdo->beginTransaction();
+                    $maxOrd = nextSortOrderValue($pdo, 'inv_asset_item_type_groups', 'group_id');
                     $ins = $pdo->prepare(
                         "INSERT INTO inv_asset_item_type_groups (group_code, group_name, description, sort_order)
                          VALUES (?, ?, ?, ?)"
                     );
                     $ins->execute([$groupCode, $groupName, $groupDesc ?: null, $maxOrd]);
+                    $pdo->commit();
                     $success = "Group <strong>" . htmlspecialchars($groupCode) . " — " . htmlspecialchars($groupName) . "</strong> created.";
                 }
             } catch (Exception $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 $errors[] = 'Error: ' . $e->getMessage();
             }
         }

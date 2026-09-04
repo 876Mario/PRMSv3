@@ -31,7 +31,21 @@ $assetDetailsTableExists = (function (PDO $pdo): bool {
 $assetDetail = [];
 $branches    = [];
 if ($assetDetailsTableExists) {
-    $adStmt = $pdo->prepare("SELECT * FROM inv_asset_details WHERE item_id = ? LIMIT 1");
+    $adStmt = $pdo->prepare("
+        SELECT asset_detail_id, item_id, asset_code, reference_number, make, serial_number, acquired_date,
+               department_branch_id, custodian_user_id, custodian_name, custodian_role, asset_status,
+               asset_condition, delivery_date, placed_in_service_date, warranty_expiration, warranty_provider,
+               warranty_start_date, warranty_end_date, warranty_period, warranty_reference, warranty_notes,
+               warranty_status, address, location_id, site, building, floor_room, purchase_cost, source_of_funds,
+               depreciation_method, depreciation_method_type, useful_life_years, salvage_value, total_production_units,
+               declining_balance_rate, current_replacement_value, accountable_officer, revalued_cost, revalued_date,
+               accumulated_depreciation, depreciation_charge, carrying_value, depreciation_method_rate, impairment,
+               budget_code, acquisition_method, bos_number, insured_value, forced_sale_value, disposal_date,
+               disposal_amount, disposal_authorization, is_disposed, attachments_note, comments, secondary_custodian
+        FROM inv_asset_details
+        WHERE item_id = ?
+        LIMIT 1
+    ");
     $adStmt->execute([$itemId]);
     $assetDetail = $adStmt->fetch(PDO::FETCH_ASSOC) ?: [];
     try {

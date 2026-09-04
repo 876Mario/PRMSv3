@@ -13,51 +13,20 @@ class ApprovalService {
     }
 
     public function approve($entity_type, $entity_id) {
-
-        // 1️⃣ Get next required stage
-        $stmt = $this->pdo->prepare("
-            SELECT MIN(stage_order) as next_stage
-            FROM request_approvals
-            WHERE entity_type = ?
-              AND entity_id = ?
-              AND status = 'pending'
-        ");
-        $stmt->execute([$entity_type, $entity_id]);
-        $next_stage = $stmt->fetchColumn();
-
-        if (!$next_stage) {
+        $approval = $this->getNextPendingStage($entity_type, $entity_id);
+        if (!$approval) {
             throw new Exception("No pending approval stages.");
         }
 
-        // 2️⃣ Check if current user matches next stage
-        $stmt = $this->pdo->prepare("
-            SELECT *
-            FROM request_approvals
-            WHERE entity_type = ?
-              AND entity_id = ?
-              AND role = ?
-              AND stage_order = ?
-              AND status = 'pending'
-        ");
-        $stmt->execute([
-            $entity_type,
-            $entity_id,
-            $this->role,
-            $next_stage
-        ]);
-
-        $approval = $stmt->fetch();
-
-        if (!$approval) {
+        if ($approval['role'] !== $this->role) {
             throw new Exception("You cannot approve out of sequence.");
         }
 
-        // 3️⃣ Approve
         $this->pdo->prepare("
             UPDATE request_approvals
             SET status='approved',
                 approved_by=?,
-                approved_at=NOW()
+                approved_at=CURRENT_TIMESTAMP
             WHERE id=?
         ")->execute([$this->user_id, $approval['id']]);
 
@@ -79,26 +48,8 @@ class ApprovalService {
     }
 
     public function reject($entity_type, $entity_id, $reason) {
-
-        $stmt = $this->pdo->prepare("
-            SELECT *
-            FROM request_approvals
-            WHERE entity_type = ?
-              AND entity_id = ?
-              AND role = ?
-              AND status = 'pending'
-            ORDER BY stage_order ASC
-            LIMIT 1
-        ");
-        $stmt->execute([
-            $entity_type,
-            $entity_id,
-            $this->role
-        ]);
-
-        $approval = $stmt->fetch();
-
-        if (!$approval) {
+        $approval = $this->getNextPendingStage($entity_type, $entity_id);
+        if (!$approval || $approval['role'] !== $this->role) {
             throw new Exception("Not authorized to reject this stage.");
         }
 
@@ -107,12 +58,27 @@ class ApprovalService {
             SET status='rejected',
                 rejection_reason=?,
                 approved_by=?,
-                approved_at=NOW()
+                approved_at=CURRENT_TIMESTAMP
             WHERE id=?
         ")->execute([
             $reason,
             $this->user_id,
             $approval['id']
         ]);
+    }
+
+    private function getNextPendingStage($entity_type, $entity_id) {
+        $stmt = $this->pdo->prepare("
+            SELECT id, role, stage_order
+            FROM request_approvals
+            WHERE entity_type = ?
+              AND entity_id = ?
+              AND status = 'pending'
+            ORDER BY stage_order ASC, id ASC
+            LIMIT 1
+        ");
+        $stmt->execute([$entity_type, $entity_id]);
+        $approval = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $approval ?: null;
     }
 }

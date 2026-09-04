@@ -34,7 +34,9 @@ class RequestPrintService {
     private function loadDocumentControlSettings() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT * FROM doc_ctrl_settings 
+                SELECT id, request_type, form_revision, effective_date, dcr_number,
+                       updated_at, updated_by_id, updated_by_name
+                FROM doc_ctrl_settings 
                 WHERE request_type = ?
                 LIMIT 1
             ");
@@ -50,7 +52,9 @@ class RequestPrintService {
 
         try {
             $stmt = $this->pdo->query("
-                SELECT * FROM doc_ctrl_settings
+                SELECT id, request_type, form_revision, effective_date, dcr_number,
+                       updated_at, updated_by_id, updated_by_name
+                FROM doc_ctrl_settings
                 WHERE id = 1
                 LIMIT 1
             ");

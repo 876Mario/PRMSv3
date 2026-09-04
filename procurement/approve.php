@@ -94,11 +94,11 @@ if (signedRequestUploadPending($request)) {
    Get next pending approval stage
 ================================ */
 $stmt = $pdo->prepare("
-    SELECT *
+    SELECT id, role, stage_order
     FROM request_approvals
     WHERE request_id = ?
       AND status = 'pending'
-    ORDER BY stage_order ASC
+    ORDER BY stage_order ASC, id ASC
     LIMIT 1
 ");
 $stmt->execute([$id]);
@@ -135,6 +135,7 @@ if (!canApproveStage($current_role, $nextApproval['role'], $estimatedValue)) {
    Handle POST (Approve / Reject)
 ================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/procurement/approve.php?id=' . $id);
 
     $action = $_POST['action'] ?? '';
 
@@ -174,19 +175,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             UPDATE procurement_requests
             SET status = ?,
                 approved_by = ?,
-                approved_at = NOW(),
-                funds_available = 1,
-                finance_reviewed_by = ?,
-                finance_reviewed_at = NOW()
+                approved_at = NOW()
             WHERE request_id = ?
-        ")->execute([$nextStatus, $user_id, $user_id, $id]);
+        ")->execute([$nextStatus, $user_id, $id]);
 
         logAudit(
             $pdo,
             'procurement_requests',
             $id,
             'STATUS_CHANGE',
-            'Approved → ' . $nextStatus . ' (funds certified) by ' . $approverName
+            'Approved → ' . $nextStatus . ' by ' . $approverName
         );
 
         logRequestTimeline(
@@ -198,8 +196,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         /* Notify next approver or requestor of finalization */
         require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
-        notifyNextApprover($id, $nextApproval['role']);
-        if (in_array($nextStatus, ['AWARDED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE'])) {
+        $pendingApprovalCountStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM request_approvals
+            WHERE request_id = ?
+              AND status = 'pending'
+        ");
+        $pendingApprovalCountStmt->execute([$id]);
+        $hasPendingApprovals = ((int)$pendingApprovalCountStmt->fetchColumn()) > 0;
+
+        if ($hasPendingApprovals) {
+            notifyNextApprover($id, $nextApproval['role']);
+        } else {
             notifyRequestFinalized($id, $nextStatus);
         }
         if ($nextStatus === 'RFQ_LETTER_AVAILABLE') {
@@ -316,6 +324,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                 <strong>Current Stage:</strong> <span class="badge bg-warning text-dark"><?= htmlspecialchars($nextApproval['role']) ?></span>
             </div>
             <form method="post">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                 <input type="hidden" name="id" value="<?= (int)$id ?>">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Rejection Reason <span class="text-danger">*</span> (Required if rejecting)</label>

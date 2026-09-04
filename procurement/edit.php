@@ -28,6 +28,11 @@ if (!$request) {
     exit;
 }
 
+if (!canCurrentUserEditOrSubmitRequest($request)) {
+    pop('You do not have permission to edit this request.', '/procurement/list.php', POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
 // Allow Procurement Officers (and Admin/SuperAdmin) to edit requests beyond DRAFT
 $roleName = $_SESSION['role_name'] ?? '';
 $isAdmin = in_array($roleName, ['Admin', 'SuperAdmin'], true);
@@ -75,6 +80,7 @@ $items = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ===== Handle form submission ===== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/procurement/edit.php?id=' . $id);
 
 
     // Estimated value update
@@ -355,6 +361,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
         </div>
         <div class="card-body">
             <form method="POST" id="editForm">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                 <!-- Hidden field to capture estimated value from summary card -->
                 <input type="hidden" name="estimated_value" id="hiddenEstimatedValue">
                 <?php if ($isAdmin): ?>

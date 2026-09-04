@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'issue_stock';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_setup.php';
 
 $issueId = (int) ($_GET['id'] ?? 0);
@@ -37,13 +38,17 @@ $lineItems = $lineItems->fetchAll(PDO::FETCH_ASSOC);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     try {
+        requireCsrfToken('/inventory/issuing/view.php?id=' . $issueId);
         $pdo->beginTransaction();
 
-        if ($action === 'approve' && has_permission('approve_issue')) {
+        if ($action === 'approve' && has_permission('approve_issue') && $issue['status'] === 'PENDING_APPROVAL') {
             // Segregation: approver must not be the person who created the issue
             if ($_SESSION['user_id'] == $issue['issued_by']) {
                 throw new Exception("Cannot approve your own stock issue (segregation of duties).");
             }
+
+            InventoryService::reserveIssueStock($pdo, $issue, $lineItems);
+
             $pdo->prepare("UPDATE inv_issues SET status = 'APPROVED', approved_by = ?, approved_at = NOW() WHERE issue_id = ?")
                 ->execute([$_SESSION['user_id'], $issueId]);
 
@@ -53,26 +58,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             logInventoryAudit($pdo, 'inv_issues', $issueId, 'APPROVED', "Issue approved");
 
         } elseif ($action === 'dispatch' && $issue['status'] === 'APPROVED') {
-            // Deduct stock now that issue is approved
-            foreach ($lineItems as $li) {
-                requireLocationNotFrozen($pdo, $issue['from_location_id']);
+            InventoryService::dispatchIssueStock($pdo, $issue, $lineItems);
 
-                InventoryService::updateStockLevel($pdo, $li['item_id'], $issue['from_location_id'], $li['quantity_issued'], 'subtract');
-                InventoryService::recordTransaction($pdo, $li['item_id'], $issue['from_location_id'], 'ISSUE', $li['quantity_issued'],
-                    $issueId, 'inv_issues',
-                    "Issued to " . ($issue['issued_to_user_id'] ? "user " . $issue['issued_to_user_id'] : "dept " . $issue['issued_to_department_id']),
-                    $_SESSION['user_id'],
-                    $li['lot_number'] ?? null, $li['batch_number'] ?? null, $li['serial_number'] ?? null, null);
+            if (!empty($issue['requisition_id'])) {
+                InventoryService::applyIssuedQuantitiesToRequisition($pdo, (int) $issue['requisition_id'], $lineItems);
             }
+
             $pdo->prepare("UPDATE inv_issues SET status = 'COMPLETED' WHERE issue_id = ?")->execute([$issueId]);
             logInventoryAudit($pdo, 'inv_issues', $issueId, 'COMPLETED', "Stock dispatched and issue completed");
 
-        } elseif ($action === 'reject' && has_permission('approve_issue')) {
+        } elseif ($action === 'reject' && has_permission('approve_issue') && $issue['status'] === 'PENDING_APPROVAL') {
             $reason = trim($_POST['rejection_reason'] ?? '');
             if (empty($reason)) throw new Exception("Rejection reason is required.");
             $pdo->prepare("UPDATE inv_issues SET status = 'CANCELLED', notes = CONCAT(IFNULL(notes,''), '\nRejected: ', ?) WHERE issue_id = ?")
                 ->execute([$reason, $issueId]);
             logInventoryAudit($pdo, 'inv_issues', $issueId, 'REJECTED', "Rejected: $reason");
+        } else {
+            throw new Exception("Invalid issue action for the current state.");
         }
 
         $pdo->commit();
@@ -131,6 +133,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="col-md-4">
         <?php if ($issue['status'] === 'PENDING_APPROVAL' && has_permission('approve_issue')): ?>
         <form method="POST" class="mb-2">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="approve" class="btn btn-success w-100 btn-lg mb-2">
                 <i class="bi bi-check-circle"></i> Approve Issue
             </button>
@@ -143,6 +146,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if ($issue['status'] === 'APPROVED'): ?>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="dispatch" class="btn btn-primary w-100 btn-lg">
                 <i class="bi bi-box-arrow-right"></i> Dispatch Stock
             </button>

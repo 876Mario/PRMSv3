@@ -7,16 +7,14 @@
  * Maintains version history and audit trail
  */
 
-$REQUIRE_PERMISSION = 'view_requests';
+$REQUIRE_PERMISSION = 'view_reimbursement_requests';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/services/RequestDocumentService.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: /reimbursement/list.php');
-    exit;
-}
+requirePostRequest('/reimbursement/list.php');
+requireCsrfToken('/reimbursement/list.php');
 
 $request_id = (int)($_POST['request_id'] ?? 0);
 if ($request_id <= 0) {
@@ -106,6 +104,9 @@ try {
     );
     
 } catch (Exception $e) {
+    if (!empty($uploadResult['path'] ?? '')) {
+        SecureFileStorage::deleteStoredFile($uploadResult['path'], 'signed_requests');
+    }
     error_log("Signed form upload error for reimbursement request " . $request_id . ": " . $e->getMessage());
     pop(extractDbMessage($e), "/reimbursement/view.php?id=" . $request_id, 2500, "error");
 }

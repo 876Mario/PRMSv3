@@ -16,6 +16,7 @@
  */
 
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/services/InventoryService.php';
 
 class ProcurementInventoryBridge
@@ -264,15 +265,10 @@ class ProcurementInventoryBridge
             $reqItems
         ));
 
-        // Generate procurement request number
-        $lastPR = $pdo->query("SELECT request_number FROM procurement_requests ORDER BY request_id DESC LIMIT 1")
-                       ->fetchColumn();
-        $prNum = $lastPR
-            ? 'PR' . str_pad((int) preg_replace('/\D/', '', $lastPR) + 1, 3, '0', STR_PAD_LEFT)
-            : 'PR001';
-
         $pdo->beginTransaction();
         try {
+            $prNum = generateRequestNumber($pdo);
+
             // Create procurement request (DRAFT)
             $pdo->prepare("
                 INSERT INTO procurement_requests

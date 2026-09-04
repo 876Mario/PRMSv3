@@ -76,7 +76,9 @@ function allowedTransitions(): array {
         'COMMITTEE_RECOMMENDED'  => ['GC_APPROVED', 'QUOTE_REVIEW_PENDING', 'AWARDED',
                                      // ← backward
                                      'EVALUATION_STAGE'],
-        'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING', 'INVOICE_RECEIVED'],
+        'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING', 'INVOICE_RECEIVED',
+                                     // ← controlled backward recovery
+                                     'GC_APPROVED', 'COMMITTEE_RECOMMENDED', 'PROCUREMENT_STAGE'],
     ];
 }
 
@@ -265,6 +267,8 @@ function stageOwner(string $stage): array {
  *   - All other branches               → HOD
  *
  * Petty Cash / Reimbursement: Direct to Finance Officer for fund verification.
+ * Regular procurement: Finance must always explicitly verify funds before the
+ * request can progress to RFQ/award workflow stages.
  */
 function getApprovalChain(string $requestType, float $estimatedValue, ?int $branchId = null, ?PDO $pdo = null): array {
     // Petty cash / reimbursement: Finance Officer only (fund verification)
@@ -330,6 +334,10 @@ function getApprovalChain(string $requestType, float $estimatedValue, ?int $bran
         if (!in_array('HOD', $chain)) {
             $chain[] = 'HOD';
         }
+    }
+
+    if (!in_array('Finance Officer', $chain, true)) {
+        $chain[] = 'Finance Officer';
     }
 
     return $chain;
@@ -717,8 +725,9 @@ function getReimbursementApprovalChain(): array {
 function getReimbursementTransitions(): array {
     return [
         'DRAFT'                        => ['SUBMITTED'],
-        'SUBMITTED'                    => ['FUNDS_VERIFIED', 'DECLINED'],
-        'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'APPROVED', 'DECLINED'],
+        'RETURNED_FOR_CORRECTION'      => ['SUBMITTED', 'DECLINED'],
+        'SUBMITTED'                    => ['FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
+        'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'APPROVED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
         'INVOICE_SUBMITTED'            => ['INVOICE_VERIFIED', 'DECLINED'],
         'INVOICE_VERIFIED'             => ['APPROVED', 'INVOICE_SUBMITTED', 'DECLINED'],
         'APPROVED'                     => ['REIMBURSED'],
@@ -757,9 +766,10 @@ function getPettyCashApprovalChain(): array {
 function getPettyCashTransitions(): array {
     return [
         'DRAFT'                    => ['SUBMITTED'],
-        'SUBMITTED'                => ['FUNDS_VERIFIED', 'DECLINED'],
-        'FUNDS_VERIFIED'           => ['FINANCE_AUTHORIZED', 'DECLINED'],
-        'FINANCE_AUTHORIZED'       => ['DISBURSED'],
+        'RETURNED_FOR_CORRECTION'  => ['SUBMITTED', 'DECLINED'],
+        'SUBMITTED'                => ['FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
+        'FUNDS_VERIFIED'           => ['FINANCE_AUTHORIZED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
+        'FINANCE_AUTHORIZED'       => ['DISBURSED', 'RETURNED_FOR_CORRECTION'],
         'DISBURSED'                => ['PENDING_RECONCILIATION'],
         'PENDING_RECONCILIATION'   => ['PROCUREMENT_VERIFIED', 'RECONCILIATION_DISCREPANCY'],
         'PROCUREMENT_VERIFIED'     => ['COMPLETED'],

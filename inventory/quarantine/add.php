@@ -2,13 +2,16 @@
 $REQUIRE_PERMISSION = 'manage_quarantine';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_compliance_setup.php';
 
 $locations = $pdo->query("SELECT location_id, location_code, site_name FROM inv_locations WHERE is_active=1 ORDER BY site_name")->fetchAll(PDO::FETCH_ASSOC);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
+        requireCsrfToken('/inventory/quarantine/add.php');
         $pdo->beginTransaction();
+        requireOpenPeriod($pdo);
 
         $itemId = (int) ($_POST['item_id'] ?? 0);
         $locationId = (int) ($_POST['location_id'] ?? 0);
@@ -22,8 +25,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($qty <= 0) throw new Exception("Quantity must be greater than 0.");
         if (empty($reason)) throw new Exception("Reason for quarantine is required.");
 
+        requireLocationNotFrozen($pdo, $locationId);
+
         // Check stock availability
-        $available = InventoryService::getStockLevel($pdo, $itemId, $locationId);
+        $available = InventoryService::getAvailableStockLevel($pdo, $itemId, $locationId);
         if ($available < $qty) {
             throw new Exception("Insufficient usable stock. Available: $available");
         }
@@ -58,6 +63,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 <div class="card border-0 shadow-sm">
     <div class="card-body">
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label">Item *</label>

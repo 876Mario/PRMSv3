@@ -35,6 +35,27 @@ class RFQQuoteApprovalService
 
     public function getPendingBranchHeadApprovals(): array
     {
+        $canOverride = $this->hasBranchHeadOverridePermission();
+        $visibilitySql = '';
+        $params = [];
+
+        if (!$canOverride) {
+            $visibilitySql = "
+                AND EXISTS (
+                    SELECT 1
+                      FROM users cu
+                      JOIN roles cr ON cr.id = cu.role_id
+                     WHERE cu.user_id = :current_user_id
+                       AND cu.is_active = 1
+                       AND (
+                           (cr.name = 'Director HRM&A' AND (pr.branch_id = 5 OR UPPER(COALESCE(b.branch_name, '')) LIKE '%HRM%'))
+                           OR (cr.name IN ('HOD', 'Branch Head') AND cu.branch_id = pr.branch_id)
+                       )
+                )
+            ";
+            $params[':current_user_id'] = $this->userId;
+        }
+
         $stmt = $this->pdo->prepare(
             "SELECT
                 r.rfq_id,
@@ -72,19 +93,12 @@ class RFQQuoteApprovalService
              WHERE pr.status = 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING'
                AND r.requestor_spec_review_status = 'APPROVED'
                AND r.branch_head_approval_status = 'PENDING'
+               {$visibilitySql}
              ORDER BY r.submission_deadline ASC, r.created_at ASC"
         );
-        $stmt->execute();
+        $stmt->execute($params);
 
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        $result = [];
-        foreach ($rows as $row) {
-            if ($this->isActualBranchHeadForContext($row) || $this->hasBranchHeadOverridePermission()) {
-                $result[] = $row;
-            }
-        }
-
-        return $result;
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function approveBranchHeadApproval($rfq_id, $comments = '', $quote_id = null, bool $confirmationChecked = true, string $overrideReason = ''): bool

@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'view_inventory';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_setup.php';
 
 $reqId = (int) ($_GET['id'] ?? 0);
@@ -31,13 +32,14 @@ $lineItems = $pdo->prepare("
 $lineItems->execute([$reqId]);
 $lineItems = $lineItems->fetchAll(PDO::FETCH_ASSOC);
 
-/* Handle approval/rejection */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && has_permission('approve_stock_requisition')) {
+/* Handle approval/rejection/submission */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (has_permission('approve_stock_requisition') || $_SESSION['user_id'] == $req['requester_user_id'])) {
     $action = $_POST['action'] ?? '';
     try {
+        requireCsrfToken('/inventory/requisitions/view.php?id=' . $reqId);
         $pdo->beginTransaction();
 
-        if ($action === 'approve') {
+        if ($action === 'approve' && $req['status'] === 'SUBMITTED') {
             // Segregation check: approver must not be the requester
             if ($_SESSION['user_id'] == $req['requester_user_id']) {
                 throw new Exception("You cannot approve your own requisition (segregation of duties).");
@@ -46,9 +48,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && has_permission('approve_stock_requi
             $pdo->prepare("UPDATE inv_requisitions SET status = 'APPROVED', approved_by = ?, approved_at = NOW() WHERE requisition_id = ?")
                 ->execute([$_SESSION['user_id'], $reqId]);
 
-            // Reserve stock for approved items
             foreach ($lineItems as $li) {
                 $approvedQty = (float) ($_POST['approved_qty'][$li['req_item_id']] ?? $li['quantity_requested']);
+                if ($approvedQty < 0) {
+                    throw new Exception("Approved quantity cannot be negative.");
+                }
+                if ($approvedQty > (float) $li['quantity_requested']) {
+                    throw new Exception("Approved quantity cannot exceed the requested quantity.");
+                }
                 $pdo->prepare("UPDATE inv_requisition_items SET quantity_approved = ? WHERE req_item_id = ?")
                     ->execute([$approvedQty, $li['req_item_id']]);
             }
@@ -61,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && has_permission('approve_stock_requi
             pop("Requisition approved.", "/inventory/requisitions/view.php?id=$reqId", 1800, 'success');
             exit;
 
-        } elseif ($action === 'emergency_approve' && $req['urgency'] === 'EMERGENCY') {
+        } elseif ($action === 'emergency_approve' && $req['status'] === 'SUBMITTED' && $req['urgency'] === 'EMERGENCY') {
             // Emergency expedited approval — GoJ FI requirement
             // Allows senior officer to approve and immediately release for issuing
             // Post-facto documentation must be completed within 48 hours
@@ -91,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && has_permission('approve_stock_requi
             pop("Emergency requisition approved. Post-facto documentation required within 48 hours.", "/inventory/requisitions/view.php?id=$reqId", 3000, 'success');
             exit;
 
-        } elseif ($action === 'reject') {
+        } elseif ($action === 'reject' && $req['status'] === 'SUBMITTED') {
             $reason = trim($_POST['rejection_reason'] ?? '');
             if (empty($reason)) throw new Exception("Rejection reason is required.");
 
@@ -102,13 +109,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && has_permission('approve_stock_requi
             pop("Requisition rejected.", "/inventory/requisitions/view.php?id=$reqId", 1800, 'success');
             exit;
 
-        } elseif ($action === 'submit' && $_SESSION['user_id'] == $req['requester_user_id']) {
+        } elseif ($action === 'submit' && $req['status'] === 'DRAFT' && $_SESSION['user_id'] == $req['requester_user_id']) {
             $pdo->prepare("UPDATE inv_requisitions SET status = 'SUBMITTED' WHERE requisition_id = ? AND status = 'DRAFT'")
                 ->execute([$reqId]);
             logInventoryAudit($pdo, 'inv_requisitions', $reqId, 'SUBMITTED', "Requisition submitted");
             $pdo->commit();
             pop("Requisition submitted for approval.", "/inventory/requisitions/view.php?id=$reqId", 1800, 'success');
             exit;
+        } else {
+            throw new Exception("Invalid requisition action for the current state.");
         }
     } catch (Exception $e) {
         $pdo->rollBack();
@@ -175,6 +184,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <!-- Action buttons -->
         <?php if ($req['status'] === 'DRAFT' && $_SESSION['user_id'] == $req['requester_user_id']): ?>
         <form method="POST" class="mb-2">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="submit" class="btn btn-primary w-100 btn-lg">
                 <i class="bi bi-send"></i> Submit for Approval
             </button>
@@ -183,6 +193,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if ($req['status'] === 'SUBMITTED' && has_permission('approve_stock_requisition')): ?>
         <form method="POST" id="approvalForm">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <?php if ($req['urgency'] === 'EMERGENCY'): ?>
             <div class="alert alert-danger py-2 mb-2">
                 <strong><i class="bi bi-lightning-charge"></i> EMERGENCY</strong> — Expedited approval available
@@ -220,6 +231,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="card-header bg-dark text-white"><i class="bi bi-list-check"></i> Requested Items</div>
     <div class="card-body p-0">
         <form method="POST">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-dark">

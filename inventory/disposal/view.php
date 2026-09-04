@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'dispose_stock';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_setup.php';
 
 $dispId = (int) ($_GET['id'] ?? 0);
@@ -34,6 +35,7 @@ $lineItems = $lineItems->fetchAll(PDO::FETCH_ASSOC);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     try {
+        requireCsrfToken('/inventory/disposal/view.php?id=' . $dispId);
         $pdo->beginTransaction();
 
         if ($action === 'complete_survey' && $disp['status'] === 'PENDING_SURVEY') {
@@ -42,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute([$surveyNotes, $_SESSION['user_id'], $dispId]);
             logInventoryAudit($pdo, 'inv_disposals', $dispId, 'SURVEYED', "Survey completed");
 
-        } elseif ($action === 'approve' && has_permission('approve_disposal')) {
+        } elseif ($action === 'approve' && has_permission('approve_disposal') && $disp['status'] === 'PENDING_APPROVAL') {
             if ($_SESSION['user_id'] == $disp['requested_by']) {
                 throw new Exception("Cannot approve your own disposal (segregation of duties).");
             }
@@ -57,25 +59,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'complete' && $disp['status'] === 'APPROVED') {
             // Enforce period and freeze controls
             requireOpenPeriod($pdo);
-            requireLocationNotFrozen($pdo, $disp['location_id']);
 
             $proceeds = (float) ($_POST['actual_proceeds'] ?? 0);
-            // Remove stock
-            foreach ($lineItems as $li) {
-                InventoryService::updateStockLevel($pdo, $li['item_id'], $disp['location_id'], $li['quantity'], 'subtract');
-                InventoryService::recordTransaction($pdo, $li['item_id'], $disp['location_id'], 'DISPOSAL', $li['quantity'],
-                    $dispId, 'inv_disposals', "Disposed: " . $disp['disposal_method'], $_SESSION['user_id']);
-            }
+            InventoryService::completeDisposalStock($pdo, $disp, $lineItems);
             $pdo->prepare("UPDATE inv_disposals SET status = 'COMPLETED', actual_proceeds = ?, completed_at = NOW() WHERE disposal_id = ?")
                 ->execute([$proceeds, $dispId]);
             logInventoryAudit($pdo, 'inv_disposals', $dispId, 'COMPLETED', "Disposal completed, proceeds: $proceeds");
 
-        } elseif ($action === 'reject' && has_permission('approve_disposal')) {
+        } elseif ($action === 'reject' && has_permission('approve_disposal') && $disp['status'] === 'PENDING_APPROVAL') {
             $reason = trim($_POST['rejection_reason'] ?? '');
             if (empty($reason)) throw new Exception("Rejection reason is required.");
             $pdo->prepare("UPDATE inv_disposals SET status = 'REJECTED', notes = CONCAT(IFNULL(notes,''), '\nRejected: ', ?) WHERE disposal_id = ?")
                 ->execute([$reason, $dispId]);
             logInventoryAudit($pdo, 'inv_disposals', $dispId, 'REJECTED', "Rejected: $reason");
+        } else {
+            throw new Exception("Invalid action for current status.");
         }
 
         $pdo->commit();
@@ -133,6 +131,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="col-md-4">
         <?php if ($disp['status'] === 'PENDING_SURVEY'): ?>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <textarea name="survey_notes" class="form-control mb-2" rows="3" placeholder="Survey findings..."></textarea>
             <button type="submit" name="action" value="complete_survey" class="btn btn-primary w-100 btn-lg">
                 <i class="bi bi-clipboard-check"></i> Complete Survey
@@ -142,6 +141,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if ($disp['status'] === 'PENDING_APPROVAL' && has_permission('approve_disposal')): ?>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="approve" class="btn btn-success w-100 btn-lg mb-2">
                 <i class="bi bi-check-circle"></i> Approve Disposal
             </button>
@@ -154,6 +154,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if ($disp['status'] === 'APPROVED'): ?>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <label class="form-label">Actual Proceeds ($)</label>
             <input type="number" step="0.01" name="actual_proceeds" class="form-control mb-2">
             <button type="submit" name="action" value="complete" class="btn btn-success w-100 btn-lg">

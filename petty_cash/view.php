@@ -128,10 +128,7 @@ SignedRequestNoticeService::seedDefaultSettings($pdo);
 $printNoticeEnabled = SignedRequestNoticeService::isPrintNoticeEnabled($pdo);
 $uploadNoticeEnabled = SignedRequestNoticeService::isUploadNoticeEnabled($pdo);
 
-// Generate CSRF token for uploads
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
+$csrfToken = ensureCsrfToken();
 ?>
 
 <div class="container-fluid mt-4">
@@ -325,7 +322,7 @@ if (empty($_SESSION['csrf_token'])) {
                           <td><?= date('M d, Y g:i A', strtotime($doc['uploaded_date'])) ?></td>
                           <td><?= htmlspecialchars(substr($doc['document_notes'] ?? '', 0, 50)) ?></td>
                           <td>
-                            <a href="<?= htmlspecialchars($doc['file_path']) ?>" class="btn btn-xs btn-outline-primary" download>
+                            <a href="/petty_cash/download_reconciliation_document.php?id=<?= (int)$doc['id'] ?>&action=download" class="btn btn-xs btn-outline-primary">
                               <i class="bi bi-download"></i> Download
                             </a>
                           </td>
@@ -514,7 +511,7 @@ if (empty($_SESSION['csrf_token'])) {
               <div class="card card-body">
                 <form method="post" action="/petty_cash/upload_signed_request.php" enctype="multipart/form-data" class="js-signed-upload-form" data-request-id="<?= (int)$request_id ?>" data-request-type="PETTY_CASH" data-upload-notice-enabled="<?= $uploadNoticeEnabled ? '1' : '0' ?>">
                   <input type="hidden" name="request_id" value="<?= $request_id ?>">
-                  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                   <input type="hidden" name="signed_notice_upload_ack" value="0">
                   <input type="hidden" name="signed_notice_action_token" value="">
                   
@@ -562,7 +559,7 @@ if (empty($_SESSION['csrf_token'])) {
                   File: <?= htmlspecialchars($activeSignedDoc['original_file_name']) ?> (<?= number_format($activeSignedDoc['file_size'] / 1024, 2) ?> KB)
                 </small>
               </div>
-              <a href="<?= htmlspecialchars($activeSignedDoc['document_path']) ?>" class="btn btn-sm btn-outline-primary" target="_blank">
+              <a href="/procurement/download_signed_request.php?request_id=<?= (int)$request_id ?>&action=download" class="btn btn-sm btn-outline-primary" target="_blank">
                 <i class="bi bi-download"></i> Download Signed Document
               </a>
             </div>
@@ -615,11 +612,12 @@ if (empty($_SESSION['csrf_token'])) {
           <h5 class="mb-0">Actions</h5>
         </div>
         <div class="card-body d-flex flex-column gap-2">
-          <?php if ($request['status'] === 'DRAFT' && $_SESSION['user_id'] == $request['created_by']): ?>
+          <?php if (in_array($request['status'], ['DRAFT', 'RETURNED_FOR_CORRECTION'], true) && $_SESSION['user_id'] == $request['created_by']): ?>
             <a href="/petty_cash/add.php?edit=<?= $request_id ?>" class="btn btn-primary btn-sm">
               <i class="bi bi-pencil"></i> Edit Request
             </a>
             <form method="post" action="/petty_cash/submit.php" class="d-inline">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <button type="submit" class="btn btn-success btn-sm w-100">
                 <i class="bi bi-send"></i> Submit for Approval
@@ -633,7 +631,7 @@ if (empty($_SESSION['csrf_token'])) {
           $isRequestor = (int)($_SESSION['user_id'] ?? 0) === (int)$request['created_by'];
           
           // Finance approval at submission stage
-          $canApprove = in_array($request['status'], ['SUBMITTED']) && $isFinanceOfficer;
+          $canApprove = $request['status'] === 'SUBMITTED' && $isFinanceOfficer;
           
           // Finance disbursement at FUNDS_VERIFIED or FINANCE_AUTHORIZED
           $canDisburse = in_array($request['status'], ['FUNDS_VERIFIED', 'FINANCE_AUTHORIZED']) && $isFinanceOfficer && $disbursement;
@@ -652,6 +650,7 @@ if (empty($_SESSION['csrf_token'])) {
               <small><strong>Action Required:</strong> Verify funds and authorize this petty cash request.</small>
             </div>
             <form method="post" action="/petty_cash/approve.php" class="d-inline">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <input type="hidden" name="action" value="approve">
               <button type="submit" class="btn btn-success btn-sm w-100 mb-2">
@@ -659,6 +658,7 @@ if (empty($_SESSION['csrf_token'])) {
               </button>
             </form>
             <form method="post" action="/petty_cash/approve.php" class="d-inline">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <input type="hidden" name="action" value="decline">
               <button type="submit" class="btn btn-danger btn-sm w-100">
@@ -815,11 +815,19 @@ if (empty($_SESSION['csrf_token'])) {
   const modalMessageEl = document.getElementById('signedRequestNoticeMessage');
   const confirmBtn = document.getElementById('signedRequestNoticeConfirmBtn');
   const modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
-  const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
+  const csrfToken = <?= json_encode($csrfToken) ?>;
   let onConfirm = null;
 
   function createActionToken(prefix, requestType, requestId) {
-    return [prefix, requestType, requestId, Date.now(), Math.random().toString(36).slice(2, 10)].join('-');
+    const randomPart = (() => {
+      if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(8);
+        window.crypto.getRandomValues(bytes);
+        return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+      }
+      return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+    })();
+    return [prefix, requestType, requestId, Date.now(), randomPart].join('-');
   }
 
   function postPrintNoticeEvent(payload) {
@@ -1093,6 +1101,7 @@ if (empty($_SESSION['csrf_token'])) {
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <form method="post" action="/petty_cash/upload_reconciliation_document.php" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
         <div class="modal-body">
           <p class="text-muted mb-3">Attach supporting documentation such as receipts, invoices, proof of purchase, or change return documentation.</p>
           

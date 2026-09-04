@@ -3,6 +3,7 @@ $REQUIRE_PERMISSION = 'manage_contracts';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SecureFileStorage.php';
 
 define('MAX_CONTRACT_DOCUMENT_SIZE', 25 * 1024 * 1024); // 25 MB
 
@@ -16,9 +17,7 @@ $branchesStmt = $pdo->query("SELECT branch_id, branch_name FROM branches ORDER B
 $branches = $branchesStmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* Generate next contract number */
-$numStmt = $pdo->query("SELECT COUNT(*) + 1 FROM service_contracts");
-$nextNum = (int)$numStmt->fetchColumn();
-$contractNumber = 'SC' . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
+$contractNumber = previewServiceContractNumber($pdo);
 
 /* ===============================
    Handle Form Submission
@@ -50,16 +49,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($start_date && $end_date && $end_date <= $start_date) $errors[] = 'End date must be after start date.';
 
     if (empty($errors)) {
-        // Check for duplicate contract number
-        $dupStmt = $pdo->prepare("SELECT contract_id FROM service_contracts WHERE contract_number = ?");
-        $dupStmt->execute([$contract_number]);
-        if ($dupStmt->fetch()) {
-            $errors[] = 'Contract number already exists.';
+        // Check for duplicate contract number when a manual override was entered
+        if ($contract_number !== '' && $contract_number !== $contractNumber) {
+            $dupStmt = $pdo->prepare("SELECT contract_id FROM service_contracts WHERE contract_number = ?");
+            $dupStmt->execute([$contract_number]);
+            if ($dupStmt->fetch()) {
+                $errors[] = 'Contract number already exists.';
+            }
         }
     }
 
     if (empty($errors)) {
         try {
+            $pdo->beginTransaction();
+            if ($contract_number === '' || $contract_number === $contractNumber) {
+                $contract_number = generateServiceContractNumber($pdo);
+            }
+
             // Handle document upload
             $document_path = null;
             if (!empty($_FILES['contract_document']['name'])) {
@@ -68,18 +74,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $file = $_FILES['contract_document'];
 
                 if ($file['error'] === UPLOAD_ERR_OK) {
-                    if (!in_array($file['type'], $allowedTypes)) {
-                        throw new Exception('Invalid file type. Allowed: PDF, Word, JPEG, PNG.');
-                    }
-                    if ($file['size'] > MAX_CONTRACT_DOCUMENT_SIZE) {
-                        throw new Exception('File too large. Maximum 25MB.');
-                    }
-                    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/contracts/';
-                    if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-                    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-                    $fileName = $contract_number . '_' . time() . '.' . $ext;
-                    move_uploaded_file($file['tmp_name'], $uploadDir . $fileName);
-                    $document_path = '/uploads/contracts/' . $fileName;
+                    $storedContractDoc = SecureFileStorage::storeUploadedFile(
+                        $file,
+                        'contracts',
+                        $contract_number,
+                        [
+                            'application/pdf' => 'pdf',
+                            'image/jpeg' => 'jpg',
+                            'image/png' => 'png',
+                            'application/msword' => 'doc',
+                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                        ],
+                        MAX_CONTRACT_DOCUMENT_SIZE
+                    );
+                    $document_path = $storedContractDoc['storage_path'];
                 }
             }
 
@@ -98,10 +106,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $newId = $pdo->lastInsertId();
             logAudit($pdo, 'service_contracts', $newId, 'CREATE', "Service contract '$contract_number' created");
+            $pdo->commit();
 
             header("Location: /contracts/view.php?id=$newId");
             exit;
         } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if (isset($storedContractDoc)) {
+                SecureFileStorage::deleteStoredFile($storedContractDoc['storage_path']);
+            }
             $errors[] = extractDbMessage($e);
         }
     }

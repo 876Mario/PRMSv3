@@ -11,6 +11,7 @@
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SecureFileStorage.php';
 
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) {
@@ -44,13 +45,6 @@ if ($att['created_by'] != $_SESSION['user_id']
     exit;
 }
 
-$filePath = $_SERVER['DOCUMENT_ROOT'] . $att['file_path'];
-
-if (!file_exists($filePath)) {
-    pop('File not found on server.', '/reimbursement/list.php', POP_DEFAULT_DELAY_MS, 'error');
-    exit;
-}
-
 logAudit($pdo, 'reimbursement_invoice_attachments', $id, 'VIEW',
     "Reimbursement invoice attachment downloaded: {$att['original_file_name']} (Request #{$att['request_number']})");
 
@@ -75,13 +69,14 @@ if (empty($safeFilename)) {
     $safeFilename = 'attachment';
 }
 
-// Download the file
-header('Content-Type: ' . $att['file_type']);
-header('Content-Length: ' . $att['file_size']);
-header('Content-Disposition: attachment; filename="' . $safeFilename . '"');
-header('Cache-Control: no-cache, no-store, must-revalidate');
-header('Pragma: no-cache');
-header('Expires: 0');
-
-readfile($filePath);
-exit;
+try {
+    SecureFileStorage::streamStoredFile(
+        (string)$att['file_path'],
+        (string)$att['file_type'],
+        $safeFilename,
+        'download',
+        'reimbursement_invoice_attachments'
+    );
+} catch (Throwable $e) {
+    pop(extractDbMessage($e), '/reimbursement/list.php', POP_DEFAULT_DELAY_MS, 'error');
+}

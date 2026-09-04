@@ -12,6 +12,10 @@ if (file_exists($autoload)) {
     require_once $autoload;
 }
 
+if (!defined('UNIT_TESTING')) {
+    define('UNIT_TESTING', true);
+}
+
 // Point DOCUMENT_ROOT at the project root so page-level includes resolve
 $_SERVER['DOCUMENT_ROOT'] = dirname(__DIR__);
 

@@ -3,9 +3,8 @@ $REQUIRE_PERMISSION = 'create_purchase_order';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/services/SecureFileStorage.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/workflow.php";
-
-
 
 /* ================================
    Validate commitment_id
@@ -152,39 +151,18 @@ if (!in_array(strtoupper($commitment['request_status']), $allowedPOStatus)) {
 
 $request_id = (int)$commitment['request_id'];
 
-/* ================================
-   Generate PO Number
-================================ */
-$year = date('Y');
-
-$seqStmt = $pdo->prepare("
-    SELECT po_number
-    FROM purchase_orders
-    WHERE po_number LIKE ?
-    ORDER BY po_id DESC
-    LIMIT 1
-");
-$seqStmt->execute(["PO-$year-%"]);
-
-$lastPo = $seqStmt->fetchColumn();
-
-if ($lastPo) {
-    $lastSeq = (int)substr($lastPo, -4);
-    $nextNumber = $lastSeq + 1;
-} else {
-    $nextNumber = 1;
-}
-
-
-$po_number = sprintf("PO-%s-%04d", $year, $nextNumber);
+$po_number = previewYearlyPONumber($pdo);
 
 /* ================================
    Handle POST
 ================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    
+    requireCsrfToken('/po/add.php?commitment_id=' . $commitment_id);
+    $uploadedDocumentPath = null;
+
     try {
-            $pdo->beginTransaction();
+        $pdo->beginTransaction();
+        $po_number = generateYearlyPONumber($pdo);
         $po_date  = $_POST['po_date'] ?? '';
         $po_total = (float)($_POST['po_total'] ?? 0);
         $gfmsPoNumber = trim($_POST['gfms_po_number'] ?? '');
@@ -192,47 +170,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Handle file upload if provided
         $documentPath = null;
         if (isset($_FILES['po_document']) && $_FILES['po_document']['error'] !== UPLOAD_ERR_NO_FILE) {
-            $file = $_FILES['po_document'];
-            
-            // Validate file
-            if ($file['error'] !== UPLOAD_ERR_OK) {
-                throw new Exception("File upload failed. Please try again.");
-            }
-            
-            $allowedTypes = ['application/pdf', 'application/msword', 
-                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                            'application/vnd.ms-excel',
-                            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
-            
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mimeType = finfo_file($finfo, $file['tmp_name']);
-            finfo_close($finfo);
-            
-            if (!in_array($mimeType, $allowedTypes)) {
-                throw new Exception("Invalid file type. Only PDF, DOC, DOCX, XLS, and XLSX are allowed.");
-            }
-            
-            if ($file['size'] > 50 * 1024 * 1024) { // 50 MB
-                throw new Exception("File size exceeds 50 MB limit.");
-            }
-            
-            // Create directory if not exists
-            $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/po/';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
-            
-            // Generate safe filename
-            $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $safeFilename = 'PO_' . time() . '_' . uniqid() . '.' . $ext;
-            $uploadPath = $uploadDir . $safeFilename;
-            
-            // Move uploaded file
-            if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-                throw new Exception("Failed to save PO document. Please try again.");
-            }
-            
-            $documentPath = '/uploads/po/' . $safeFilename;
+            $storedFile = SecureFileStorage::storeUploadedFile(
+                $_FILES['po_document'],
+                'po',
+                'PO_' . $commitment_id,
+                [
+                    'application/pdf' => 'pdf',
+                    'application/msword' => 'doc',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                    'application/vnd.ms-excel' => 'xls',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+                ],
+                50 * 1024 * 1024
+            );
+
+            $documentPath = $storedFile['storage_path'];
+            $uploadedDocumentPath = $documentPath;
         }
 
         if ($po_date === '') {
@@ -422,6 +375,7 @@ $commitmentTotal = (float)$commitment['commitment_total'];
         </div>
         <div class="card-body">
             <form method="post" id="poForm" onsubmit="return validateForm()" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
 
                 <!-- Auto-generated PO Number -->
                 <div class="mb-4">

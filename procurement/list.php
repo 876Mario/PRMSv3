@@ -240,25 +240,30 @@ $totalRows = (int)$countStmt->fetchColumn();
 /* ================================
    KPI Summary Metrics
 ================================ */
-$kpiStmt = $pdo->query("
+$kpiSql = "
     SELECT
-        COUNT(*)                                                              AS total_requests,
-        SUM(CASE WHEN status IN ('GC_APPROVED','AWARDED','COMPLETED') THEN 1 ELSE 0 END)  AS approved,
-        SUM(CASE WHEN status IN ('SUBMITTED','HOD_APPROVED','FUNDS_VERIFIED','DIRECTOR_APPROVED',
+        COUNT(DISTINCT pr.request_id) AS total_requests,
+        COUNT(DISTINCT CASE WHEN pr.status IN ('GC_APPROVED','AWARDED','COMPLETED') THEN pr.request_id END) AS approved,
+        COUNT(DISTINCT CASE WHEN pr.status IN ('SUBMITTED','HOD_APPROVED','FUNDS_VERIFIED','DIRECTOR_APPROVED',
                                   'PROCUREMENT_STAGE','EVALUATION_STAGE',
-                                  'COMMITTEE_RECOMMENDED') THEN 1 ELSE 0 END) AS in_progress,
-        SUM(CASE WHEN status = 'DECLINED' THEN 1 ELSE 0 END)                 AS declined,
-        SUM(CASE WHEN status = 'DRAFT'    THEN 1 ELSE 0 END)                 AS drafts
-    FROM procurement_requests
-");
+                                  'COMMITTEE_RECOMMENDED') THEN pr.request_id END) AS in_progress,
+        COUNT(DISTINCT CASE WHEN pr.status = 'DECLINED' THEN pr.request_id END) AS declined,
+        COUNT(DISTINCT CASE WHEN pr.status = 'DRAFT' THEN pr.request_id END) AS drafts,
+        COALESCE(SUM(CASE WHEN po.status IN ('Open','Closed') THEN po.po_total ELSE 0 END), 0) AS total_po_value
+    FROM procurement_requests pr
+    LEFT JOIN branches b ON pr.branch_id = b.branch_id
+    LEFT JOIN users u ON pr.created_by = u.user_id
+    LEFT JOIN commitments c ON pr.request_id = c.request_id AND c.commitment_type = 'ORIGINAL'
+    LEFT JOIN purchase_orders po ON c.commitment_id = po.commitment_id
+    $whereSQL
+";
+$kpiStmt = $pdo->prepare($kpiSql);
+foreach ($params as $k => $v) {
+    $kpiStmt->bindValue($k, $v);
+}
+$kpiStmt->execute();
 $kpi = $kpiStmt->fetch(PDO::FETCH_ASSOC);
-
-$poValueStmt = $pdo->query("
-    SELECT COALESCE(SUM(po_total), 0) AS total_po_value
-    FROM purchase_orders
-    WHERE status IN ('Open','Closed')
-");
-$totalPoValue = (float)$poValueStmt->fetchColumn();
+$totalPoValue = (float)($kpi['total_po_value'] ?? 0);
 
 /* ================================
    Render page

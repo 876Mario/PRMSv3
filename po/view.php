@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'view_purchase_orders';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
+require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
 $warning = false;
 
 /* ================================
@@ -21,7 +22,18 @@ $po_id = (int)$po_id;
 ================================ */
 $stmt = $pdo->prepare("
     SELECT 
-        po.*,
+        po.po_id,
+        po.commitment_id,
+        po.parent_po_id,
+        po.po_number,
+        po.po_total,
+        po.status,
+        po.created_at,
+        po.po_date,
+        po.po_type,
+        po.approved_at,
+        po.po_file,
+        po.document_path,
         c.commitment_number,
         c.commitment_total
     FROM purchase_orders po
@@ -37,6 +49,24 @@ if (!$po) {
     pop("Purchase Order not found.", "/po/list.php", POP_DEFAULT_DELAY_MS);
     exit;
 }
+
+$requestScopeStmt = $pdo->prepare("
+    SELECT pr.request_id, pr.created_by, pr.status
+    FROM purchase_orders po
+    JOIN commitments c ON po.commitment_id = c.commitment_id
+    JOIN procurement_requests pr ON c.request_id = pr.request_id
+    WHERE po.po_id = ?
+    LIMIT 1
+");
+$requestScopeStmt->execute([$po_id]);
+$requestScope = $requestScopeStmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$requestScope) {
+    pop("Linked procurement request not found.", "/po/list.php", POP_DEFAULT_DELAY_MS, 'error');
+    exit;
+}
+
+enforceRequestRecordAccess($requestScope, "/po/list.php");
 
 /* ================================
    Check for PO limit warning
@@ -209,39 +239,26 @@ $adjStmt = $pdo->prepare("
 
         CASE
             WHEN pv.commitment_id IS NULL THEN 0
+            WHEN COALESCE(cap.pending_count, 0) = 0 THEN 1
             ELSE 0
         END AS supp_commitment_fully_approved
 
     FROM po_variations pv
     LEFT JOIN commitments c
         ON pv.commitment_id = c.commitment_id
+    LEFT JOIN (
+        SELECT entity_id AS commitment_id, COUNT(*) AS pending_count
+        FROM request_approvals
+        WHERE entity_type='COMMITMENT'
+          AND status='pending'
+        GROUP BY entity_id
+    ) cap ON cap.commitment_id = pv.commitment_id
     WHERE pv.po_id = ?
   AND pv.status IN ('PENDING','APPROVED')
   ORDER BY pv.approved_at ASC
 ");
 $adjStmt->execute([$po['po_id']]);
 $variations = $adjStmt->fetchAll(PDO::FETCH_ASSOC);
-
-foreach ($variations as &$v) {
-
-    if (empty($v['commitment_id'])) {
-        $v['supp_commitment_fully_approved'] = 0;
-        continue;
-    }
-
-    $stmt = $pdo->prepare("
-        SELECT COUNT(*)
-        FROM request_approvals
-        WHERE entity_type='COMMITMENT'
-          AND entity_id=?
-          AND status='pending'
-    ");
-    $stmt->execute([$v['commitment_id']]);
-
-    $v['supp_commitment_fully_approved'] =
-        ($stmt->fetchColumn() == 0) ? 1 : 0;
-}
-unset($v);
 
 
 
@@ -578,9 +595,14 @@ $statusIcon = match($po['status']) {
                 <?php endif; ?>
 
                 <div class="d-grid gap-2">
-                    <?php if (empty($po['po_file']) && has_permission('upload_purchase_order')): ?>
+                    <?php if (empty($po['po_file']) && empty($po['document_path']) && has_permission('upload_purchase_order')): ?>
                         <a href="/po/upload.php?commitment_id=<?= (int)$po['commitment_id'] ?>" class="btn btn-warning">
                             <i class="bi bi-cloud-upload me-1"></i>Upload PO Document
+                        </a>
+                    <?php endif; ?>
+                    <?php if (!empty($po['document_path']) || !empty($po['po_file'])): ?>
+                        <a href="/po/download_document.php?po_id=<?= (int)$po_id ?>" class="btn btn-outline-primary">
+                            <i class="bi bi-file-earmark-arrow-down me-1"></i>View PO Document
                         </a>
                     <?php endif; ?>
                     <?php if ($isFullyApproved && $po['status'] === 'Open' && has_permission('create_invoice')): ?>

@@ -7,6 +7,7 @@ $REQUIRE_PERMISSION = 'view_purchase_orders';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SecureFileStorage.php';
 
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) {
@@ -34,17 +35,6 @@ if (!$ap || !$ap['supporting_document_path']) {
     exit;
 }
 
-$filePath = $_SERVER['DOCUMENT_ROOT'] . $ap['supporting_document_path'];
-
-/* Enforce that the file is within the expected upload directory */
-$uploadBase = realpath($_SERVER['DOCUMENT_ROOT'] . '/uploads/advance_payments');
-$realPath   = realpath($filePath);
-if ($realPath === false || $uploadBase === false || strpos($realPath, $uploadBase . DIRECTORY_SEPARATOR) !== 0
-    || !is_file($realPath) || !is_readable($realPath)) {
-    pop('File not found or access denied.', "/po/view.php?po_id={$ap['po_id']}", POP_DEFAULT_DELAY_MS, 'error');
-    exit;
-}
-
 $action   = $_GET['action'] ?? 'download';
 $mimeType = $ap['supporting_document_file_type'] ?: 'application/octet-stream';
 $origName = $ap['supporting_document_original_name'] ?: 'document';
@@ -52,17 +42,14 @@ $origName = $ap['supporting_document_original_name'] ?: 'document';
 logAudit($pdo, 'po_advance_payments', $id, 'VIEW',
     "Supporting document accessed for advance payment #{$id} (PO #{$ap['po_number']})");
 
-header('Content-Type: ' . $mimeType);
-header('Content-Length: ' . filesize($realPath));
-
-if ($action === 'view' && in_array($mimeType, ['application/pdf', 'image/jpeg', 'image/png'], true)) {
-    header('Content-Disposition: inline; filename="' . rawurlencode($origName) . '"');
-} else {
-    header('Content-Disposition: attachment; filename="' . rawurlencode($origName) . '"');
+try {
+    SecureFileStorage::streamStoredFile(
+        (string)$ap['supporting_document_path'],
+        (string)$mimeType,
+        (string)$origName,
+        $action,
+        'advance_payments'
+    );
+} catch (Throwable $e) {
+    pop(extractDbMessage($e), "/po/view.php?po_id={$ap['po_id']}", POP_DEFAULT_DELAY_MS, 'error');
 }
-
-header('Cache-Control: private, no-cache, no-store, must-revalidate');
-header('X-Content-Type-Options: nosniff');
-
-readfile($realPath);
-exit;

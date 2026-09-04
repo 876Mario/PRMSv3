@@ -1,5 +1,6 @@
 <?php
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/app.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/mailer.php';
 
@@ -39,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$tokenHash, $expires, $user['user_id']]);
 
         // Build reset link
-        $link = "https://procurement.governmentchemist.com/auth/reset_password.php?token={$token}";
+        $link = rtrim(APP_URL, '/') . "/auth/reset_password.php?token={$token}";
 
         // Email body
         $body = "
