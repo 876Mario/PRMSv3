@@ -125,7 +125,8 @@ $items = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
 // Commitments (Original + Supplementary)
 // Exclude remediated (soft-deleted/voided) commitments from display
 $commitStmt = $pdo->prepare("
-    SELECT *
+    SELECT commitment_id, request_id, commitment_number, commitment_date, commitment_total,
+           status, approved_at, commitment_type, document_path, po_required
     FROM commitments
     WHERE request_id = ?
     AND (is_remediated IS NULL OR is_remediated = 0)
@@ -157,7 +158,7 @@ foreach ($commitments as $c) {
 $po = null;
 if ($originalCommitment) {
     $poStmt = $pdo->prepare("
-        SELECT *
+        SELECT po_id, commitment_id, po_number, po_total, status
         FROM purchase_orders
         WHERE commitment_id = ?
         LIMIT 1

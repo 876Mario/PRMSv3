@@ -1427,7 +1427,11 @@ function resolveQuarantineRelease(PDO $pdo, int $quarantineId, string $decision,
         throw new RuntimeException('Invalid quarantine release decision.');
     }
 
-    $q = $pdo->prepare("SELECT * FROM inv_quarantine_log WHERE quarantine_id = ? AND status IN ('QUARANTINED','UNDER_INSPECTION')");
+    $q = $pdo->prepare("
+        SELECT quarantine_id, item_id, location_id, quantity, batch_lot_number, serial_number, status
+        FROM inv_quarantine_log
+        WHERE quarantine_id = ? AND status IN ('QUARANTINED','UNDER_INSPECTION')
+    ");
     $q->execute([$quarantineId]);
     $qr = $q->fetch(PDO::FETCH_ASSOC);
     if (!$qr) {
@@ -1885,7 +1889,9 @@ function recordApproval(PDO $pdo, string $refType, int $refId, int $level, strin
 function getNextPendingApproval(PDO $pdo, string $refType, int $refId): ?array
 {
     $stmt = $pdo->prepare("
-        SELECT * FROM inv_approval_log
+        SELECT approval_log_id, reference_type, reference_id, approval_level, required_role_code,
+               approved_by, approved_at, status, notes, created_at
+        FROM inv_approval_log
         WHERE reference_type = ? AND reference_id = ? AND status = 'PENDING'
         ORDER BY approval_level ASC LIMIT 1
     ");
@@ -1918,7 +1924,8 @@ function allApprovalsComplete(PDO $pdo, string $refType, int $refId): bool
 function getCurrentOpenPeriod(PDO $pdo): ?array
 {
     $stmt = $pdo->query("
-        SELECT * FROM inv_fiscal_periods
+        SELECT period_id, period_name, fiscal_year, period_start, period_end, status, closed_by, closed_at, notes, created_at
+        FROM inv_fiscal_periods
         WHERE status = 'OPEN' AND period_start <= CURDATE() AND period_end >= CURDATE()
         ORDER BY period_start DESC LIMIT 1
     ");
@@ -2008,7 +2015,11 @@ function quarantineStock(PDO $pdo, int $itemId, int $fromLocationId, float $qty,
  */
 function releaseFromQuarantine(PDO $pdo, int $quarantineId, string $decision, ?string $notes = null): void
 {
-    $q = $pdo->prepare("SELECT * FROM inv_quarantine_log WHERE quarantine_id = ? AND status IN ('QUARANTINED','UNDER_INSPECTION')");
+    $q = $pdo->prepare("
+        SELECT quarantine_id, item_id, location_id, quantity, batch_lot_number, serial_number, status
+        FROM inv_quarantine_log
+        WHERE quarantine_id = ? AND status IN ('QUARANTINED','UNDER_INSPECTION')
+    ");
     $q->execute([$quarantineId]);
     $qr = $q->fetch(PDO::FETCH_ASSOC);
     if (!$qr) throw new Exception("Quarantine record not found or already resolved.");

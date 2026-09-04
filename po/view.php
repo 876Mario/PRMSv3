@@ -22,7 +22,18 @@ $po_id = (int)$po_id;
 ================================ */
 $stmt = $pdo->prepare("
     SELECT 
-        po.*,
+        po.po_id,
+        po.commitment_id,
+        po.parent_po_id,
+        po.po_number,
+        po.po_total,
+        po.status,
+        po.created_at,
+        po.po_date,
+        po.po_type,
+        po.approved_at,
+        po.po_file,
+        po.document_path,
         c.commitment_number,
         c.commitment_total
     FROM purchase_orders po
@@ -228,39 +239,26 @@ $adjStmt = $pdo->prepare("
 
         CASE
             WHEN pv.commitment_id IS NULL THEN 0
+            WHEN COALESCE(cap.pending_count, 0) = 0 THEN 1
             ELSE 0
         END AS supp_commitment_fully_approved
 
     FROM po_variations pv
     LEFT JOIN commitments c
         ON pv.commitment_id = c.commitment_id
+    LEFT JOIN (
+        SELECT entity_id AS commitment_id, COUNT(*) AS pending_count
+        FROM request_approvals
+        WHERE entity_type='COMMITMENT'
+          AND status='pending'
+        GROUP BY entity_id
+    ) cap ON cap.commitment_id = pv.commitment_id
     WHERE pv.po_id = ?
   AND pv.status IN ('PENDING','APPROVED')
   ORDER BY pv.approved_at ASC
 ");
 $adjStmt->execute([$po['po_id']]);
 $variations = $adjStmt->fetchAll(PDO::FETCH_ASSOC);
-
-foreach ($variations as &$v) {
-
-    if (empty($v['commitment_id'])) {
-        $v['supp_commitment_fully_approved'] = 0;
-        continue;
-    }
-
-    $stmt = $pdo->prepare("
-        SELECT COUNT(*)
-        FROM request_approvals
-        WHERE entity_type='COMMITMENT'
-          AND entity_id=?
-          AND status='pending'
-    ");
-    $stmt->execute([$v['commitment_id']]);
-
-    $v['supp_commitment_fully_approved'] =
-        ($stmt->fetchColumn() == 0) ? 1 : 0;
-}
-unset($v);
 
 
 
