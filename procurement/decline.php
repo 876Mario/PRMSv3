@@ -8,6 +8,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/notifications.php";
 $id = $_POST['id'] ?? null;
 $reason = trim($_POST['reason'] ?? '');
 
+requireCsrfToken('/procurement/view.php?id=' . (int)$id);
+
 if (!$id || !is_numeric($id)) {
     $_SESSION['error'] = "Invalid request.";
     header("Location: /procurement/list.php");
@@ -66,11 +68,18 @@ try {
         $id
     ]);
 
-    /* Clean up approval chain for this declined request */
+    /* Preserve approval trail and close any remaining pending stages */
     $pdo->prepare("
-        DELETE FROM request_approvals
+        UPDATE request_approvals
+        SET status = 'rejected',
+            rejection_reason = COALESCE(NULLIF(rejection_reason, ''), ?),
+            comments = CONCAT(COALESCE(NULLIF(comments, ''), 'Approval cancelled'), ' [Request declined]'),
+            approved_by = COALESCE(approved_by, ?),
+            approved_at = COALESCE(approved_at, NOW()),
+            notes = COALESCE(NULLIF(notes, ''), 'Closed automatically because the request was declined.')
         WHERE request_id = ?
-    ")->execute([$id]);
+          AND status = 'pending'
+    ")->execute([$reason, $_SESSION['user_id'], $id]);
 
     /* Audit log */
     logAudit(

@@ -92,7 +92,9 @@ class WorkflowService
             'COMMITTEE_RECOMMENDED'  => ['GC_APPROVED', 'QUOTE_REVIEW_PENDING', 'AWARDED',
                                          // ← backward
                                          'EVALUATION_STAGE'],
-            'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING', 'INVOICE_RECEIVED'],
+            'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING', 'INVOICE_RECEIVED',
+                                         // ← controlled backward recovery
+                                         'GC_APPROVED', 'COMMITTEE_RECOMMENDED', 'PROCUREMENT_STAGE'],
         ];
     }
 
@@ -424,7 +426,7 @@ class WorkflowService
             $stmt->execute([$requestId]);
 
             // Recreate approval chain if reverting to an approval stage
-            if (in_array(strtoupper($targetStatus), ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'], true)) {
+            if ($this->shouldRebuildApprovalChainOnRevert($requestType, $targetStatus)) {
                 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/workflow.php';
                 
                 $reqStmt = $this->pdo->prepare("
@@ -443,6 +445,18 @@ class WorkflowService
                         (float)($reqDetails['estimated_value'] ?? 0),
                         $reqDetails['branch_id']
                     );
+                }
+
+                private function shouldRebuildApprovalChainOnRevert(string $requestType, string $targetStatus): bool
+                {
+                    $requestType = strtoupper($requestType);
+                    $targetStatus = strtoupper($targetStatus);
+
+                    return match ($requestType) {
+                        'PETTY_CASH', 'REIMBURSEMENT' => $targetStatus === 'SUBMITTED',
+                        'REGULAR', 'SERVICE_CONTRACT' => in_array($targetStatus, ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'], true),
+                        default => false,
+                    };
                 }
             }
 

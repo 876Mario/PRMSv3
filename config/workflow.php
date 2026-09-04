@@ -76,7 +76,9 @@ function allowedTransitions(): array {
         'COMMITTEE_RECOMMENDED'  => ['GC_APPROVED', 'QUOTE_REVIEW_PENDING', 'AWARDED',
                                      // ← backward
                                      'EVALUATION_STAGE'],
-        'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING', 'INVOICE_RECEIVED'],
+        'AWARDED'                => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PO_PENDING', 'INVOICE_RECEIVED',
+                                     // ← controlled backward recovery
+                                     'GC_APPROVED', 'COMMITTEE_RECOMMENDED', 'PROCUREMENT_STAGE'],
     ];
 }
 
@@ -723,8 +725,9 @@ function getReimbursementApprovalChain(): array {
 function getReimbursementTransitions(): array {
     return [
         'DRAFT'                        => ['SUBMITTED'],
-        'SUBMITTED'                    => ['FUNDS_VERIFIED', 'DECLINED'],
-        'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'APPROVED', 'DECLINED'],
+        'RETURNED_FOR_CORRECTION'      => ['SUBMITTED', 'DECLINED'],
+        'SUBMITTED'                    => ['FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
+        'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'APPROVED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
         'INVOICE_SUBMITTED'            => ['INVOICE_VERIFIED', 'DECLINED'],
         'INVOICE_VERIFIED'             => ['APPROVED', 'INVOICE_SUBMITTED', 'DECLINED'],
         'APPROVED'                     => ['REIMBURSED'],
@@ -763,9 +766,10 @@ function getPettyCashApprovalChain(): array {
 function getPettyCashTransitions(): array {
     return [
         'DRAFT'                    => ['SUBMITTED'],
-        'SUBMITTED'                => ['FUNDS_VERIFIED', 'DECLINED'],
-        'FUNDS_VERIFIED'           => ['FINANCE_AUTHORIZED', 'DECLINED'],
-        'FINANCE_AUTHORIZED'       => ['DISBURSED'],
+        'RETURNED_FOR_CORRECTION'  => ['SUBMITTED', 'DECLINED'],
+        'SUBMITTED'                => ['FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
+        'FUNDS_VERIFIED'           => ['FINANCE_AUTHORIZED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
+        'FINANCE_AUTHORIZED'       => ['DISBURSED', 'RETURNED_FOR_CORRECTION'],
         'DISBURSED'                => ['PENDING_RECONCILIATION'],
         'PENDING_RECONCILIATION'   => ['PROCUREMENT_VERIFIED', 'RECONCILIATION_DISCREPANCY'],
         'PROCUREMENT_VERIFIED'     => ['COMPLETED'],

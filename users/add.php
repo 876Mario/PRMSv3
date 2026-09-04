@@ -49,6 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     if (!$full_name || !$email || !$role_id || !$password) {
         $error = "All fields are required.";
+    } elseif (($passwordPolicyError = validatePasswordPolicy($password)) !== null) {
+        $error = $passwordPolicyError;
     } else {
         try {
             $hash = password_hash($password, PASSWORD_DEFAULT);

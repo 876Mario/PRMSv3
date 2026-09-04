@@ -23,6 +23,9 @@ $transfer->execute([$transferId]);
 $transfer = $transfer->fetch(PDO::FETCH_ASSOC);
 if (!$transfer) { pop("Transfer not found.", "/inventory/transfers/list.php", 1800, 'warning'); exit; }
 
+$canApproveTransfer = has_permission('approve_transfer');
+$canApproveInterMdaTransfer = has_permission('approve_inter_mda_transfer');
+
 $lineItems = $pdo->prepare("
     SELECT ti.*, i.item_code, i.item_name, um.uom_code
     FROM inv_transfer_items ti
@@ -53,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         requireCsrfToken('/inventory/transfers/view.php?id=' . $transferId);
         $pdo->beginTransaction();
 
-        if ($action === 'approve' && has_permission('approve_transfer') && $transfer['status'] === 'PENDING_APPROVAL') {
+        if ($action === 'approve' && $canApproveTransfer && $transfer['status'] === 'PENDING_APPROVAL') {
             if ($_SESSION['user_id'] == $transfer['requested_by']) {
                 throw new Exception("Cannot approve your own transfer (segregation of duties).");
             }
@@ -74,6 +77,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
         } elseif ($action === 'fs_approve' && $transfer['status'] === 'PENDING_FS_APPROVAL') {
+            if (!$canApproveInterMdaTransfer) {
+                throw new Exception("Unauthorized: Financial Secretary approval permission is required.");
+            }
             // Financial Secretary approval for inter-MDA transfers
             InventoryService::reserveTransferStock($pdo, $transfer, $lineItems);
 
@@ -99,7 +105,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     : "Transfer received"
             );
 
-        } elseif ($action === 'reject' && has_permission('approve_transfer') && in_array($transfer['status'], ['PENDING_APPROVAL', 'PENDING_FS_APPROVAL'], true)) {
+        } elseif ($action === 'reject'
+            && (
+                ($transfer['status'] === 'PENDING_APPROVAL' && $canApproveTransfer)
+                || ($transfer['status'] === 'PENDING_FS_APPROVAL' && $canApproveInterMdaTransfer)
+            )
+        ) {
             $reason = trim($_POST['rejection_reason'] ?? '');
             if (empty($reason)) throw new Exception("Rejection reason is required.");
             $pdo->prepare("UPDATE inv_transfers SET status = 'CANCELLED', notes = CONCAT(IFNULL(notes,''), '\nRejected: ', ?) WHERE transfer_id = ?")
@@ -176,7 +187,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         </div>
     </div>
     <div class="col-md-4">
-        <?php if ($transfer['status'] === 'PENDING_APPROVAL' && has_permission('approve_transfer')): ?>
+        <?php if ($transfer['status'] === 'PENDING_APPROVAL' && $canApproveTransfer): ?>
         <form method="POST" class="mb-2">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="approve" class="btn btn-success w-100 btn-lg mb-2">
@@ -189,7 +200,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         </form>
         <?php endif; ?>
 
-        <?php if ($transfer['status'] === 'PENDING_FS_APPROVAL'): ?>
+        <?php if ($transfer['status'] === 'PENDING_FS_APPROVAL' && $canApproveInterMdaTransfer): ?>
         <div class="alert alert-warning mb-2">
             <i class="bi bi-exclamation-triangle"></i> <strong>Inter-MDA Transfer</strong> — Requires Financial Secretary approval per GoJ Financial Instructions.
         </div>
