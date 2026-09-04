@@ -3,6 +3,7 @@ $REQUIRE_PERMISSION = 'manage_contracts';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SecureFileStorage.php';
 
 define('MAX_CONTRACT_DOCUMENT_SIZE', 25 * 1024 * 1024); // 25 MB
 
@@ -68,18 +69,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $file = $_FILES['contract_document'];
 
                 if ($file['error'] === UPLOAD_ERR_OK) {
-                    if (!in_array($file['type'], $allowedTypes)) {
-                        throw new Exception('Invalid file type. Allowed: PDF, Word, JPEG, PNG.');
-                    }
-                    if ($file['size'] > MAX_CONTRACT_DOCUMENT_SIZE) {
-                        throw new Exception('File too large. Maximum 25MB.');
-                    }
-                    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/contracts/';
-                    if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-                    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-                    $fileName = $contract_number . '_' . time() . '.' . $ext;
-                    move_uploaded_file($file['tmp_name'], $uploadDir . $fileName);
-                    $document_path = '/uploads/contracts/' . $fileName;
+                    $storedContractDoc = SecureFileStorage::storeUploadedFile(
+                        $file,
+                        'contracts',
+                        $contract_number,
+                        [
+                            'application/pdf' => 'pdf',
+                            'image/jpeg' => 'jpg',
+                            'image/png' => 'png',
+                            'application/msword' => 'doc',
+                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                        ],
+                        MAX_CONTRACT_DOCUMENT_SIZE
+                    );
+                    $document_path = $storedContractDoc['storage_path'];
                 }
             }
 
@@ -102,6 +105,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: /contracts/view.php?id=$newId");
             exit;
         } catch (Throwable $e) {
+            if (isset($storedContractDoc)) {
+                SecureFileStorage::deleteStoredFile($storedContractDoc['storage_path']);
+            }
             $errors[] = extractDbMessage($e);
         }
     }

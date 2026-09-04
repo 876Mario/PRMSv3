@@ -179,7 +179,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                     <tr><td class="text-muted">Notes</td><td><?= nl2br(htmlspecialchars($contract['notes'])) ?></td></tr>
                     <?php endif; ?>
                     <?php if ($contract['document_path']): ?>
-                    <tr><td class="text-muted">Document</td><td><a href="<?= htmlspecialchars($contract['document_path']) ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-pdf me-1"></i>View Document</a></td></tr>
+                    <tr><td class="text-muted">Document</td><td><a href="/contracts/download_document.php?id=<?= (int)$contract['contract_id'] ?>&action=view" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-pdf me-1"></i>View Document</a></td></tr>
                     <?php endif; ?>
                     <tr><td class="text-muted">Created By</td><td><?= htmlspecialchars($contract['created_by_name'] ?? '—') ?></td></tr>
                     <tr><td class="text-muted">Created</td><td><?= formatJamaicanDateTime($contract['created_at']) ?></td></tr>

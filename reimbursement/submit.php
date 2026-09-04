@@ -6,6 +6,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
 
 $request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
+requireCsrfToken('/reimbursement/list.php');
 
 if ($request_id <= 0) {
     pop("Invalid reimbursement request reference.", "/reimbursement/list.php");
@@ -44,9 +45,9 @@ if ((int)$request['created_by'] !== (int)$_SESSION['user_id']) {
 /* ================================
    Status Validation
 ================================ */
-if (strtoupper($request['status']) !== 'DRAFT') {
+if (!in_array(strtoupper($request['status']), ['DRAFT', 'RETURNED_FOR_CORRECTION'], true)) {
     pop(
-        "Only draft reimbursement requests can be submitted.",
+        "Only draft or returned reimbursement requests can be submitted.",
         "/reimbursement/view.php?request_id=".$request_id,
         2000,
         "error"
@@ -64,10 +65,12 @@ try {
         UPDATE procurement_requests
         SET status = 'SUBMITTED',
             request_type = 'REIMBURSEMENT',
+            decline_reason = NULL,
             updated_at = NOW()
         WHERE request_id = ?
     ");
     $update->execute([$request_id]);
+    $pdo->prepare("DELETE FROM request_approvals WHERE request_id = ?")->execute([$request_id]);
 
     /* ================================
        Audit Log

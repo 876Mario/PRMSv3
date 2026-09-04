@@ -1228,10 +1228,13 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                             <i class="bi bi-file-earmark-text me-1"></i>View Contract
                         </a>
                         <?php endif; ?>
-                        <a href="<?= $submitUrl ?>?id=<?= $request['request_id'] ?>"
-                           class="btn btn-primary" onclick="return confirm('Submit this request?')">
-                            <i class="bi bi-send me-1"></i>Submit Request
-                        </a>
+                        <form method="post" action="<?= $submitUrl ?>" class="d-grid">
+                            <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                            <button type="submit" class="btn btn-primary" onclick="return confirm('Submit this request?')">
+                                <i class="bi bi-send me-1"></i>Submit Request
+                            </button>
+                        </form>
                     <?php endif; ?>
 
                     <?php 
@@ -1682,7 +1685,7 @@ $canDeleteRequestDocument = hasPermission('procurement_delete_request_document')
                         <td class="small"><?= date('d M Y H:i', strtotime($doc['uploaded_at'])) ?></td>
                         <td class="small text-muted"><?= htmlspecialchars($doc['notes'] ?? '') ?></td>
                         <td>
-                            <a href="<?= htmlspecialchars($doc['document_path']) ?>" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <a href="/procurement/download_document.php?id=<?= (int)$doc['document_id'] ?>&action=download" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-download"></i>
                             </a>
                             <?php if ($canDeleteRequestDocument): ?>
@@ -1707,6 +1710,7 @@ $canDeleteRequestDocument = hasPermission('procurement_delete_request_document')
         <div class="border-top pt-3">
             <h6 class="fw-bold"><i class="bi bi-cloud-upload me-1"></i> Upload Document</h6>
             <form method="post" action="/procurement/upload_document.php" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                 <input type="hidden" name="request_id" value="<?= $request_id ?>">
                 <div class="row g-2 align-items-end">
                     <div class="col-md-3">
@@ -1876,11 +1880,15 @@ document.addEventListener('DOMContentLoaded', function () {
                             $rfqOptional = $estimatedValue <= getDirectProcurementThreshold($pdo);
                             ?>
                             <?php if ($rfqOptional && $current !== 'SUBMITTED' && in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin'], true)): ?>
-                                <a href="/procurement/skip_rfq.php?id=<?= $request['request_id'] ?>"
-                                   class="btn btn-outline-secondary btn-sm"
-                                   onclick="return confirm('You are proceeding without an RFQ. The request will move to Awarded, and you will still need to complete Commitment, Purchase Order, Invoice, and Payment steps before the request can be closed. Continue?')">
-                                    <i class="bi bi-skip-forward me-1"></i>Proceed Without RFQ (Optional)
-                                </a>
+                                <form method="post" action="/procurement/skip_rfq.php" class="d-inline">
+                                    <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                    <button type="submit"
+                                            class="btn btn-outline-secondary btn-sm"
+                                            onclick="return confirm('You are proceeding without an RFQ. The request will move to Awarded, and you will still need to complete Commitment, Purchase Order, Invoice, and Payment steps before the request can be closed. Continue?')">
+                                        <i class="bi bi-skip-forward me-1"></i>Proceed Without RFQ (Optional)
+                                    </button>
+                                </form>
                             <?php endif; ?>
                         <?php endif; ?>
                     <?php endif; ?>
@@ -1979,7 +1987,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
                     
                     <!-- View Signed Document -->
-                    <a href="<?= htmlspecialchars($request['signed_request_document_path']) ?>"
+                    <a href="/procurement/download_signed_request.php?request_id=<?= (int)$request_id ?>&action=view"
                        target="_blank" class="btn btn-outline-success btn-sm w-100">
                         <i class="bi bi-download me-1"></i> View Signed Document
                     </a>

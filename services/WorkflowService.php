@@ -103,13 +103,17 @@ class WorkflowService
     {
         return [
             'DRAFT'                    => ['SUBMITTED'],
-            'SUBMITTED'                => ['FUNDS_VERIFIED', 'DECLINED'],
-            'FUNDS_VERIFIED'           => ['FINANCE_AUTHORIZED', 'DECLINED',
+            'RETURNED_FOR_CORRECTION'  => ['SUBMITTED', 'DECLINED'],
+            'SUBMITTED'                => ['HOD_APPROVED', 'FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
+            'HOD_APPROVED'             => ['FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED',
                                            // ← backward
                                            'SUBMITTED'],
+            'FUNDS_VERIFIED'           => ['FINANCE_AUTHORIZED', 'DECLINED',
+                                           // ← backward
+                                           'HOD_APPROVED', 'SUBMITTED', 'RETURNED_FOR_CORRECTION'],
             'FINANCE_AUTHORIZED'       => ['DISBURSED',
                                            // ← backward
-                                           'FUNDS_VERIFIED', 'SUBMITTED'],
+                                           'FUNDS_VERIFIED', 'HOD_APPROVED', 'SUBMITTED', 'RETURNED_FOR_CORRECTION'],
             'DISBURSED'                => ['PENDING_RECONCILIATION',
                                            // ← backward
                                            'FINANCE_AUTHORIZED'],
@@ -137,10 +141,14 @@ class WorkflowService
     {
         return [
             'DRAFT'                        => ['SUBMITTED'],
-            'SUBMITTED'                    => ['FUNDS_VERIFIED', 'DECLINED'],
-            'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'APPROVED', 'DECLINED',
+            'RETURNED_FOR_CORRECTION'      => ['SUBMITTED', 'DECLINED'],
+            'SUBMITTED'                    => ['HOD_APPROVED', 'FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED'],
+            'HOD_APPROVED'                 => ['FUNDS_VERIFIED', 'RETURNED_FOR_CORRECTION', 'DECLINED',
                                                // ← backward
                                                'SUBMITTED'],
+            'FUNDS_VERIFIED'               => ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'APPROVED', 'DECLINED',
+                                               // ← backward
+                                               'HOD_APPROVED', 'SUBMITTED', 'RETURNED_FOR_CORRECTION'],
             'INVOICE_SUBMITTED'            => ['INVOICE_VERIFIED', 'DECLINED',
                                                // ← backward
                                                'FUNDS_VERIFIED', 'SUBMITTED'],
@@ -171,12 +179,12 @@ class WorkflowService
         
         return match ($requestType) {
             'PETTY_CASH' => [
-                'DRAFT', 'SUBMITTED', 'FUNDS_VERIFIED', 'FINANCE_AUTHORIZED', 'DISBURSED',
+                'DRAFT', 'RETURNED_FOR_CORRECTION', 'SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'FINANCE_AUTHORIZED', 'DISBURSED',
                 'PENDING_RECONCILIATION', 'PROCUREMENT_VERIFIED', 'RECONCILIATION_DISCREPANCY',
                 'REVIEWED', 'COMPLETED'
             ],
             'REIMBURSEMENT' => [
-                'DRAFT', 'SUBMITTED', 'FUNDS_VERIFIED', 'INVOICE_SUBMITTED', 'INVOICE_VERIFIED',
+                'DRAFT', 'RETURNED_FOR_CORRECTION', 'SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'INVOICE_SUBMITTED', 'INVOICE_VERIFIED',
                 'APPROVED', 'REIMBURSED', 'COMPLETED'
             ],
             'REGULAR', 'SERVICE_CONTRACT' => [

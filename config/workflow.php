@@ -265,6 +265,8 @@ function stageOwner(string $stage): array {
  *   - All other branches               → HOD
  *
  * Petty Cash / Reimbursement: Direct to Finance Officer for fund verification.
+ * Regular procurement: Finance must always explicitly verify funds before the
+ * request can progress to RFQ/award workflow stages.
  */
 function getApprovalChain(string $requestType, float $estimatedValue, ?int $branchId = null, ?PDO $pdo = null): array {
     // Petty cash / reimbursement: Finance Officer only (fund verification)
@@ -330,6 +332,10 @@ function getApprovalChain(string $requestType, float $estimatedValue, ?int $bran
         if (!in_array('HOD', $chain)) {
             $chain[] = 'HOD';
         }
+    }
+
+    if (!in_array('Finance Officer', $chain, true)) {
+        $chain[] = 'Finance Officer';
     }
 
     return $chain;

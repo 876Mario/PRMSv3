@@ -35,7 +35,7 @@ $reqNum = htmlspecialchars($rfqInfo['request_number'] ?? 'N/A');
 $uploaderName = htmlspecialchars($report['full_name'] ?? 'Unknown');
 $uploadDate   = date('d M Y', strtotime($report['created_at']));
 $uploadTime   = date('H:i', strtotime($report['created_at']));
-$fileName     = htmlspecialchars($report['report_file'] ?? '');
+$fileName     = htmlspecialchars(basename(str_replace('private://rfq_evaluation_reports/', '', (string)($report['report_file'] ?? ''))));
 
 require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 ?>
@@ -105,14 +105,13 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/header.php";
 
                 <!-- Action Buttons -->
                 <div class="d-flex flex-wrap gap-2">
-                    <a href="/uploads/evaluation_reports/<?= $fileName ?>"
+                    <a href="/rfq/download_report.php?id=<?= (int)$report['report_id'] ?>&action=view"
                        target="_blank"
                        class="btn text-white px-4 rounded-pill"
                        style="background:#0b5e2b;">
                         <i class="bi bi-eye me-1"></i> View PDF
                     </a>
-                    <a href="/uploads/evaluation_reports/<?= $fileName ?>"
-                       download
+                    <a href="/rfq/download_report.php?id=<?= (int)$report['report_id'] ?>&action=download"
                        class="btn btn-outline-success rounded-pill px-4">
                         <i class="bi bi-download me-1"></i> Download
                     </a>

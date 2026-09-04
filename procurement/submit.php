@@ -5,7 +5,10 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
 
-$request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+requirePostRequest('/procurement/list.php');
+requireCsrfToken('/procurement/list.php');
+
+$request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 
 if ($request_id <= 0) {
     pop("Invalid request reference.", "/procurement/list.php");
@@ -27,6 +30,11 @@ $request = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$request) {
     pop("Procurement request not found.", "/procurement/list.php");
+    exit;
+}
+
+if (!isRequestOwner($request)) {
+    pop("You can only submit your own procurement requests.", "/procurement/list.php", POP_DEFAULT_DELAY_MS, "error");
     exit;
 }
 
@@ -55,7 +63,10 @@ try {
             updated_at = NOW(),
             decline_reason = NULL,
             approved_by = NULL,
-            approved_at = NULL
+            approved_at = NULL,
+            funds_available = 0,
+            finance_reviewed_by = NULL,
+            finance_reviewed_at = NULL
         WHERE request_id = ?
     ");
     $update->execute([$request_id]);
@@ -175,6 +186,5 @@ pop(
     1500,
     "success"
 );
-
 
 

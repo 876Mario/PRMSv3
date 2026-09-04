@@ -5,6 +5,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/policy.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/workflow.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SecureFileStorage.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . "/services/AdminWorkflowOverrideService.php";
 
 $roleName = $_SESSION['role_name'] ?? '';
@@ -142,32 +143,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("Memo upload failed. Please try again.");
             }
 
-            $allowedMemoTypes = [
-                'application/pdf',
-                'application/msword',
-                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                'image/jpeg',
-                'image/png'
-            ];
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $memoMime = finfo_file($finfo, $memoFile['tmp_name']);
-            finfo_close($finfo);
-            if (!in_array($memoMime, $allowedMemoTypes)) {
-                throw new Exception("Invalid memo file type. Only PDF, Word, and image files are allowed.");
-            }
-            if ($memoFile['size'] > 25 * 1024 * 1024) {
-                throw new Exception("Memo file size exceeds 25 MB limit.");
-            }
-
-            $memoDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/request_documents/';
-            if (!is_dir($memoDir)) {
-                mkdir($memoDir, 0755, true);
-            }
-            $memoExt = pathinfo($memoFile['name'], PATHINFO_EXTENSION);
-            $memoName = 'MEMO_' . $requestId . '_' . time() . '_' . uniqid() . '.' . $memoExt;
-            if (!move_uploaded_file($memoFile['tmp_name'], $memoDir . $memoName)) {
-                throw new Exception("Failed to save memo file.");
-            }
+            $memoStored = SecureFileStorage::storeUploadedFile(
+                $memoFile,
+                'request_documents',
+                'MEMO_' . $requestId,
+                [
+                    'application/pdf' => 'pdf',
+                    'application/msword' => 'doc',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                    'image/jpeg' => 'jpg',
+                    'image/png' => 'png'
+                ],
+                25 * 1024 * 1024
+            );
 
             $memoStmt = $pdo->prepare("
                 INSERT INTO request_documents
@@ -176,8 +164,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $memoStmt->execute([
                 $requestId,
-                $memoFile['name'],
-                '/uploads/request_documents/' . $memoName,
+                $memoStored['original_name'],
+                $memoStored['storage_path'],
                 $_SESSION['user_id']
             ]);
 
@@ -231,6 +219,9 @@ exit;
 
 
     } catch (Throwable $e) {
+        if (isset($memoStored)) {
+            SecureFileStorage::deleteStoredFile($memoStored['storage_path']);
+        }
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }

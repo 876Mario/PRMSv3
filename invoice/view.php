@@ -339,6 +339,7 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
 
         <?php if (has_permission('upload_invoice_attachment')): ?>
         <form method="post" action="/invoice/upload_attachment.php" enctype="multipart/form-data" class="mb-4">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <input type="hidden" name="invoice_id" value="<?= $id ?>">
             <div class="row g-2 align-items-end">
                 <div class="col-md-8">

@@ -671,65 +671,27 @@ function formatFileSize(int $bytes): string {
  * @throws Exception on validation or upload failure
  */
 function saveReimbursementAttachment(PDO $pdo, array $file, int $reimb_invoice_id, int $uploaded_by): int {
-    if ($file['error'] !== UPLOAD_ERR_OK) {
-        throw new Exception('File upload failed. Please try again.');
-    }
+    require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SecureFileStorage.php';
 
-    // Validate file type via MIME
-    $allowedMimes = [
-        'application/pdf',
-        'image/jpeg',
-        'image/png',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    $mimeMap = [
+        'application/pdf' => 'pdf',
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'application/msword' => 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+        'application/vnd.ms-excel' => 'xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
     ];
 
-    $finfo    = finfo_open(FILEINFO_MIME_TYPE);
-    $mimeType = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
-
-    if (!in_array($mimeType, $allowedMimes, true)) {
-        throw new Exception('Invalid file type. Allowed types: PDF, JPG, JPEG, PNG, DOC, DOCX, XLS, XLSX.');
-    }
-
-    // Also validate by extension as a secondary guard
-    $allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
-    $ext         = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, $allowedExts, true)) {
-        throw new Exception('Invalid file extension. Allowed: PDF, JPG, JPEG, PNG, DOC, DOCX, XLS, XLSX.');
-    }
-
-    // Validate file size (10 MB max) using actual file size, not client-reported size
-    $maxBytes = 10 * 1024 * 1024;
-    $actualFileSize = filesize($file['tmp_name']);
-    if ($actualFileSize === false || $actualFileSize > $maxBytes) {
-        throw new Exception('File size exceeds the 10 MB limit.');
-    }
-
-    // Build upload directory
-    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/reimbursement_invoice_attachments/';
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
-    }
-
-    // Sanitize and generate unique filename
-    $safeExt      = preg_replace('/[^a-zA-Z0-9]/', '', $ext);
-    $uniqueName   = 'REIMB_' . $reimb_invoice_id . '_' . time() . '_' . bin2hex(random_bytes(6)) . '.' . $safeExt;
-    $uploadPath   = $uploadDir . $uniqueName;
-    $relativePath = '/uploads/reimbursement_invoice_attachments/' . $uniqueName;
+    $stored = SecureFileStorage::storeUploadedFile(
+        $file,
+        'reimbursement_invoice_attachments',
+        'REIMB_' . $reimb_invoice_id,
+        $mimeMap,
+        10 * 1024 * 1024
+    );
 
     try {
-        // Move uploaded file and ensure cleanup on failure
-        if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-            throw new Exception('Failed to save the file. Please try again.');
-        }
-
-        // Sanitize original filename for storage
-        $originalName = preg_replace('/[^\w.\-]/', '_', basename($file['name']));
-
-        // Persist to database
         $ins = $pdo->prepare("
             INSERT INTO reimbursement_invoice_attachments
                 (reimb_invoice_id, file_name, original_file_name, file_path, file_type, file_size, uploaded_by)
@@ -737,20 +699,92 @@ function saveReimbursementAttachment(PDO $pdo, array $file, int $reimb_invoice_i
         ");
         $ins->execute([
             $reimb_invoice_id,
-            $uniqueName,
-            $originalName,
-            $relativePath,
-            $mimeType,
-            (int)$actualFileSize,
+            $stored['stored_name'],
+            $stored['original_name'],
+            $stored['storage_path'],
+            $stored['mime_type'],
+            $stored['file_size'],
             $uploaded_by,
         ]);
 
         return (int)$pdo->lastInsertId();
     } catch (Exception $e) {
-        // Clean up file on any error (upload or DB)
-        if (file_exists($uploadPath)) {
-            unlink($uploadPath);
-        }
+        SecureFileStorage::deleteStoredFile($stored['storage_path']);
         throw $e;
     }
+}
+
+
+function ensureCsrfToken(): string
+{
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+
+    return $_SESSION['csrf_token'];
+}
+
+function requirePostRequest(string $redirect = '/'): void
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        header('Location: ' . $redirect);
+        exit;
+    }
+}
+
+function requireCsrfToken(string $redirect = '/', string $message = 'Invalid or expired request token. Please try again.'): void
+{
+    $submitted = (string)($_POST['csrf_token'] ?? '');
+    $stored = (string)($_SESSION['csrf_token'] ?? '');
+
+    if ($submitted === '' || $stored === '' || !hash_equals($stored, $submitted)) {
+        pop($message, $redirect, POP_DEFAULT_DELAY_MS, 'error');
+        exit;
+    }
+}
+
+function isRequestOwner(array $request): bool
+{
+    return (int)($request['created_by'] ?? 0) > 0
+        && (int)($request['created_by'] ?? 0) === (int)($_SESSION['user_id'] ?? 0);
+}
+
+function canCurrentUserAccessRequestRecord(array $request): bool
+{
+    $role = (string)($_SESSION['role_name'] ?? '');
+
+    if (isRequestOwner($request)) {
+        return true;
+    }
+
+    if (strtoupper((string)($request['status'] ?? '')) === 'DRAFT') {
+        return function_exists('canViewDraft') ? canViewDraft($request) : false;
+    }
+
+    return $role !== 'Requestor';
+}
+
+function enforceRequestRecordAccess(array $request, string $redirect): void
+{
+    if (!canCurrentUserAccessRequestRecord($request)) {
+        logAudit(
+            $GLOBALS['pdo'] ?? null,
+            'procurement_requests',
+            (int)($request['request_id'] ?? 0),
+            'ACCESS_DENIED',
+            'User ' . ($_SESSION['full_name'] ?? $_SESSION['user_id'] ?? 'unknown') . ' attempted to access request outside permitted scope'
+        );
+        pop('You do not have permission to access this request.', $redirect, POP_DEFAULT_DELAY_MS, 'error');
+        exit;
+    }
+}
+
+function canCurrentUserEditOrSubmitRequest(array $request): bool
+{
+    $role = (string)($_SESSION['role_name'] ?? '');
+    if (in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin'], true)) {
+        return true;
+    }
+
+    return isRequestOwner($request);
 }

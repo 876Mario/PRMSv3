@@ -13,6 +13,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
 $request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 $action = isset($_POST['action']) ? trim($_POST['action']) : '';
 $comments = isset($_POST['comments']) ? trim($_POST['comments']) : '';
+requireCsrfToken('/reimbursement/list.php');
 
 if ($request_id <= 0) {
     pop("Invalid reimbursement request reference.", "/reimbursement/list.php");
@@ -90,7 +91,7 @@ if (!$request) {
 // accepted here, a verified invoice had no way to advance the request.
 $allowedStatuses = $isHodOrBranchHeadApproval
     ? ['SUBMITTED']
-    : ['SUBMITTED', 'FUNDS_VERIFIED', 'INVOICE_VERIFIED'];
+    : ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'INVOICE_VERIFIED'];
 
 if (!in_array(strtoupper($request['status']), $allowedStatuses, true)) {
     pop(
@@ -134,7 +135,7 @@ try {
         // reimbursement approval once the request has cleared invoice
         // verification (FUNDS_VERIFIED / INVOICE_VERIFIED).
         if ($action === 'approve') {
-            if (strtoupper($request['status']) === 'SUBMITTED') {
+            if (in_array(strtoupper($request['status']), ['SUBMITTED', 'HOD_APPROVED'], true)) {
                 $newStatus = 'FUNDS_VERIFIED';
             } else {
                 $newStatus = 'APPROVED';

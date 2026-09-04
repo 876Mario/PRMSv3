@@ -3,6 +3,8 @@ $REQUIRE_PERMISSION = 'upload_rfq_report';
 
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SecureFileStorage.php';
 
 $rfq_id = (int)($_GET['rfq_id'] ?? 0);
 
@@ -12,6 +14,7 @@ if (!$rfq_id) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/rfq/view.php?id=' . $rfq_id);
 
     if (!isset($_FILES['report_file']) || $_FILES['report_file']['error'] !== 0) {
         pop('Upload failed', '/rfq/view.php?id='.$rfq_id, POP_DEFAULT_DELAY_MS, 'error');
@@ -23,11 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $fileName = time() . "_" . basename($_FILES['report_file']['name']);
-    $target = $_SERVER['DOCUMENT_ROOT'] . "/uploads/evaluation_reports/" . $fileName;
-
-    move_uploaded_file($_FILES['report_file']['tmp_name'], $target);
-    
     /* Ensure minimum 3 committee members */
 $stmt = $pdo->prepare("
     SELECT COUNT(*) FROM rfq_evaluation_committee
@@ -42,13 +40,22 @@ if ($stmt->fetchColumn() < 3) {
 
 
     try {
+    $storedReport = SecureFileStorage::storeUploadedFile(
+        $_FILES['report_file'],
+        'rfq_evaluation_reports',
+        'RFQ_REPORT_' . $rfq_id,
+        ['application/pdf' => 'pdf'],
+        50 * 1024 * 1024
+    );
     $pdo->prepare("
         INSERT INTO rfq_evaluation_reports
         (rfq_id, report_file, created_at)
         VALUES (?, ?, NOW())
-    ")->execute([$rfq_id, $fileName]);
+    ")->execute([$rfq_id, $storedReport['storage_path']]);
     } catch (Throwable $e) {
-        require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+        if (isset($storedReport)) {
+            SecureFileStorage::deleteStoredFile($storedReport['storage_path']);
+        }
         pop(extractDbMessage($e), '/rfq/view.php?id=' . $rfq_id, POP_DEFAULT_DELAY_MS, 'error');
         exit;
     }
@@ -125,6 +132,7 @@ $committeeCount = (int)$stmtCom->fetchColumn();
             </div>
             <div class="card-body px-4 pb-4">
                 <form method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
 
                     <div class="mb-4">
                         <div class="border rounded-3 p-4 text-center bg-light" id="dropZone"

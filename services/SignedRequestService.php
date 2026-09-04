@@ -5,6 +5,8 @@
  * Supports REGULAR, REIMBURSEMENT, and PETTY_CASH request types
  */
 
+require_once __DIR__ . '/SecureFileStorage.php';
+
 class SignedRequestService {
     private $pdo;
     private $uploadBasePath;
@@ -42,7 +44,7 @@ class SignedRequestService {
 
     public function __construct(PDO $pdo, $uploadBasePath = null) {
         $this->pdo = $pdo;
-        $this->uploadBasePath = $uploadBasePath ?? $_SERVER['DOCUMENT_ROOT'] . '/uploads/signed_requests';
+        $this->uploadBasePath = $uploadBasePath ?? SecureFileStorage::getPrivateStorageRoot() . '/signed_requests';
     }
 
     /**
@@ -208,38 +210,17 @@ class SignedRequestService {
         try {
             $this->pdo->beginTransaction();
 
-            // Create type-specific upload directory
-            $typeDir = $this->uploadBasePath . '/' . strtolower($requestType);
-            if (!is_dir($typeDir)) {
-                if (!mkdir($typeDir, 0750, true)) {
-                    throw new Exception("Failed to create upload directory: " . htmlspecialchars($typeDir));
-                }
-            }
-
-            // Generate secure filename
-            $mimeType = $validation['mime_type'];
-            $ext = $this->allowedMimeTypes[$mimeType];
-            $timestamp = time();
-            $randomHash = bin2hex(random_bytes(8));
-            $safeFilename = sprintf(
-                'SIGNED_%s_%d_%d_%s.%s',
-                strtoupper($requestType),
-                $requestId,
-                $timestamp,
-                $randomHash,
-                $ext
+            $stored = SecureFileStorage::storeUploadedFile(
+                $fileArray,
+                'signed_requests/' . strtolower($requestType),
+                'SIGNED_' . strtoupper($requestType) . '_' . $requestId,
+                $this->allowedMimeTypes,
+                $this->maxFileSize
             );
-
-            $fullPath = $typeDir . '/' . $safeFilename;
-            $relativePath = '/uploads/signed_requests/' . strtolower($requestType) . '/' . $safeFilename;
-
-            // Move uploaded file
-            if (!move_uploaded_file($fileArray['tmp_name'], $fullPath)) {
-                throw new Exception('Failed to move uploaded file to storage location');
-            }
-
-            // Ensure proper permissions
-            chmod($fullPath, 0640);
+            $mimeType = $stored['mime_type'];
+            $safeFilename = $stored['stored_name'];
+            $fullPath = $stored['absolute_path'];
+            $relativePath = $stored['storage_path'];
 
             // Get current version count
             $versionStmt = $this->pdo->prepare("
@@ -271,9 +252,9 @@ class SignedRequestService {
                 $requestType,
                 $relativePath,
                 $safeFilename,
-                basename($fileArray['name']),
+                $stored['original_name'],
                 $mimeType,
-                $fileArray['size'],
+                $stored['file_size'],
                 $newVersion,
                 $uploadedByUserId
             ]);

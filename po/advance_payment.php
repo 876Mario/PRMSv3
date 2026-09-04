@@ -8,6 +8,7 @@ $REQUIRE_PERMISSION = 'record_advance_payment';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SecureFileStorage.php';
 
 /* ================================
    Validate po_id
@@ -93,6 +94,7 @@ if (!empty($po['currency'])) {
    Handle POST
 ================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/po/view.php?po_id=' . $po_id);
 
     $paymentType      = trim($_POST['payment_type']      ?? '');
     $paymentAmount    = isset($_POST['payment_amount'])   ? (float)$_POST['payment_amount'] : 0.0;
@@ -168,32 +170,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/advance_payments/';
-        if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0775, true);
-        }
+        $storedAdvanceDoc = SecureFileStorage::storeUploadedFile(
+            $file,
+            'advance_payments',
+            'AP_' . $po_id,
+            [
+                'application/pdf' => 'pdf',
+                'image/jpeg' => 'jpg',
+                'image/png' => 'png',
+                'image/gif' => 'gif',
+                'application/msword' => 'doc',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+            ],
+            10 * 1024 * 1024
+        );
 
-        $mimeToExt = [
-            'application/pdf'      => 'pdf',
-            'image/jpeg'           => 'jpg',
-            'image/png'            => 'png',
-            'image/gif'            => 'gif',
-            'application/msword'   => 'doc',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
-        ];
-        $ext         = $mimeToExt[$mimeType] ?? 'bin';
-        $serverName  = uniqid('AP_', true) . '_' . time() . '.' . $ext;
-        $destPath    = $uploadDir . $serverName;
-
-        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
-            modalPop('Upload Error', 'Failed to save supporting document. Please try again.', '', 'error');
-            exit;
-        }
-
-        $docPath         = '/uploads/advance_payments/' . $serverName;
-        $docOriginalName = $file['name'];
-        $docFileType     = $mimeType;
-        $docFileSize     = $file['size'];
+        $docPath         = $storedAdvanceDoc['storage_path'];
+        $docOriginalName = $storedAdvanceDoc['original_name'];
+        $docFileType     = $storedAdvanceDoc['mime_type'];
+        $docFileSize     = $storedAdvanceDoc['file_size'];
     }
 
     /* --- Insert --- */
@@ -237,6 +232,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
 
     } catch (Throwable $e) {
+        if (isset($storedAdvanceDoc)) {
+            SecureFileStorage::deleteStoredFile($storedAdvanceDoc['storage_path']);
+        }
         modalPop('Error', extractDbMessage($e), "/po/view.php?po_id={$po_id}", 'error');
         exit;
     }
@@ -319,6 +317,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <div class="card-body">
             <form method="post" enctype="multipart/form-data" id="advancePaymentForm"
                   onsubmit="return validateAdvancePaymentForm()">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
 
                 <div class="row g-3 mb-3">
                     <div class="col-md-6">

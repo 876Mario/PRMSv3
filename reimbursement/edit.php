@@ -30,9 +30,9 @@ if (!$existing) {
 /* Admin override: admins with the dedicated permission may edit any status */
 $isAdminEdit = has_permission('edit_reimbursement_request_admin');
 
-/* Only allow editing DRAFT or SUBMITTED status (unless admin override) */
-if (!$isAdminEdit && !in_array($existing['status'], ['DRAFT', 'SUBMITTED'])) {
-    pop('Only DRAFT or SUBMITTED requests can be edited.', '/reimbursement/view.php?request_id=' . $id, 3000, 'warning');
+/* Only allow editing DRAFT, RETURNED_FOR_CORRECTION, or SUBMITTED status (unless admin override) */
+if (!$isAdminEdit && !in_array($existing['status'], ['DRAFT', 'SUBMITTED', 'RETURNED_FOR_CORRECTION'], true)) {
+    pop('Only DRAFT, RETURNED_FOR_CORRECTION, or SUBMITTED requests can be edited.', '/reimbursement/view.php?request_id=' . $id, 3000, 'warning');
     exit;
 }
 
@@ -46,6 +46,7 @@ if ($existing['created_by'] != $_SESSION['user_id'] && !$isAdminEdit && !has_per
    Handle POST - Update Reimbursement Request
 ═══════════════════════════════════════════════════════ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/reimbursement/edit.php?id=' . $id);
     try {
         $branch_id               = (int)($_POST['branch_id'] ?? 0);
         $request_date            = trim($_POST['request_date'] ?? '');
@@ -176,6 +177,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
       <?php endif; ?>
 
       <form method="post" class="needs-validation" novalidate>
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
 
         <!-- Step 1: Request Information -->
         <div class="card mb-4">

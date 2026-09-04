@@ -135,6 +135,7 @@ if (!canApproveStage($current_role, $nextApproval['role'], $estimatedValue)) {
    Handle POST (Approve / Reject)
 ================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/procurement/approve.php?id=' . $id);
 
     $action = $_POST['action'] ?? '';
 
@@ -174,19 +175,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             UPDATE procurement_requests
             SET status = ?,
                 approved_by = ?,
-                approved_at = NOW(),
-                funds_available = 1,
-                finance_reviewed_by = ?,
-                finance_reviewed_at = NOW()
+                approved_at = NOW()
             WHERE request_id = ?
-        ")->execute([$nextStatus, $user_id, $user_id, $id]);
+        ")->execute([$nextStatus, $user_id, $id]);
 
         logAudit(
             $pdo,
             'procurement_requests',
             $id,
             'STATUS_CHANGE',
-            'Approved → ' . $nextStatus . ' (funds certified) by ' . $approverName
+            'Approved → ' . $nextStatus . ' by ' . $approverName
         );
 
         logRequestTimeline(
@@ -316,6 +314,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                 <strong>Current Stage:</strong> <span class="badge bg-warning text-dark"><?= htmlspecialchars($nextApproval['role']) ?></span>
             </div>
             <form method="post">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                 <input type="hidden" name="id" value="<?= (int)$id ?>">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Rejection Reason <span class="text-danger">*</span> (Required if rejecting)</label>

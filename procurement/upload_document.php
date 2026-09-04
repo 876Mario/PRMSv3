@@ -7,11 +7,10 @@ $REQUIRE_PERMISSION = 'view_request';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SecureFileStorage.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: /procurement/list.php');
-    exit;
-}
+requirePostRequest('/procurement/list.php');
+requireCsrfToken('/procurement/list.php');
 
 $request_id = (int)($_POST['request_id'] ?? 0);
 if ($request_id <= 0) {
@@ -50,44 +49,23 @@ try {
         throw new Exception("File upload failed. Please try again.");
     }
 
-    // Validate file type
-    $allowedTypes = [
-        'application/pdf',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ];
+    $stored = SecureFileStorage::storeUploadedFile(
+        $file,
+        'request_documents',
+        strtoupper($documentType) . '_' . $request_id,
+        [
+            'application/pdf' => 'pdf',
+            'application/msword' => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+            'application/vnd.ms-excel' => 'xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+        ],
+        50 * 1024 * 1024
+    );
 
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mimeType = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
-
-    if (!in_array($mimeType, $allowedTypes)) {
-        throw new Exception("Invalid file type. Only PDF, Word, and Excel files are allowed.");
-    }
-
-    // Validate file size (50MB max)
-    if ($file['size'] > 50 * 1024 * 1024) {
-        throw new Exception("File size exceeds 50 MB limit.");
-    }
-
-    // Save file
-    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/request_documents/';
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
-    }
-
-    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $safeFilename = strtoupper($documentType) . '_' . $request_id . '_' . time() . '_' . uniqid() . '.' . $ext;
-    $uploadPath = $uploadDir . $safeFilename;
-
-    if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-        throw new Exception("Failed to save document.");
-    }
-
-    $documentPath = '/uploads/request_documents/' . $safeFilename;
-    $originalName = $file['name'];
+    $documentPath = $stored['storage_path'];
+    $originalName = $stored['original_name'];
+    $mimeType = $stored['mime_type'];
 
     // Insert into request_documents table
     $stmt = $pdo->prepare("
@@ -132,7 +110,7 @@ try {
             $documentPath,
             $originalName,
             $mimeType,
-            (int)$file['size'],
+            (int)$stored['file_size'],
             (int)$_SESSION['user_id']
         );
 
@@ -161,5 +139,8 @@ try {
     );
 
 } catch (Exception $e) {
+    if (isset($stored)) {
+        SecureFileStorage::deleteStoredFile($stored['storage_path']);
+    }
     pop(extractDbMessage($e), "/procurement/view.php?id=" . $request_id, 2500, "error");
 }

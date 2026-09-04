@@ -6,11 +6,10 @@ $REQUIRE_PERMISSION = 'upload_invoice_attachment';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SecureFileStorage.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: /invoice/list.php');
-    exit;
-}
+requirePostRequest('/invoice/list.php');
+requireCsrfToken('/invoice/list.php');
 
 $invoice_id = (int)($_POST['invoice_id'] ?? 0);
 if ($invoice_id <= 0) {
@@ -38,54 +37,21 @@ try {
         throw new Exception('File upload failed. Please try again.');
     }
 
-    // Validate file type via MIME
-    $allowedMimes = [
-        'application/pdf',
-        'image/jpeg',
-        'image/png',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    $mimeMap = [
+        'application/pdf' => 'pdf',
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'application/msword' => 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
     ];
 
-    $finfo    = finfo_open(FILEINFO_MIME_TYPE);
-    $mimeType = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
-
-    if (!in_array($mimeType, $allowedMimes, true)) {
-        throw new Exception('Invalid file type. Allowed types: PDF, JPG, JPEG, PNG, DOC, DOCX.');
-    }
-
-    // Also validate by extension as a secondary guard
-    $allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
-    $ext         = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, $allowedExts, true)) {
-        throw new Exception('Invalid file extension. Allowed: PDF, JPG, JPEG, PNG, DOC, DOCX.');
-    }
-
-    // Validate file size (10 MB max)
-    $maxBytes = 10 * 1024 * 1024;
-    if ($file['size'] > $maxBytes) {
-        throw new Exception('File size exceeds the 10 MB limit.');
-    }
-
-    // Build upload directory
-    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/invoice_attachments/';
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
-    }
-
-    // Sanitize and generate unique filename
-    $safeExt      = preg_replace('/[^a-zA-Z0-9]/', '', $ext);
-    $uniqueName   = 'INV_' . $invoice_id . '_' . time() . '_' . bin2hex(random_bytes(6)) . '.' . $safeExt;
-    $uploadPath   = $uploadDir . $uniqueName;
-    $relativePath = '/uploads/invoice_attachments/' . $uniqueName;
-
-    if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-        throw new Exception('Failed to save the file. Please try again.');
-    }
-
-    // Sanitize original filename for storage
-    $originalName = preg_replace('/[^\w.\-]/', '_', basename($file['name']));
+    $stored = SecureFileStorage::storeUploadedFile(
+        $file,
+        'invoice_attachments',
+        'INV_' . $invoice_id,
+        $mimeMap,
+        10 * 1024 * 1024
+    );
 
     // Persist to database
     $ins = $pdo->prepare("
@@ -95,22 +61,25 @@ try {
     ");
     $ins->execute([
         $invoice_id,
-        $uniqueName,
-        $originalName,
-        $relativePath,
-        $mimeType,
-        (int)$file['size'],
+        $stored['stored_name'],
+        $stored['original_name'],
+        $stored['storage_path'],
+        $stored['mime_type'],
+        $stored['file_size'],
         $_SESSION['user_id'],
     ]);
 
     $attachmentId = (int)$pdo->lastInsertId();
 
     logAudit($pdo, 'invoice_attachments', $attachmentId, 'CREATE',
-        "Invoice attachment uploaded: {$originalName} for Invoice #{$invoice['invoice_number']}");
+        "Invoice attachment uploaded: {$stored['original_name']} for Invoice #{$invoice['invoice_number']}");
 
     pop('Attachment uploaded successfully.', "/invoice/view.php?id={$invoice_id}", POP_DEFAULT_DELAY_MS, 'success');
 
 } catch (Exception $e) {
+    if (isset($stored)) {
+        SecureFileStorage::deleteStoredFile($stored['storage_path']);
+    }
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }

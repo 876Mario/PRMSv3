@@ -13,6 +13,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
 $request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 $action = isset($_POST['action']) ? trim($_POST['action']) : '';
 $comments = isset($_POST['comments']) ? trim($_POST['comments']) : '';
+requireCsrfToken('/petty_cash/list.php');
 
 if ($request_id <= 0) {
     pop("Invalid petty cash request reference.", "/petty_cash/list.php");
@@ -82,7 +83,11 @@ if (!$request) {
 /* ================================
    Status Validation
 ================================ */
-if (strtoupper($request['status']) !== 'SUBMITTED') {
+$allowedStatuses = $isHodOrBranchHeadApproval
+    ? ['SUBMITTED']
+    : ['SUBMITTED', 'HOD_APPROVED'];
+
+if (!in_array(strtoupper($request['status']), $allowedStatuses, true)) {
     pop(
         "This request is not pending approval. Current status: " . $request['status'],
         "/petty_cash/view.php?request_id=".$request_id,

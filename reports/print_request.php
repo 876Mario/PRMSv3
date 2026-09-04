@@ -3,6 +3,7 @@ $REQUIRE_PERMISSION = 'print_request';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/config/print.php";
+require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
 require_once __DIR__."/../vendor/autoload.php";
 
 use Dompdf\Dompdf;
@@ -23,6 +24,8 @@ $stmt->execute([$request_id]);
 $r = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$r) exit("Request not found");
+
+enforceRequestRecordAccess($r, '/procurement/list.php');
 
 // Pre-format values
 $reqNum      = htmlspecialchars($r['request_number']);
