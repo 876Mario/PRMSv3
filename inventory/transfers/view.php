@@ -33,6 +33,19 @@ $lineItems = $pdo->prepare("
 $lineItems->execute([$transferId]);
 $lineItems = $lineItems->fetchAll(PDO::FETCH_ASSOC);
 
+$transferDiscrepancies = [];
+if (inventoryTransferDiscrepancyTableExists($pdo)) {
+    $discrepancyStmt = $pdo->prepare("
+        SELECT d.*, i.item_code, i.item_name
+        FROM inv_transfer_discrepancies d
+        JOIN inv_items i ON d.item_id = i.item_id
+        WHERE d.transfer_id = ?
+        ORDER BY d.transfer_discrepancy_id ASC
+    ");
+    $discrepancyStmt->execute([$transferId]);
+    $transferDiscrepancies = $discrepancyStmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
 /* Handle approval / dispatch / receive actions */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -52,9 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 lockDocumentByReference($pdo, 'inv_transfers', $transferId);
                 logInventoryAudit($pdo, 'inv_transfers', $transferId, 'APPROVED', "Transfer approved — awaiting Financial Secretary approval");
             } else {
-                foreach ($lineItems as $li) {
-                    reserveStock($pdo, (int) $li['item_id'], (int) $transfer['source_location_id'], (float) $li['quantity']);
-                }
+                InventoryService::reserveTransferStock($pdo, $transfer, $lineItems);
 
                 $pdo->prepare("UPDATE inv_transfers SET status = 'APPROVED', approved_by = ?, approved_at = NOW() WHERE transfer_id = ?")
                     ->execute([$_SESSION['user_id'], $transferId]);
@@ -64,68 +75,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         } elseif ($action === 'fs_approve' && $transfer['status'] === 'PENDING_FS_APPROVAL') {
             // Financial Secretary approval for inter-MDA transfers
-            foreach ($lineItems as $li) {
-                reserveStock($pdo, (int) $li['item_id'], (int) $transfer['source_location_id'], (float) $li['quantity']);
-            }
+            InventoryService::reserveTransferStock($pdo, $transfer, $lineItems);
 
             $pdo->prepare("UPDATE inv_transfers SET financial_secretary_approval = 1, fs_approved_by = ?, fs_approved_at = NOW(), status = 'APPROVED' WHERE transfer_id = ?")
                 ->execute([$_SESSION['user_id'], $transferId]);
             logInventoryAudit($pdo, 'inv_transfers', $transferId, 'FS_APPROVED', "Financial Secretary approval granted and stock reserved");
 
         } elseif ($action === 'dispatch' && $transfer['status'] === 'APPROVED') {
-            // Enforce period and freeze controls
-            requireOpenPeriod($pdo);
-            requireLocationNotFrozen($pdo, $transfer['source_location_id']);
-
-            // Deduct stock from source
-            foreach ($lineItems as $li) {
-                $reservedQtyStmt = $pdo->prepare("
-                    SELECT COALESCE(SUM(quantity_reserved), 0)
-                    FROM inv_stock
-                    WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE'
-                ");
-                $reservedQtyStmt->execute([(int) $li['item_id'], (int) $transfer['source_location_id']]);
-                $reservedQty = (float) $reservedQtyStmt->fetchColumn();
-
-                if ($reservedQty + 0.0001 >= (float) $li['quantity']) {
-                    consumeReservedStock($pdo, (int) $li['item_id'], (int) $transfer['source_location_id'], (float) $li['quantity']);
-                } else {
-                    InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $transfer['source_location_id'], (float) $li['quantity'], 'subtract');
-                }
-                InventoryService::recordTransaction($pdo, $li['item_id'], $transfer['source_location_id'], 'TRANSFER_OUT', $li['quantity'],
-                    $transferId, 'inv_transfers', "Transfer to " . $transfer['to_loc'], $_SESSION['user_id'],
-                    $li['batch_lot_number'], null, $li['serial_number'], null);
-            }
+            InventoryService::dispatchTransferStock($pdo, $transfer, $lineItems);
             $pdo->prepare("UPDATE inv_transfers SET status = 'IN_TRANSIT', dispatched_at = NOW() WHERE transfer_id = ?")
                 ->execute([$transferId]);
             logInventoryAudit($pdo, 'inv_transfers', $transferId, 'DISPATCHED', "Stock dispatched");
 
         } elseif ($action === 'receive' && $transfer['status'] === 'IN_TRANSIT') {
-            requireOpenPeriod($pdo);
-            requireLocationNotFrozen($pdo, $transfer['destination_location_id']);
-
-            // Add stock to destination
-            foreach ($lineItems as $li) {
-                $qtyReceived = (float) ($_POST['qty_received'][$li['transfer_item_id']] ?? $li['quantity']);
-                if ($qtyReceived < 0) {
-                    throw new Exception("Received quantity cannot be negative.");
-                }
-                if ($qtyReceived > (float) $li['quantity']) {
-                    throw new Exception("Received quantity cannot exceed the dispatched quantity.");
-                }
-                $pdo->prepare("UPDATE inv_transfer_items SET quantity_received = ? WHERE transfer_item_id = ?")
-                    ->execute([$qtyReceived, $li['transfer_item_id']]);
-
-                if ($qtyReceived > 0) {
-                    InventoryService::updateStockLevel($pdo, $li['item_id'], $transfer['destination_location_id'], $qtyReceived, 'add');
-                    InventoryService::recordTransaction($pdo, $li['item_id'], $transfer['destination_location_id'], 'TRANSFER_IN', $qtyReceived,
-                        $transferId, 'inv_transfers', "Transfer from " . $transfer['from_loc'], $_SESSION['user_id'],
-                        $li['batch_lot_number'], null, $li['serial_number'], null);
-                }
-            }
-            $pdo->prepare("UPDATE inv_transfers SET status = 'COMPLETED', received_at = NOW() WHERE transfer_id = ?")
-                ->execute([$transferId]);
-            logInventoryAudit($pdo, 'inv_transfers', $transferId, 'COMPLETED', "Transfer received");
+            $receiptResult = InventoryService::receiveTransferStock($pdo, $transfer, $lineItems, $_POST['qty_received'] ?? []);
+            logInventoryAudit(
+                $pdo,
+                'inv_transfers',
+                $transferId,
+                $receiptResult['has_discrepancy'] ? 'DISCREPANCY' : 'COMPLETED',
+                $receiptResult['has_discrepancy']
+                    ? "Transfer received with discrepancy" . ($receiptResult['incident_id'] ? ", incident {$receiptResult['incident_id']}" : '') . ($receiptResult['adjustment_id'] ? ", adjustment {$receiptResult['adjustment_id']}" : '')
+                    : "Transfer received"
+            );
 
         } elseif ($action === 'reject' && has_permission('approve_transfer') && in_array($transfer['status'], ['PENDING_APPROVAL', 'PENDING_FS_APPROVAL'], true)) {
             $reason = trim($_POST['rejection_reason'] ?? '');
@@ -170,7 +142,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         </span>
                     </div>
                     <div class="col-md-4"><strong>Status:</strong>
-                        <?php $sc = match($transfer['status']) { 'COMPLETED' => 'success', 'IN_TRANSIT' => 'info', 'APPROVED' => 'primary', 'PENDING_APPROVAL' => 'warning', 'PENDING_FS_APPROVAL' => 'danger', default => 'secondary' }; ?>
+                        <?php $sc = match($transfer['status']) { 'COMPLETED' => 'success', 'RECEIVED_WITH_DISCREPANCY' => 'warning', 'IN_TRANSIT' => 'info', 'APPROVED' => 'primary', 'PENDING_APPROVAL' => 'warning', 'PENDING_FS_APPROVAL' => 'danger', default => 'secondary' }; ?>
                         <span class="badge bg-<?= $sc ?>"><?= str_replace('_', ' ', $transfer['status']) ?></span>
                     </div>
                     <div class="col-md-4"><strong>From:</strong> <?= htmlspecialchars($transfer['from_loc'] . ' - ' . $transfer['from_site']) ?></div>
@@ -182,6 +154,22 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <div class="col-md-6"><strong>Reason:</strong> <?= htmlspecialchars($transfer['notes'] ?? '-') ?></div>
                     <?php if ($transfer['notes']): ?>
                     <div class="col-12"><strong>Notes:</strong> <?= nl2br(htmlspecialchars($transfer['notes'])) ?></div>
+                    <?php endif; ?>
+                    <?php if (($transfer['discrepancy_status'] ?? null) || !empty($transferDiscrepancies)): ?>
+                    <div class="col-12">
+                        <div class="alert alert-warning mb-0">
+                            <strong>Discrepancy Status:</strong> <?= htmlspecialchars($transfer['discrepancy_status'] ?? 'OPEN') ?>
+                            <?php if (!empty($transfer['discrepancy_incident_id'])): ?>
+                                · <a href="/inventory/incidents/view.php?id=<?= (int) $transfer['discrepancy_incident_id'] ?>">Incident #<?= (int) $transfer['discrepancy_incident_id'] ?></a>
+                            <?php endif; ?>
+                            <?php if (!empty($transfer['discrepancy_adjustment_id'])): ?>
+                                · <a href="/inventory/adjustments/view.php?id=<?= (int) $transfer['discrepancy_adjustment_id'] ?>">Adjustment #<?= (int) $transfer['discrepancy_adjustment_id'] ?></a>
+                            <?php endif; ?>
+                            <?php if (!empty($transfer['discrepancy_notes'])): ?>
+                                <div class="mt-2"><?= nl2br(htmlspecialchars($transfer['discrepancy_notes'])) ?></div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -229,11 +217,11 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <?php if ($transfer['status'] === 'IN_TRANSIT'): ?>
         <form method="POST">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
-            <p class="text-muted small">Confirm quantities received:</p>
+            <p class="text-muted small">Confirm actual quantities received. Shortages or overages will open a discrepancy record automatically.</p>
             <?php foreach ($lineItems as $li): ?>
             <div class="input-group mb-2">
                 <span class="input-group-text"><?= htmlspecialchars($li['item_code']) ?></span>
-                <input type="number" step="0.01" name="qty_received[<?= $li['transfer_item_id'] ?>]" class="form-control text-end" value="<?= $li['quantity'] ?>" max="<?= $li['quantity'] ?>">
+                <input type="number" step="0.01" name="qty_received[<?= $li['transfer_item_id'] ?>]" class="form-control text-end" value="<?= $li['quantity'] ?>" min="0">
             </div>
             <?php endforeach; ?>
             <button type="submit" name="action" value="receive" class="btn btn-success w-100 btn-lg">
@@ -243,6 +231,32 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
         <?php endif; ?>
     </div>
 </div>
+
+<?php if (!empty($transferDiscrepancies)): ?>
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-warning text-dark"><i class="bi bi-exclamation-diamond"></i> Transfer Discrepancies</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-dark">
+                    <tr><th>Item</th><th>Type</th><th class="text-end">Expected</th><th class="text-end">Received</th><th class="text-end">Variance</th></tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($transferDiscrepancies as $discrepancy): ?>
+                    <tr>
+                        <td><code><?= htmlspecialchars($discrepancy['item_code']) ?></code> <?= htmlspecialchars($discrepancy['item_name']) ?></td>
+                        <td><span class="badge bg-<?= $discrepancy['discrepancy_type'] === 'OVERAGE' ? 'info' : 'danger' ?>"><?= htmlspecialchars($discrepancy['discrepancy_type']) ?></span></td>
+                        <td class="text-end"><?= number_format((float) $discrepancy['expected_quantity'], 2) ?></td>
+                        <td class="text-end"><?= number_format((float) $discrepancy['received_quantity'], 2) ?></td>
+                        <td class="text-end"><?= number_format((float) $discrepancy['variance_quantity'], 2) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="card border-0 shadow-sm">
     <div class="card-header bg-dark text-white"><i class="bi bi-list-ol"></i> Transfer Items</div>

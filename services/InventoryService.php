@@ -4,7 +4,9 @@
  * Provides number generation, stock queries, segregation checks, and document control.
  */
 
-require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+if (!defined('UNIT_TESTING')) {
+    require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+}
 
 /* ================================================================
    MIGRATION CHECK
@@ -115,6 +117,54 @@ function generateDocumentNumber(PDO $pdo, string $docType): string {
     ];
     $prefix = $prefixes[$docType] ?? 'DOC-';
     return generateInventoryNumber($pdo, $prefix, 'inv_documents', 'document_number');
+}
+
+function inventorySupportsForUpdate(PDO $pdo): bool
+{
+    try {
+        return $pdo->inTransaction() && $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite';
+    } catch (Throwable $e) {
+        return $pdo->inTransaction();
+    }
+}
+
+function inventoryOptionalTableExists(PDO $pdo, string $tableName): bool
+{
+    try {
+        $pdo->query("SELECT 1 FROM {$tableName} LIMIT 1");
+        return true;
+    } catch (PDOException $e) {
+        if (strpos($e->getMessage(), '1146') !== false || strpos($e->getMessage(), '42S02') !== false || stripos($e->getMessage(), 'no such table') !== false) {
+            return false;
+        }
+        throw $e;
+    }
+}
+
+function inventoryOptionalColumnExists(PDO $pdo, string $tableName, string $columnName): bool
+{
+    try {
+        $pdo->query("SELECT {$columnName} FROM {$tableName} LIMIT 1");
+        return true;
+    } catch (PDOException $e) {
+        if (strpos($e->getMessage(), '1054') !== false || strpos($e->getMessage(), '42S22') !== false || stripos($e->getMessage(), 'no such column') !== false) {
+            return false;
+        }
+        if (strpos($e->getMessage(), '1146') !== false || strpos($e->getMessage(), '42S02') !== false || stripos($e->getMessage(), 'no such table') !== false) {
+            return false;
+        }
+        throw $e;
+    }
+}
+
+function inventoryReservationLedgerExists(PDO $pdo): bool
+{
+    return inventoryOptionalTableExists($pdo, 'inv_stock_reservations');
+}
+
+function inventoryTransferDiscrepancyTableExists(PDO $pdo): bool
+{
+    return inventoryOptionalTableExists($pdo, 'inv_transfer_discrepancies');
 }
 
 /* ================================================================
@@ -530,6 +580,864 @@ function consumeReservedStock(PDO $pdo, int $itemId, int $locationId, float $qty
     }
 
     return $consumed;
+}
+
+function updateReservationLedgerStatus(PDO $pdo, int $reservationId): void
+{
+    $stmt = $pdo->prepare("
+        SELECT quantity_reserved, quantity_consumed, quantity_released
+        FROM inv_stock_reservations
+        WHERE reservation_id = ?
+    ");
+    $stmt->execute([$reservationId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return;
+    }
+
+    $reserved = (float) $row['quantity_reserved'];
+    $consumed = (float) $row['quantity_consumed'];
+    $released = (float) $row['quantity_released'];
+    $remaining = max(0, $reserved - $consumed - $released);
+
+    if ($consumed + 0.0001 >= $reserved) {
+        $status = 'CONSUMED';
+    } elseif ($released + 0.0001 >= $reserved) {
+        $status = 'RELEASED';
+    } elseif ($consumed > 0) {
+        $status = 'PARTIALLY_CONSUMED';
+    } elseif ($released > 0) {
+        $status = 'PARTIALLY_RELEASED';
+    } elseif ($remaining > 0) {
+        $status = 'RESERVED';
+    } else {
+        $status = 'RESOLVED';
+    }
+
+    $pdo->prepare("UPDATE inv_stock_reservations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE reservation_id = ?")
+        ->execute([$status, $reservationId]);
+}
+
+function reserveStockForReference(PDO $pdo, int $itemId, int $locationId, float $qty, string $referenceType, int $referenceId, ?int $referenceLineId = null, ?string $notes = null): array
+{
+    $qty = abs($qty);
+    if ($qty <= 0) {
+        return [];
+    }
+
+    if (!inventoryReservationLedgerExists($pdo)) {
+        return reserveStock($pdo, $itemId, $locationId, $qty);
+    }
+
+    $existing = $pdo->prepare("
+        SELECT COALESCE(SUM(quantity_reserved - quantity_consumed - quantity_released), 0)
+        FROM inv_stock_reservations
+        WHERE reference_type = ? AND reference_id = ? AND ((reference_line_id IS NULL AND ? IS NULL) OR reference_line_id = ?)
+          AND status NOT IN ('CONSUMED', 'RELEASED', 'RESOLVED')
+    ");
+    $existing->execute([$referenceType, $referenceId, $referenceLineId, $referenceLineId]);
+    if ((float) $existing->fetchColumn() > 0.0001) {
+        throw new RuntimeException('Stock is already reserved for this workflow line.');
+    }
+
+    $sql = "
+        SELECT stock_id, quantity_reserved, quantity_available, batch_lot_number, serial_number, expiry_date
+        FROM inv_stock
+        WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE' AND quantity_available > 0
+        ORDER BY expiry_date ASC, received_date ASC, stock_id ASC
+    ";
+    if (inventorySupportsForUpdate($pdo)) {
+        $sql .= " FOR UPDATE";
+    }
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$itemId, $locationId]);
+    $batches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $insert = $pdo->prepare("
+        INSERT INTO inv_stock_reservations
+        (stock_id, item_id, location_id, reference_type, reference_id, reference_line_id,
+         quantity_reserved, quantity_consumed, quantity_released, status, notes,
+         created_by, approved_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 'RESERVED', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ");
+
+    $remaining = $qty;
+    $reserved = [];
+
+    foreach ($batches as $batch) {
+        if ($remaining <= 0) {
+            break;
+        }
+
+        $available = max(0, (float) $batch['quantity_available']);
+        if ($available <= 0) {
+            continue;
+        }
+
+        $take = min($remaining, $available);
+        $newReserved = (float) $batch['quantity_reserved'] + $take;
+        $pdo->prepare("UPDATE inv_stock SET quantity_reserved = ? WHERE stock_id = ?")
+            ->execute([$newReserved, $batch['stock_id']]);
+
+        $insert->execute([
+            $batch['stock_id'],
+            $itemId,
+            $locationId,
+            $referenceType,
+            $referenceId,
+            $referenceLineId,
+            $take,
+            $notes,
+            $_SESSION['user_id'] ?? null,
+            $_SESSION['user_id'] ?? null,
+        ]);
+
+        $reserved[] = [
+            'reservation_id' => (int) $pdo->lastInsertId(),
+            'stock_id' => (int) $batch['stock_id'],
+            'quantity' => $take,
+            'batch_lot_number' => $batch['batch_lot_number'],
+            'serial_number' => $batch['serial_number'],
+            'expiry_date' => $batch['expiry_date'],
+        ];
+        $remaining -= $take;
+    }
+
+    if ($remaining > 0.0001) {
+        throw new RuntimeException('Insufficient available stock to reserve.');
+    }
+
+    return $reserved;
+}
+
+function releaseReservedStockForReference(PDO $pdo, string $referenceType, int $referenceId, ?int $referenceLineId, int $itemId, int $locationId, float $qty): void
+{
+    $qty = abs($qty);
+    if ($qty <= 0) {
+        return;
+    }
+
+    if (!inventoryReservationLedgerExists($pdo)) {
+        $reservedQtyStmt = $pdo->prepare("
+            SELECT COALESCE(SUM(quantity_reserved), 0)
+            FROM inv_stock
+            WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE'
+        ");
+        $reservedQtyStmt->execute([$itemId, $locationId]);
+        if ((float) $reservedQtyStmt->fetchColumn() > 0.0001) {
+            releaseReservedStock($pdo, $itemId, $locationId, $qty);
+        }
+        return;
+    }
+
+    $sql = "
+        SELECT reservation_id, stock_id, quantity_reserved, quantity_consumed, quantity_released
+        FROM inv_stock_reservations
+        WHERE reference_type = ? AND reference_id = ? AND ((reference_line_id IS NULL AND ? IS NULL) OR reference_line_id = ?)
+          AND item_id = ? AND location_id = ?
+          AND (quantity_reserved - quantity_consumed - quantity_released) > 0
+        ORDER BY reservation_id DESC
+    ";
+    if (inventorySupportsForUpdate($pdo)) {
+        $sql .= " FOR UPDATE";
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$referenceType, $referenceId, $referenceLineId, $referenceLineId, $itemId, $locationId]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($rows)) {
+        $reservedQtyStmt = $pdo->prepare("
+            SELECT COALESCE(SUM(quantity_reserved), 0)
+            FROM inv_stock
+            WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE'
+        ");
+        $reservedQtyStmt->execute([$itemId, $locationId]);
+        if ((float) $reservedQtyStmt->fetchColumn() > 0.0001) {
+            releaseReservedStock($pdo, $itemId, $locationId, $qty);
+        }
+        return;
+    }
+
+    $remaining = $qty;
+    foreach ($rows as $row) {
+        if ($remaining <= 0) {
+            break;
+        }
+
+        $available = max(0, (float) $row['quantity_reserved'] - (float) $row['quantity_consumed'] - (float) $row['quantity_released']);
+        if ($available <= 0) {
+            continue;
+        }
+
+        $release = min($remaining, $available);
+
+        $stock = $pdo->prepare("SELECT quantity_reserved FROM inv_stock WHERE stock_id = ?" . (inventorySupportsForUpdate($pdo) ? " FOR UPDATE" : ""));
+        $stock->execute([$row['stock_id']]);
+        $stockReserved = (float) $stock->fetchColumn();
+        $pdo->prepare("UPDATE inv_stock SET quantity_reserved = ? WHERE stock_id = ?")
+            ->execute([max(0, $stockReserved - $release), $row['stock_id']]);
+
+        $pdo->prepare("
+            UPDATE inv_stock_reservations
+            SET quantity_released = quantity_released + ?, released_by = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE reservation_id = ?
+        ")->execute([$release, $_SESSION['user_id'] ?? null, $row['reservation_id']]);
+        updateReservationLedgerStatus($pdo, (int) $row['reservation_id']);
+        $remaining -= $release;
+    }
+
+    if ($remaining > 0.0001) {
+        throw new RuntimeException('Reserved stock release exceeded the reserved balance for this workflow line.');
+    }
+}
+
+function consumeReservedStockForReference(PDO $pdo, string $referenceType, int $referenceId, ?int $referenceLineId, int $itemId, int $locationId, float $qty): array
+{
+    $qty = abs($qty);
+    if ($qty <= 0) {
+        return [];
+    }
+
+    if (!inventoryReservationLedgerExists($pdo)) {
+        $reservedQtyStmt = $pdo->prepare("
+            SELECT COALESCE(SUM(quantity_reserved), 0)
+            FROM inv_stock
+            WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE'
+        ");
+        $reservedQtyStmt->execute([$itemId, $locationId]);
+        if ((float) $reservedQtyStmt->fetchColumn() + 0.0001 >= $qty) {
+            return consumeReservedStock($pdo, $itemId, $locationId, $qty);
+        }
+        return decreaseStock($pdo, $itemId, $locationId, $qty);
+    }
+
+    $sql = "
+        SELECT reservation_id, stock_id, quantity_reserved, quantity_consumed, quantity_released
+        FROM inv_stock_reservations
+        WHERE reference_type = ? AND reference_id = ? AND ((reference_line_id IS NULL AND ? IS NULL) OR reference_line_id = ?)
+          AND item_id = ? AND location_id = ?
+          AND (quantity_reserved - quantity_consumed - quantity_released) > 0
+        ORDER BY reservation_id ASC
+    ";
+    if (inventorySupportsForUpdate($pdo)) {
+        $sql .= " FOR UPDATE";
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$referenceType, $referenceId, $referenceLineId, $referenceLineId, $itemId, $locationId]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($rows)) {
+        $reservedQtyStmt = $pdo->prepare("
+            SELECT COALESCE(SUM(quantity_reserved), 0)
+            FROM inv_stock
+            WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE'
+        ");
+        $reservedQtyStmt->execute([$itemId, $locationId]);
+        if ((float) $reservedQtyStmt->fetchColumn() + 0.0001 >= $qty) {
+            return consumeReservedStock($pdo, $itemId, $locationId, $qty);
+        }
+        return decreaseStock($pdo, $itemId, $locationId, $qty);
+    }
+
+    $remaining = $qty;
+    $consumed = [];
+    foreach ($rows as $row) {
+        if ($remaining <= 0) {
+            break;
+        }
+
+        $available = max(0, (float) $row['quantity_reserved'] - (float) $row['quantity_consumed'] - (float) $row['quantity_released']);
+        if ($available <= 0) {
+            continue;
+        }
+
+        $take = min($remaining, $available);
+
+        $stockSql = "
+            SELECT quantity_on_hand, quantity_reserved, unit_cost, batch_lot_number, serial_number, expiry_date
+            FROM inv_stock
+            WHERE stock_id = ?
+        ";
+        if (inventorySupportsForUpdate($pdo)) {
+            $stockSql .= " FOR UPDATE";
+        }
+        $stockStmt = $pdo->prepare($stockSql);
+        $stockStmt->execute([$row['stock_id']]);
+        $stock = $stockStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$stock) {
+            throw new RuntimeException('Reserved stock batch no longer exists.');
+        }
+
+        $pdo->prepare("
+            UPDATE inv_stock
+            SET quantity_on_hand = ?, quantity_reserved = ?
+            WHERE stock_id = ?
+        ")->execute([
+            (float) $stock['quantity_on_hand'] - $take,
+            max(0, (float) $stock['quantity_reserved'] - $take),
+            $row['stock_id']
+        ]);
+
+        $pdo->prepare("
+            UPDATE inv_stock_reservations
+            SET quantity_consumed = quantity_consumed + ?, consumed_by = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE reservation_id = ?
+        ")->execute([$take, $_SESSION['user_id'] ?? null, $row['reservation_id']]);
+        updateReservationLedgerStatus($pdo, (int) $row['reservation_id']);
+
+        $consumed[] = [
+            'stock_id' => (int) $row['stock_id'],
+            'quantity' => $take,
+            'unit_cost' => (float) ($stock['unit_cost'] ?? 0),
+            'batch_lot_number' => $stock['batch_lot_number'] ?? null,
+            'serial_number' => $stock['serial_number'] ?? null,
+            'expiry_date' => $stock['expiry_date'] ?? null,
+        ];
+        $remaining -= $take;
+    }
+
+    if ($remaining > 0.0001) {
+        throw new RuntimeException('Reserved stock is insufficient for this workflow line.');
+    }
+
+    return $consumed;
+}
+
+function reserveIssueStock(PDO $pdo, array $issue, array $lineItems): void
+{
+    foreach ($lineItems as $li) {
+        reserveStockForReference(
+            $pdo,
+            (int) $li['item_id'],
+            (int) $issue['from_location_id'],
+            (float) $li['quantity_issued'],
+            'inv_issues',
+            (int) $issue['issue_id'],
+            isset($li['issue_item_id']) ? (int) $li['issue_item_id'] : null,
+            'Issue stock reservation'
+        );
+    }
+}
+
+function dispatchIssueStock(PDO $pdo, array $issue, array $lineItems): void
+{
+    foreach ($lineItems as $li) {
+        requireLocationNotFrozen($pdo, (int) $issue['from_location_id']);
+
+        consumeReservedStockForReference(
+            $pdo,
+            'inv_issues',
+            (int) $issue['issue_id'],
+            isset($li['issue_item_id']) ? (int) $li['issue_item_id'] : null,
+            (int) $li['item_id'],
+            (int) $issue['from_location_id'],
+            (float) $li['quantity_issued']
+        );
+
+        InventoryService::recordTransaction(
+            $pdo,
+            (int) $li['item_id'],
+            (int) $issue['from_location_id'],
+            'ISSUE',
+            (float) $li['quantity_issued'],
+            (int) $issue['issue_id'],
+            'inv_issues',
+            "Issued to " . ($issue['issued_to_user_id'] ? "user " . $issue['issued_to_user_id'] : "dept " . $issue['issued_to_department_id']),
+            $_SESSION['user_id'] ?? null,
+            $li['lot_number'] ?? null,
+            $li['batch_number'] ?? null,
+            $li['serial_number'] ?? null,
+            null
+        );
+    }
+}
+
+function applyIssuedQuantitiesToRequisition(PDO $pdo, int $requisitionId, array $lineItems): string
+{
+    $updateReqItems = $pdo->prepare("
+        UPDATE inv_requisition_items
+        SET quantity_issued = quantity_issued + ?
+        WHERE req_item_id = ?
+    ");
+
+    foreach ($lineItems as $li) {
+        $remaining = (float) $li['quantity_issued'];
+        $reqLines = $pdo->prepare("
+            SELECT req_item_id, quantity_approved, quantity_issued
+            FROM inv_requisition_items
+            WHERE requisition_id = ? AND item_id = ?
+            ORDER BY req_item_id ASC
+        ");
+        $reqLines->execute([$requisitionId, (int) $li['item_id']]);
+
+        foreach ($reqLines->fetchAll(PDO::FETCH_ASSOC) as $reqLine) {
+            if ($remaining <= 0) {
+                break;
+            }
+
+            $outstanding = max(0, (float) $reqLine['quantity_approved'] - (float) $reqLine['quantity_issued']);
+            if ($outstanding <= 0) {
+                continue;
+            }
+
+            $applyQty = min($remaining, $outstanding);
+            $updateReqItems->execute([$applyQty, $reqLine['req_item_id']]);
+            $remaining -= $applyQty;
+        }
+
+        if ($remaining > 0.0001) {
+            throw new RuntimeException('Issued quantity exceeds the remaining approved requisition balance.');
+        }
+    }
+
+    $reqStatusStmt = $pdo->prepare("
+        SELECT
+            COALESCE(SUM(quantity_approved), 0) AS approved_total,
+            COALESCE(SUM(quantity_issued), 0) AS issued_total
+        FROM inv_requisition_items
+        WHERE requisition_id = ?
+    ");
+    $reqStatusStmt->execute([$requisitionId]);
+    $reqTotals = $reqStatusStmt->fetch(PDO::FETCH_ASSOC) ?: ['approved_total' => 0, 'issued_total' => 0];
+
+    $newReqStatus = ((float) $reqTotals['issued_total'] + 0.0001) >= (float) $reqTotals['approved_total']
+        ? 'ISSUED'
+        : 'PARTIALLY_ISSUED';
+
+    $pdo->prepare("UPDATE inv_requisitions SET status = ? WHERE requisition_id = ?")
+        ->execute([$newReqStatus, $requisitionId]);
+
+    return $newReqStatus;
+}
+
+function reserveTransferStock(PDO $pdo, array $transfer, array $lineItems): void
+{
+    foreach ($lineItems as $li) {
+        reserveStockForReference(
+            $pdo,
+            (int) $li['item_id'],
+            (int) $transfer['source_location_id'],
+            (float) $li['quantity'],
+            'inv_transfers',
+            (int) $transfer['transfer_id'],
+            isset($li['transfer_item_id']) ? (int) $li['transfer_item_id'] : null,
+            'Transfer stock reservation'
+        );
+    }
+}
+
+function dispatchTransferStock(PDO $pdo, array $transfer, array $lineItems): void
+{
+    requireOpenPeriod($pdo);
+    requireLocationNotFrozen($pdo, (int) $transfer['source_location_id']);
+
+    foreach ($lineItems as $li) {
+        consumeReservedStockForReference(
+            $pdo,
+            'inv_transfers',
+            (int) $transfer['transfer_id'],
+            isset($li['transfer_item_id']) ? (int) $li['transfer_item_id'] : null,
+            (int) $li['item_id'],
+            (int) $transfer['source_location_id'],
+            (float) $li['quantity']
+        );
+
+        InventoryService::recordTransaction(
+            $pdo,
+            (int) $li['item_id'],
+            (int) $transfer['source_location_id'],
+            'TRANSFER_OUT',
+            (float) $li['quantity'],
+            (int) $transfer['transfer_id'],
+            'inv_transfers',
+            'Transfer to ' . ($transfer['to_loc'] ?? $transfer['destination_location_id']),
+            $_SESSION['user_id'] ?? null,
+            $li['batch_lot_number'] ?? null,
+            null,
+            $li['serial_number'] ?? null,
+            null
+        );
+    }
+}
+
+function generateTransferDiscrepancyIncident(PDO $pdo, array $transfer, array $discrepancies): int
+{
+    $incidentNumber = generateInventoryNumber($pdo, 'INC-', 'inv_incidents', 'incident_number');
+    $totalLoss = 0.0;
+    foreach ($discrepancies as $row) {
+        if ($row['variance_quantity'] < 0) {
+            $totalLoss += abs((float) $row['variance_quantity']) * (float) $row['unit_cost'];
+        }
+    }
+
+    $description = "Transfer discrepancy for {$transfer['transfer_number']} from location {$transfer['source_location_id']} to {$transfer['destination_location_id']}.";
+    $pdo->prepare("
+        INSERT INTO inv_incidents
+        (incident_number, incident_type, incident_date, location_id, description, status, reported_by, total_estimated_loss, notes)
+        VALUES (?, 'LOSS', ?, ?, ?, 'REPORTED', ?, ?, ?)
+    ")->execute([
+        $incidentNumber,
+        date('Y-m-d'),
+        $transfer['destination_location_id'] ?? null,
+        $description,
+        $_SESSION['user_id'] ?? null,
+        $totalLoss,
+        'Auto-generated from transfer discrepancy workflow.'
+    ]);
+    $incidentId = (int) $pdo->lastInsertId();
+
+    $lineInsert = $pdo->prepare("
+        INSERT INTO inv_incident_items
+        (incident_id, item_id, quantity_lost, unit_cost, total_value, batch_lot_number, serial_number, condition_notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+    foreach ($discrepancies as $row) {
+        if ($row['variance_quantity'] >= 0) {
+            continue;
+        }
+        $lossQty = abs((float) $row['variance_quantity']);
+        $lineInsert->execute([
+            $incidentId,
+            $row['item_id'],
+            $lossQty,
+            $row['unit_cost'],
+            $lossQty * (float) $row['unit_cost'],
+            $row['batch_lot_number'] ?? null,
+            $row['serial_number'] ?? null,
+            'Auto-generated from transfer discrepancy.'
+        ]);
+    }
+
+    return $incidentId;
+}
+
+function generateTransferOverageAdjustment(PDO $pdo, array $transfer, array $discrepancies): ?int
+{
+    $overages = array_values(array_filter($discrepancies, static fn(array $row): bool => (float) $row['variance_quantity'] > 0));
+    if (empty($overages)) {
+        return null;
+    }
+
+    $adjNumber = generateInventoryNumber($pdo, 'ADJ-', 'inv_adjustments', 'adjustment_number');
+    $pdo->prepare("
+        INSERT INTO inv_adjustments
+        (adjustment_number, location_id, adjustment_type, reason_code, reason_detail, status, requested_by, supervisor_approved_by, supervisor_approved_at)
+        VALUES (?, ?, 'GAIN', 'OTHER', ?, 'APPROVED', ?, ?, CURRENT_TIMESTAMP)
+    ")->execute([
+        $adjNumber,
+        $transfer['destination_location_id'],
+        "Auto-generated transfer overage for {$transfer['transfer_number']}",
+        $_SESSION['user_id'] ?? null,
+        $_SESSION['user_id'] ?? null,
+    ]);
+    $adjustmentId = (int) $pdo->lastInsertId();
+
+    $adjLine = $pdo->prepare("
+        INSERT INTO inv_adjustment_items
+        (adjustment_id, item_id, system_quantity, physical_quantity, variance_quantity, unit_cost)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ");
+    foreach ($overages as $row) {
+        $systemQty = InventoryService::getStockLevel($pdo, (int) $row['item_id'], (int) $transfer['destination_location_id']);
+        $varianceQty = (float) $row['variance_quantity'];
+        $adjLine->execute([
+            $adjustmentId,
+            $row['item_id'],
+            max(0, $systemQty - $varianceQty),
+            $systemQty,
+            $varianceQty,
+            $row['unit_cost'],
+        ]);
+        InventoryService::recordTransaction(
+            $pdo,
+            (int) $row['item_id'],
+            (int) $transfer['destination_location_id'],
+            'ADJUSTMENT_IN',
+            $varianceQty,
+            $adjustmentId,
+            'inv_adjustments',
+            "Transfer overage for {$transfer['transfer_number']}",
+            $_SESSION['user_id'] ?? null,
+            $row['batch_lot_number'] ?? null,
+            null,
+            $row['serial_number'] ?? null,
+            null
+        );
+    }
+
+    return $adjustmentId;
+}
+
+function receiveTransferStock(PDO $pdo, array $transfer, array $lineItems, array $receivedQuantities): array
+{
+    requireOpenPeriod($pdo);
+    requireLocationNotFrozen($pdo, (int) $transfer['destination_location_id']);
+
+    $discrepancies = [];
+    $updateLine = $pdo->prepare("UPDATE inv_transfer_items SET quantity_received = ? WHERE transfer_item_id = ?");
+
+    foreach ($lineItems as $li) {
+        $expectedQty = (float) $li['quantity'];
+        $qtyReceived = (float) ($receivedQuantities[$li['transfer_item_id']] ?? $expectedQty);
+        if ($qtyReceived < 0) {
+            throw new RuntimeException('Received quantity cannot be negative.');
+        }
+
+        $updateLine->execute([$qtyReceived, $li['transfer_item_id']]);
+
+        $transferQty = min($expectedQty, $qtyReceived);
+        if ($transferQty > 0) {
+            InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $transfer['destination_location_id'], $transferQty, 'add');
+            InventoryService::recordTransaction(
+                $pdo,
+                (int) $li['item_id'],
+                (int) $transfer['destination_location_id'],
+                'TRANSFER_IN',
+                $transferQty,
+                (int) $transfer['transfer_id'],
+                'inv_transfers',
+                'Transfer from ' . ($transfer['from_loc'] ?? $transfer['source_location_id']),
+                $_SESSION['user_id'] ?? null,
+                $li['batch_lot_number'] ?? null,
+                null,
+                $li['serial_number'] ?? null,
+                null
+            );
+        }
+
+        $varianceQty = $qtyReceived - $expectedQty;
+        if (abs($varianceQty) > 0.0001) {
+            $discrepancies[] = [
+                'transfer_item_id' => (int) $li['transfer_item_id'],
+                'item_id' => (int) $li['item_id'],
+                'expected_quantity' => $expectedQty,
+                'received_quantity' => $qtyReceived,
+                'variance_quantity' => $varianceQty,
+                'discrepancy_type' => $varianceQty > 0 ? 'OVERAGE' : 'SHORTAGE',
+                'unit_cost' => (float) ($li['unit_cost'] ?? 0),
+                'batch_lot_number' => $li['batch_lot_number'] ?? null,
+                'serial_number' => $li['serial_number'] ?? null,
+            ];
+        }
+    }
+
+    $incidentId = null;
+    $adjustmentId = null;
+
+    if (!empty($discrepancies)) {
+        if (inventoryTransferDiscrepancyTableExists($pdo)) {
+            $insert = $pdo->prepare("
+                INSERT INTO inv_transfer_discrepancies
+                (transfer_id, transfer_item_id, item_id, expected_quantity, received_quantity, variance_quantity,
+                 discrepancy_type, incident_id, adjustment_id, notes, reported_by, reported_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ");
+        } else {
+            $insert = null;
+        }
+
+        $incidentRows = array_values(array_filter($discrepancies, static fn(array $row): bool => $row['variance_quantity'] < 0));
+        if (!empty($incidentRows) && inventoryOptionalTableExists($pdo, 'inv_incidents') && inventoryOptionalTableExists($pdo, 'inv_incident_items')) {
+            $incidentId = generateTransferDiscrepancyIncident($pdo, $transfer, $incidentRows);
+        }
+
+        $overageRows = array_values(array_filter($discrepancies, static fn(array $row): bool => $row['variance_quantity'] > 0));
+        if (!empty($overageRows) && inventoryOptionalTableExists($pdo, 'inv_adjustments') && inventoryOptionalTableExists($pdo, 'inv_adjustment_items')) {
+            foreach ($overageRows as $row) {
+                InventoryService::updateStockLevel($pdo, (int) $row['item_id'], (int) $transfer['destination_location_id'], (float) $row['variance_quantity'], 'add');
+            }
+            $adjustmentId = generateTransferOverageAdjustment($pdo, $transfer, $overageRows);
+        }
+
+        if ($insert) {
+            foreach ($discrepancies as $row) {
+                $insert->execute([
+                    $transfer['transfer_id'],
+                    $row['transfer_item_id'],
+                    $row['item_id'],
+                    $row['expected_quantity'],
+                    $row['received_quantity'],
+                    $row['variance_quantity'],
+                    $row['discrepancy_type'],
+                    $row['discrepancy_type'] === 'SHORTAGE' ? $incidentId : null,
+                    $row['discrepancy_type'] === 'OVERAGE' ? $adjustmentId : null,
+                    'Auto-generated during transfer receipt.',
+                    $_SESSION['user_id'] ?? null,
+                ]);
+            }
+        }
+
+        if (inventoryOptionalColumnExists($pdo, 'inv_transfers', 'discrepancy_status')) {
+            $pdo->prepare("
+                UPDATE inv_transfers
+                SET status = 'RECEIVED_WITH_DISCREPANCY',
+                    received_by = ?,
+                    received_at = CURRENT_TIMESTAMP,
+                    discrepancy_status = 'OPEN',
+                    discrepancy_notes = ?,
+                    discrepancy_reported_by = ?,
+                    discrepancy_reported_at = CURRENT_TIMESTAMP,
+                    discrepancy_incident_id = ?,
+                    discrepancy_adjustment_id = ?
+                WHERE transfer_id = ?
+            ")->execute([
+                $_SESSION['user_id'] ?? null,
+                'Transfer receipt discrepancy recorded automatically.',
+                $_SESSION['user_id'] ?? null,
+                $incidentId,
+                $adjustmentId,
+                $transfer['transfer_id'],
+            ]);
+        } else {
+            $pdo->prepare("UPDATE inv_transfers SET status = 'RECEIVED_WITH_DISCREPANCY', received_by = ?, received_at = CURRENT_TIMESTAMP WHERE transfer_id = ?")
+                ->execute([$_SESSION['user_id'] ?? null, $transfer['transfer_id']]);
+        }
+
+        return [
+            'has_discrepancy' => true,
+            'incident_id' => $incidentId,
+            'adjustment_id' => $adjustmentId,
+            'discrepancies' => $discrepancies,
+        ];
+    }
+
+    $pdo->prepare("UPDATE inv_transfers SET status = 'COMPLETED', received_by = ?, received_at = CURRENT_TIMESTAMP WHERE transfer_id = ?")
+        ->execute([$_SESSION['user_id'] ?? null, $transfer['transfer_id']]);
+
+    return [
+        'has_discrepancy' => false,
+        'incident_id' => null,
+        'adjustment_id' => null,
+        'discrepancies' => [],
+    ];
+}
+
+function dispatchReturnStock(PDO $pdo, array $return, array $lineItems): void
+{
+    if (!empty($return['from_location_id'])) {
+        requireLocationNotFrozen($pdo, (int) $return['from_location_id']);
+    }
+
+    foreach ($lineItems as $li) {
+        if (empty($return['from_location_id'])) {
+            continue;
+        }
+
+        InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $return['from_location_id'], (float) $li['quantity'], 'subtract');
+        InventoryService::recordTransaction(
+            $pdo,
+            (int) $li['item_id'],
+            (int) $return['from_location_id'],
+            'RETURN_TO_SUPPLIER',
+            (float) $li['quantity'],
+            (int) $return['return_id'],
+            'inv_returns',
+            "Return {$return['return_number']}: {$return['return_type']}",
+            $_SESSION['user_id'] ?? null,
+            $li['batch_lot_number'] ?? null,
+            null,
+            $li['serial_number'] ?? null,
+            null
+        );
+    }
+}
+
+function createIncidentAdjustmentAndApplyLoss(PDO $pdo, array $incident, array $lineItems): ?int
+{
+    if (empty($lineItems) || empty($incident['location_id'])) {
+        return null;
+    }
+
+    $adjNumber = generateInventoryNumber($pdo, 'ADJ-', 'inv_adjustments', 'adjustment_number');
+    $pdo->prepare("
+        INSERT INTO inv_adjustments
+        (adjustment_number, location_id, adjustment_type, reason_code, reason_detail, status, requested_by, supervisor_approved_by, supervisor_approved_at)
+        VALUES (?, ?, 'LOSS', 'OTHER', ?, 'APPROVED', ?, ?, CURRENT_TIMESTAMP)
+    ")->execute([
+        $adjNumber,
+        $incident['location_id'],
+        "Incident {$incident['incident_number']}: {$incident['incident_type']}",
+        $incident['reported_by'],
+        $_SESSION['user_id'] ?? null,
+    ]);
+    $adjustmentId = (int) $pdo->lastInsertId();
+
+    $adjLine = $pdo->prepare("
+        INSERT INTO inv_adjustment_items
+        (adjustment_id, item_id, system_quantity, physical_quantity, variance_quantity, unit_cost)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ");
+
+    foreach ($lineItems as $li) {
+        $systemQty = InventoryService::getStockLevel($pdo, (int) $li['item_id'], (int) $incident['location_id']);
+        if ((float) $li['quantity_lost'] > $systemQty + 0.0001) {
+            throw new RuntimeException("Incident loss quantity cannot exceed current stock on hand for item {$li['item_code']}.");
+        }
+        $physQty = $systemQty - (float) $li['quantity_lost'];
+        $variance = -(float) $li['quantity_lost'];
+        $adjLine->execute([$adjustmentId, $li['item_id'], $systemQty, max(0, $physQty), $variance, $li['unit_cost']]);
+
+        InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $incident['location_id'], (float) $li['quantity_lost'], 'subtract');
+        InventoryService::recordTransaction(
+            $pdo,
+            (int) $li['item_id'],
+            (int) $incident['location_id'],
+            'ADJUSTMENT_OUT',
+            (float) $li['quantity_lost'],
+            $adjustmentId,
+            'inv_adjustments',
+            "Incident loss: {$incident['incident_number']}",
+            $_SESSION['user_id'] ?? null,
+            $li['batch_lot_number'] ?? null,
+            null,
+            $li['serial_number'] ?? null,
+            null
+        );
+    }
+
+    return $adjustmentId;
+}
+
+function completeDisposalStock(PDO $pdo, array $disposal, array $lineItems): void
+{
+    requireLocationNotFrozen($pdo, (int) $disposal['location_id']);
+
+    foreach ($lineItems as $li) {
+        InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $disposal['location_id'], (float) $li['quantity'], 'subtract');
+        InventoryService::recordTransaction(
+            $pdo,
+            (int) $li['item_id'],
+            (int) $disposal['location_id'],
+            'DISPOSAL',
+            (float) $li['quantity'],
+            (int) $disposal['disposal_id'],
+            'inv_disposals',
+            'Disposed: ' . $disposal['disposal_method'],
+            $_SESSION['user_id'] ?? null
+        );
+    }
+}
+
+function resolveQuarantineRelease(PDO $pdo, int $quarantineId, string $decision, ?string $notes = null): void
+{
+    if (!in_array($decision, ['RETURN_TO_STOCK', 'DISPOSE', 'RETURN_TO_SUPPLIER'], true)) {
+        throw new RuntimeException('Invalid quarantine release decision.');
+    }
+
+    $q = $pdo->prepare("SELECT * FROM inv_quarantine_log WHERE quarantine_id = ? AND status IN ('QUARANTINED','UNDER_INSPECTION')");
+    $q->execute([$quarantineId]);
+    $qr = $q->fetch(PDO::FETCH_ASSOC);
+    if (!$qr) {
+        throw new RuntimeException('Quarantine record not found or already resolved.');
+    }
+
+    if ($decision === 'RETURN_TO_STOCK') {
+        requireOpenPeriod($pdo);
+        requireLocationNotFrozen($pdo, (int) $qr['location_id']);
+    }
+
+    releaseFromQuarantine($pdo, $quarantineId, $decision, $notes);
 }
 
 /**
@@ -1079,7 +1987,7 @@ function releaseFromQuarantine(PDO $pdo, int $quarantineId, string $decision, ?s
 
     $pdo->prepare("
         UPDATE inv_quarantine_log
-        SET status = ?, release_decision = ?, decision_notes = ?, released_by = ?, released_at = NOW()
+        SET status = ?, release_decision = ?, decision_notes = ?, released_by = ?, released_at = CURRENT_TIMESTAMP
         WHERE quarantine_id = ?
     ")->execute([
         $decision === 'RETURN_TO_STOCK' ? 'RELEASED' : 'DISPOSED',
@@ -1220,6 +2128,56 @@ class InventoryService
     public static function getAvailableStockLevel(PDO $pdo, int $itemId, int $locationId): float
     {
         return getAvailableStockAtLocation($pdo, $itemId, $locationId);
+    }
+
+    public static function reserveIssueStock(PDO $pdo, array $issue, array $lineItems): void
+    {
+        reserveIssueStock($pdo, $issue, $lineItems);
+    }
+
+    public static function dispatchIssueStock(PDO $pdo, array $issue, array $lineItems): void
+    {
+        dispatchIssueStock($pdo, $issue, $lineItems);
+    }
+
+    public static function applyIssuedQuantitiesToRequisition(PDO $pdo, int $requisitionId, array $lineItems): string
+    {
+        return applyIssuedQuantitiesToRequisition($pdo, $requisitionId, $lineItems);
+    }
+
+    public static function reserveTransferStock(PDO $pdo, array $transfer, array $lineItems): void
+    {
+        reserveTransferStock($pdo, $transfer, $lineItems);
+    }
+
+    public static function dispatchTransferStock(PDO $pdo, array $transfer, array $lineItems): void
+    {
+        dispatchTransferStock($pdo, $transfer, $lineItems);
+    }
+
+    public static function receiveTransferStock(PDO $pdo, array $transfer, array $lineItems, array $receivedQuantities): array
+    {
+        return receiveTransferStock($pdo, $transfer, $lineItems, $receivedQuantities);
+    }
+
+    public static function dispatchReturnStock(PDO $pdo, array $return, array $lineItems): void
+    {
+        dispatchReturnStock($pdo, $return, $lineItems);
+    }
+
+    public static function createIncidentAdjustmentAndApplyLoss(PDO $pdo, array $incident, array $lineItems): ?int
+    {
+        return createIncidentAdjustmentAndApplyLoss($pdo, $incident, $lineItems);
+    }
+
+    public static function completeDisposalStock(PDO $pdo, array $disposal, array $lineItems): void
+    {
+        completeDisposalStock($pdo, $disposal, $lineItems);
+    }
+
+    public static function resolveQuarantineRelease(PDO $pdo, int $quarantineId, string $decision, ?string $notes = null): void
+    {
+        resolveQuarantineRelease($pdo, $quarantineId, $decision, $notes);
     }
 
     /** Increase or decrease stock at a location. */

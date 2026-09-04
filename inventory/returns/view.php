@@ -57,18 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         } elseif ($action === 'dispatch' && $return['status'] === 'APPROVED') {
             requireOpenPeriod($pdo);
-            if ($return['from_location_id']) {
-                requireLocationNotFrozen($pdo, $return['from_location_id']);
-            }
-            // Deduct stock for each line item
-            foreach ($lineItems as $li) {
-                if ($return['from_location_id']) {
-                    InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $return['from_location_id'], (float) $li['quantity'], 'subtract');
-                    InventoryService::recordTransaction($pdo, (int) $li['item_id'], (int) $return['from_location_id'], 'RETURN_TO_SUPPLIER', (float) $li['quantity'],
-                        $returnId, 'inv_returns', "Return {$return['return_number']}: {$return['return_type']}", $_SESSION['user_id'],
-                        $li['batch_lot_number'] ?? null, null, $li['serial_number'] ?? null, null);
-                }
-            }
+            InventoryService::dispatchReturnStock($pdo, $return, $lineItems);
             $pdo->prepare("UPDATE inv_returns SET status = 'DISPATCHED', dispatched_at = NOW() WHERE return_id = ?")->execute([$returnId]);
             logInventoryAudit($pdo, 'inv_returns', $returnId, 'DISPATCHED', "Return dispatched to supplier");
 

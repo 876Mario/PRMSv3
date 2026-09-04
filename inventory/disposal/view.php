@@ -59,15 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($action === 'complete' && $disp['status'] === 'APPROVED') {
             // Enforce period and freeze controls
             requireOpenPeriod($pdo);
-            requireLocationNotFrozen($pdo, $disp['location_id']);
 
             $proceeds = (float) ($_POST['actual_proceeds'] ?? 0);
-            // Remove stock
-            foreach ($lineItems as $li) {
-                InventoryService::updateStockLevel($pdo, $li['item_id'], $disp['location_id'], $li['quantity'], 'subtract');
-                InventoryService::recordTransaction($pdo, $li['item_id'], $disp['location_id'], 'DISPOSAL', $li['quantity'],
-                    $dispId, 'inv_disposals', "Disposed: " . $disp['disposal_method'], $_SESSION['user_id']);
-            }
+            InventoryService::completeDisposalStock($pdo, $disp, $lineItems);
             $pdo->prepare("UPDATE inv_disposals SET status = 'COMPLETED', actual_proceeds = ?, completed_at = NOW() WHERE disposal_id = ?")
                 ->execute([$proceeds, $dispId]);
             logInventoryAudit($pdo, 'inv_disposals', $dispId, 'COMPLETED', "Disposal completed, proceeds: $proceeds");

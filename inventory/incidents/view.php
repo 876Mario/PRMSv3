@@ -59,33 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             requireOpenPeriod($pdo);
 
             // Create stock adjustment for lost items
-            $adjustmentId = null;
-            if (!empty($lineItems) && $incident['location_id']) {
-                $adjNumber = generateInventoryNumber($pdo, 'ADJ-', 'inv_adjustments', 'adjustment_number');
-                $pdo->prepare("INSERT INTO inv_adjustments (adjustment_number, location_id, adjustment_type, reason, status, created_by, approved_by, approved_at)
-                    VALUES (?, ?, 'LOSS', ?, 'APPROVED', ?, ?, NOW())")
-                    ->execute([$adjNumber, $incident['location_id'],
-                        "Incident {$incident['incident_number']}: {$incident['incident_type']}",
-                        $incident['reported_by'], $_SESSION['user_id']]);
-                $adjustmentId = (int) $pdo->lastInsertId();
-
-                $adjLine = $pdo->prepare("INSERT INTO inv_adjustment_items (adjustment_id, item_id, system_quantity, physical_quantity, variance_quantity, unit_cost) VALUES (?,?,?,?,?,?)");
-                foreach ($lineItems as $li) {
-                    $systemQty = InventoryService::getStockLevel($pdo, $li['item_id'], $incident['location_id']);
-                    if ((float) $li['quantity_lost'] > $systemQty + 0.0001) {
-                        throw new Exception("Incident loss quantity cannot exceed current stock on hand for item {$li['item_code']}.");
-                    }
-                    $physQty = $systemQty - $li['quantity_lost'];
-                    $variance = -$li['quantity_lost'];
-                    $adjLine->execute([$adjustmentId, $li['item_id'], $systemQty, max(0, $physQty), $variance, $li['unit_cost']]);
-
-                    // Deduct stock
-                    InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $incident['location_id'], (float) $li['quantity_lost'], 'subtract');
-                    InventoryService::recordTransaction($pdo, (int) $li['item_id'], (int) $incident['location_id'], 'ADJUSTMENT_OUT', (float) $li['quantity_lost'],
-                        $adjustmentId, 'inv_adjustments', "Incident loss: {$incident['incident_number']}", $_SESSION['user_id'],
-                        $li['batch_lot_number'] ?? null, null, $li['serial_number'] ?? null, null);
-                }
-            }
+            $adjustmentId = InventoryService::createIncidentAdjustmentAndApplyLoss($pdo, $incident, $lineItems);
 
             $pdo->prepare("UPDATE inv_incidents SET status = 'RESOLVED', investigation_completed_at = NOW(), adjustment_id = ? WHERE incident_id = ?")
                 ->execute([$adjustmentId, $incidentId]);

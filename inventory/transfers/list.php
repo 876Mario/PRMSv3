@@ -44,6 +44,7 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $kpi = $pdo->query("SELECT COUNT(*) AS total,
     SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) AS completed,
+    SUM(CASE WHEN status='RECEIVED_WITH_DISCREPANCY' THEN 1 ELSE 0 END) AS discrepancy,
     SUM(CASE WHEN status='IN_TRANSIT' THEN 1 ELSE 0 END) AS transit,
     SUM(CASE WHEN status='PENDING_APPROVAL' THEN 1 ELSE 0 END) AS pending
     FROM inv_transfers")->fetch(PDO::FETCH_ASSOC);
@@ -59,6 +60,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 <div class="row g-3 mb-4">
     <div class="col-md-3"><div class="card border-0 shadow-sm bg-primary bg-opacity-10 text-center py-3"><h4><?= $kpi['total'] ?></h4><small class="text-muted">Total Transfers</small></div></div>
     <div class="col-md-3"><div class="card border-0 shadow-sm bg-success bg-opacity-10 text-center py-3"><h4><?= $kpi['completed'] ?></h4><small class="text-muted">Completed</small></div></div>
+    <div class="col-md-3"><div class="card border-0 shadow-sm bg-warning bg-opacity-10 text-center py-3"><h4><?= $kpi['discrepancy'] ?></h4><small class="text-muted">Discrepancies</small></div></div>
     <div class="col-md-3"><div class="card border-0 shadow-sm bg-info bg-opacity-10 text-center py-3"><h4><?= $kpi['transit'] ?></h4><small class="text-muted">In Transit</small></div></div>
     <div class="col-md-3"><div class="card border-0 shadow-sm bg-warning bg-opacity-10 text-center py-3"><h4><?= $kpi['pending'] ?></h4><small class="text-muted">Pending Approval</small></div></div>
 </div>
@@ -68,7 +70,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="col-md-2">
         <select name="status" class="form-select">
             <option value="">All Status</option>
-            <?php foreach (['DRAFT','PENDING_APPROVAL','APPROVED','IN_TRANSIT','COMPLETED','CANCELLED'] as $s): ?>
+            <?php foreach (['DRAFT','PENDING_APPROVAL','APPROVED','IN_TRANSIT','COMPLETED','RECEIVED_WITH_DISCREPANCY','CANCELLED'] as $s): ?>
             <option value="<?= $s ?>" <?= $status === $s ? 'selected' : '' ?>><?= $s ?></option>
             <?php endforeach; ?>
         </select>
@@ -103,7 +105,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                         <td><?= htmlspecialchars($r['initiator_name']) ?></td>
                         <td><?= $r['line_count'] ?></td>
                         <td>
-                            <?php $sc = match($r['status']) { 'COMPLETED' => 'success', 'IN_TRANSIT' => 'info', 'APPROVED' => 'primary', 'PENDING_APPROVAL' => 'warning', 'DRAFT' => 'secondary', default => 'light' }; ?>
+                            <?php $sc = match($r['status']) { 'COMPLETED' => 'success', 'RECEIVED_WITH_DISCREPANCY' => 'warning', 'IN_TRANSIT' => 'info', 'APPROVED' => 'primary', 'PENDING_APPROVAL' => 'warning', 'DRAFT' => 'secondary', default => 'light' }; ?>
                             <span class="badge bg-<?= $sc ?>"><?= $r['status'] ?></span>
                         </td>
                         <td class="text-end"><a href="/inventory/transfers/view.php?id=<?= $r['transfer_id'] ?>" class="btn btn-sm btn-outline-dark"><i class="bi bi-eye"></i></a></td>

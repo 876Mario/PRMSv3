@@ -47,9 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception("Cannot approve your own stock issue (segregation of duties).");
             }
 
-            foreach ($lineItems as $li) {
-                reserveStock($pdo, (int) $li['item_id'], (int) $issue['from_location_id'], (float) $li['quantity_issued']);
-            }
+            InventoryService::reserveIssueStock($pdo, $issue, $lineItems);
 
             $pdo->prepare("UPDATE inv_issues SET status = 'APPROVED', approved_by = ?, approved_at = NOW() WHERE issue_id = ?")
                 ->execute([$_SESSION['user_id'], $issueId]);
@@ -60,83 +58,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             logInventoryAudit($pdo, 'inv_issues', $issueId, 'APPROVED', "Issue approved");
 
         } elseif ($action === 'dispatch' && $issue['status'] === 'APPROVED') {
-            // Deduct stock now that issue is approved
-            foreach ($lineItems as $li) {
-                requireLocationNotFrozen($pdo, $issue['from_location_id']);
-
-                $reservedQtyStmt = $pdo->prepare("
-                    SELECT COALESCE(SUM(quantity_reserved), 0)
-                    FROM inv_stock
-                    WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE'
-                ");
-                $reservedQtyStmt->execute([(int) $li['item_id'], (int) $issue['from_location_id']]);
-                $reservedQty = (float) $reservedQtyStmt->fetchColumn();
-
-                if ($reservedQty + 0.0001 >= (float) $li['quantity_issued']) {
-                    consumeReservedStock($pdo, (int) $li['item_id'], (int) $issue['from_location_id'], (float) $li['quantity_issued']);
-                } else {
-                    InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $issue['from_location_id'], (float) $li['quantity_issued'], 'subtract');
-                }
-                InventoryService::recordTransaction($pdo, $li['item_id'], $issue['from_location_id'], 'ISSUE', $li['quantity_issued'],
-                    $issueId, 'inv_issues',
-                    "Issued to " . ($issue['issued_to_user_id'] ? "user " . $issue['issued_to_user_id'] : "dept " . $issue['issued_to_department_id']),
-                    $_SESSION['user_id'],
-                    $li['lot_number'] ?? null, $li['batch_number'] ?? null, $li['serial_number'] ?? null, null);
-            }
+            InventoryService::dispatchIssueStock($pdo, $issue, $lineItems);
 
             if (!empty($issue['requisition_id'])) {
-                $updateReqItems = $pdo->prepare("
-                    UPDATE inv_requisition_items
-                    SET quantity_issued = quantity_issued + ?
-                    WHERE req_item_id = ?
-                ");
-
-                foreach ($lineItems as $li) {
-                    $remaining = (float) $li['quantity_issued'];
-                    $reqLines = $pdo->prepare("
-                        SELECT req_item_id, quantity_approved, quantity_issued
-                        FROM inv_requisition_items
-                        WHERE requisition_id = ? AND item_id = ?
-                        ORDER BY req_item_id ASC
-                    ");
-                    $reqLines->execute([(int) $issue['requisition_id'], (int) $li['item_id']]);
-
-                    foreach ($reqLines->fetchAll(PDO::FETCH_ASSOC) as $reqLine) {
-                        if ($remaining <= 0) {
-                            break;
-                        }
-
-                        $outstanding = max(0, (float) $reqLine['quantity_approved'] - (float) $reqLine['quantity_issued']);
-                        if ($outstanding <= 0) {
-                            continue;
-                        }
-
-                        $applyQty = min($remaining, $outstanding);
-                        $updateReqItems->execute([$applyQty, $reqLine['req_item_id']]);
-                        $remaining -= $applyQty;
-                    }
-
-                    if ($remaining > 0.0001) {
-                        throw new Exception('Issued quantity exceeds the remaining approved requisition balance.');
-                    }
-                }
-
-                $reqStatusStmt = $pdo->prepare("
-                    SELECT
-                        COALESCE(SUM(quantity_approved), 0) AS approved_total,
-                        COALESCE(SUM(quantity_issued), 0) AS issued_total
-                    FROM inv_requisition_items
-                    WHERE requisition_id = ?
-                ");
-                $reqStatusStmt->execute([(int) $issue['requisition_id']]);
-                $reqTotals = $reqStatusStmt->fetch(PDO::FETCH_ASSOC) ?: ['approved_total' => 0, 'issued_total' => 0];
-
-                $newReqStatus = ((float) $reqTotals['issued_total'] + 0.0001) >= (float) $reqTotals['approved_total']
-                    ? 'ISSUED'
-                    : 'PARTIALLY_ISSUED';
-
-                $pdo->prepare("UPDATE inv_requisitions SET status = ? WHERE requisition_id = ?")
-                    ->execute([$newReqStatus, (int) $issue['requisition_id']]);
+                InventoryService::applyIssuedQuantitiesToRequisition($pdo, (int) $issue['requisition_id'], $lineItems);
             }
 
             $pdo->prepare("UPDATE inv_issues SET status = 'COMPLETED' WHERE issue_id = ?")->execute([$issueId]);
