@@ -352,7 +352,7 @@ function increaseStock(PDO $pdo, int $itemId, int $locationId, float $qty, array
     $stmt = $pdo->prepare("
         INSERT INTO inv_stock (item_id, location_id, batch_lot_number, serial_number, expiry_date,
                                quantity_on_hand, unit_cost, stock_status, received_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'USABLE', CURDATE())
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'USABLE', CURRENT_DATE)
     ");
     $stmt->execute([$itemId, $locationId, $batchLot, $serial, $expiry, $qty, $unitCost]);
     return (int) $pdo->lastInsertId();
