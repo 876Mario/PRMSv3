@@ -153,6 +153,20 @@ function getStockAtLocation(PDO $pdo, int $itemId, int $locationId): array
 }
 
 /**
+ * Get total available quantity for an item at a specific location.
+ */
+function getAvailableStockAtLocation(PDO $pdo, int $itemId, int $locationId): float
+{
+    $stmt = $pdo->prepare("
+        SELECT COALESCE(SUM(quantity_available), 0)
+        FROM inv_stock
+        WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE'
+    ");
+    $stmt->execute([$itemId, $locationId]);
+    return (float) $stmt->fetchColumn();
+}
+
+/**
  * Check if item is below reorder level.
  */
 function isItemBelowReorderLevel(PDO $pdo, int $itemId): bool
@@ -300,12 +314,22 @@ function increaseStock(PDO $pdo, int $itemId, int $locationId, float $qty, array
  */
 function decreaseStock(PDO $pdo, int $itemId, int $locationId, float $qty): array
 {
-    $stmt = $pdo->prepare("
-        SELECT stock_id, quantity_on_hand, unit_cost, batch_lot_number, serial_number, expiry_date
+    $qty = abs($qty);
+    if ($qty <= 0) {
+        return [];
+    }
+
+    $sql = "
+        SELECT stock_id, quantity_on_hand, quantity_reserved, quantity_available, unit_cost, batch_lot_number, serial_number, expiry_date
         FROM inv_stock
         WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE' AND quantity_available > 0
         ORDER BY expiry_date ASC, received_date ASC
-    ");
+    ";
+    if ($pdo->inTransaction()) {
+        $sql .= " FOR UPDATE";
+    }
+
+    $stmt = $pdo->prepare($sql);
     $stmt->execute([$itemId, $locationId]);
     $batches = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -314,7 +338,11 @@ function decreaseStock(PDO $pdo, int $itemId, int $locationId, float $qty): arra
 
     foreach ($batches as $batch) {
         if ($remaining <= 0) break;
-        $take = min($remaining, (float) $batch['quantity_on_hand']);
+        $available = max(0, (float) ($batch['quantity_available'] ?? ((float) $batch['quantity_on_hand'] - (float) ($batch['quantity_reserved'] ?? 0))));
+        if ($available <= 0) {
+            continue;
+        }
+        $take = min($remaining, $available);
         $newQty = (float) $batch['quantity_on_hand'] - $take;
 
         $pdo->prepare("UPDATE inv_stock SET quantity_on_hand = ? WHERE stock_id = ?")
@@ -328,6 +356,177 @@ function decreaseStock(PDO $pdo, int $itemId, int $locationId, float $qty): arra
             'serial_number' => $batch['serial_number'],
         ];
         $remaining -= $take;
+    }
+
+    if ($remaining > 0.0001) {
+        throw new RuntimeException('Insufficient available stock for this transaction.');
+    }
+
+    return $consumed;
+}
+
+/**
+ * Reserve available stock at a location for a pending downstream action.
+ */
+function reserveStock(PDO $pdo, int $itemId, int $locationId, float $qty): array
+{
+    $qty = abs($qty);
+    if ($qty <= 0) {
+        return [];
+    }
+
+    $sql = "
+        SELECT stock_id, quantity_reserved, quantity_available, batch_lot_number, serial_number, expiry_date
+        FROM inv_stock
+        WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE' AND quantity_available > 0
+        ORDER BY expiry_date ASC, received_date ASC
+    ";
+    if ($pdo->inTransaction()) {
+        $sql .= " FOR UPDATE";
+    }
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$itemId, $locationId]);
+    $batches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $remaining = $qty;
+    $reserved = [];
+
+    foreach ($batches as $batch) {
+        if ($remaining <= 0) {
+            break;
+        }
+
+        $available = (float) $batch['quantity_available'];
+        if ($available <= 0) {
+            continue;
+        }
+
+        $take = min($remaining, $available);
+        $newReserved = (float) $batch['quantity_reserved'] + $take;
+        $pdo->prepare("UPDATE inv_stock SET quantity_reserved = ? WHERE stock_id = ?")
+            ->execute([$newReserved, $batch['stock_id']]);
+
+        $reserved[] = [
+            'stock_id' => $batch['stock_id'],
+            'quantity' => $take,
+            'batch_lot_number' => $batch['batch_lot_number'],
+            'serial_number' => $batch['serial_number'],
+            'expiry_date' => $batch['expiry_date'],
+        ];
+        $remaining -= $take;
+    }
+
+    if ($remaining > 0.0001) {
+        throw new RuntimeException('Insufficient available stock to reserve.');
+    }
+
+    return $reserved;
+}
+
+/**
+ * Release previously reserved stock back to available stock.
+ */
+function releaseReservedStock(PDO $pdo, int $itemId, int $locationId, float $qty): void
+{
+    $qty = abs($qty);
+    if ($qty <= 0) {
+        return;
+    }
+
+    $sql = "
+        SELECT stock_id, quantity_reserved
+        FROM inv_stock
+        WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE' AND quantity_reserved > 0
+        ORDER BY expiry_date DESC, received_date DESC, stock_id DESC
+    ";
+    if ($pdo->inTransaction()) {
+        $sql .= " FOR UPDATE";
+    }
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$itemId, $locationId]);
+    $batches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $remaining = $qty;
+    foreach ($batches as $batch) {
+        if ($remaining <= 0) {
+            break;
+        }
+
+        $reservedQty = (float) $batch['quantity_reserved'];
+        if ($reservedQty <= 0) {
+            continue;
+        }
+
+        $release = min($remaining, $reservedQty);
+        $pdo->prepare("UPDATE inv_stock SET quantity_reserved = ? WHERE stock_id = ?")
+            ->execute([$reservedQty - $release, $batch['stock_id']]);
+        $remaining -= $release;
+    }
+
+    if ($remaining > 0.0001) {
+        throw new RuntimeException('Reserved stock release exceeded the reserved balance.');
+    }
+}
+
+/**
+ * Consume reserved stock when a reserved action is finalized.
+ */
+function consumeReservedStock(PDO $pdo, int $itemId, int $locationId, float $qty): array
+{
+    $qty = abs($qty);
+    if ($qty <= 0) {
+        return [];
+    }
+
+    $sql = "
+        SELECT stock_id, quantity_on_hand, quantity_reserved, unit_cost, batch_lot_number, serial_number, expiry_date
+        FROM inv_stock
+        WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE' AND quantity_reserved > 0
+        ORDER BY expiry_date ASC, received_date ASC
+    ";
+    if ($pdo->inTransaction()) {
+        $sql .= " FOR UPDATE";
+    }
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$itemId, $locationId]);
+    $batches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $remaining = $qty;
+    $consumed = [];
+    foreach ($batches as $batch) {
+        if ($remaining <= 0) {
+            break;
+        }
+
+        $reservedQty = min((float) $batch['quantity_reserved'], (float) $batch['quantity_on_hand']);
+        if ($reservedQty <= 0) {
+            continue;
+        }
+
+        $take = min($remaining, $reservedQty);
+        $pdo->prepare("UPDATE inv_stock SET quantity_on_hand = ?, quantity_reserved = ? WHERE stock_id = ?")
+            ->execute([
+                (float) $batch['quantity_on_hand'] - $take,
+                (float) $batch['quantity_reserved'] - $take,
+                $batch['stock_id']
+            ]);
+
+        $consumed[] = [
+            'stock_id' => $batch['stock_id'],
+            'quantity' => $take,
+            'unit_cost' => $batch['unit_cost'],
+            'batch_lot_number' => $batch['batch_lot_number'],
+            'serial_number' => $batch['serial_number'],
+            'expiry_date' => $batch['expiry_date'],
+        ];
+        $remaining -= $take;
+    }
+
+    if ($remaining > 0.0001) {
+        throw new RuntimeException('Reserved stock is insufficient for dispatch.');
     }
 
     return $consumed;
@@ -1017,13 +1216,19 @@ class InventoryService
         return $total;
     }
 
+    /** Get currently available usable stock at a location. */
+    public static function getAvailableStockLevel(PDO $pdo, int $itemId, int $locationId): float
+    {
+        return getAvailableStockAtLocation($pdo, $itemId, $locationId);
+    }
+
     /** Increase or decrease stock at a location. */
     public static function updateStockLevel(PDO $pdo, int $itemId, int $locationId, float $qty, string $direction = 'add'): void
     {
         if ($direction === 'add') {
-            increaseStock($pdo, $itemId, $locationId, $qty);
+            increaseStock($pdo, $itemId, $locationId, abs($qty));
         } else {
-            decreaseStock($pdo, $itemId, $locationId, $qty);
+            decreaseStock($pdo, $itemId, $locationId, abs($qty));
         }
     }
 

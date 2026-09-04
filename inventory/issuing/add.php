@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'issue_stock';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_setup.php';
 
 $locations = $pdo->query("SELECT location_id, location_code, site_name FROM inv_locations WHERE is_active=1 ORDER BY site_name")->fetchAll(PDO::FETCH_ASSOC);
@@ -25,6 +26,7 @@ if ($reqId > 0) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
+        requireCsrfToken('/inventory/issuing/add.php' . ($reqId > 0 ? '?requisition_id=' . $reqId : ''));
         $pdo->beginTransaction();
 
         // Enforce period controls
@@ -66,10 +68,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Issue goes to PENDING_APPROVAL (segregation of duties: issuer ≠ approver)
         $pdo->prepare("INSERT INTO inv_issues
-            (issue_number, requisition_number, issued_to_user_id, issued_to_department_id,
+            (issue_number, requisition_id, requisition_number, issued_to_user_id, issued_to_department_id,
              issued_to_project, issued_by, from_location_id, cost_centre, notes, status, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,NOW())")
-            ->execute([$issueNumber, $reqNumber, $issueTo ?: null, $issueToDept > 0 ? $issueToDept : null,
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW())")
+            ->execute([$issueNumber, $reqId > 0 ? $reqId : null, $reqNumber ?: null, $issueTo ?: null, $issueToDept > 0 ? $issueToDept : null,
                 $issueToProject ?: null, $_SESSION['user_id'], $fromLocation, $costCentre, $notes, 'PENDING_APPROVAL']);
 
         $issueId = $pdo->lastInsertId();
@@ -85,10 +87,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($qi <= 0) continue;
 
             // Check stock availability enforcing FEFO
-            $stock = InventoryService::getStockLevel($pdo, $iid, $fromLocation);
+            $stock = InventoryService::getAvailableStockLevel($pdo, $iid, $fromLocation);
             if ($stock < $qi) {
                 $itemName = $pdo->query("SELECT item_name FROM inv_items WHERE item_id=" . (int)$iid)->fetchColumn();
                 throw new Exception("Insufficient stock for $itemName. Available: $stock, Requested: $qi");
+            }
+
+            if ($reqId > 0) {
+                $approvedQtyStmt = $pdo->prepare("
+                    SELECT COALESCE(SUM(quantity_approved), 0)
+                    FROM inv_requisition_items
+                    WHERE requisition_id = ? AND item_id = ?
+                ");
+                $approvedQtyStmt->execute([$reqId, $iid]);
+                $approvedQty = (float) $approvedQtyStmt->fetchColumn();
+
+                $issuedQtyStmt = $pdo->prepare("
+                    SELECT COALESCE(SUM(quantity_issued), 0)
+                    FROM inv_requisition_items
+                    WHERE requisition_id = ? AND item_id = ?
+                ");
+                $issuedQtyStmt->execute([$reqId, $iid]);
+                $alreadyIssuedQty = (float) $issuedQtyStmt->fetchColumn();
+
+                if ($approvedQty <= 0 || ($alreadyIssuedQty + $qi) > $approvedQty + 0.0001) {
+                    throw new Exception("Issue quantity exceeds the approved requisition balance for the selected item.");
+                }
             }
 
             $insertLine->execute([$issueId, $iid, $qi, $qi,
@@ -102,11 +126,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $approvals = getRequiredApprovals($pdo, 'ISSUE', $totalValue);
         if (!empty($approvals)) {
             createApprovalLog($pdo, 'inv_issues', $issueId, $approvals);
-        }
-
-        // Update requisition fulfilled qty if linked
-        if ($reqId > 0 && $reqData) {
-            $pdo->prepare("UPDATE inv_requisitions SET status = 'FULFILLED' WHERE requisition_id = ?")->execute([$reqId]);
         }
 
         logInventoryAudit($pdo, 'inv_issues', $issueId, 'CREATED', "Stock issue $issueNumber created — pending approval");
@@ -135,6 +154,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 <?php endif; ?>
 
 <form method="POST" id="issueForm">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-dark text-dark"><i class="bi bi-info-circle"></i> Issue Details</div>
         <div class="card-body">

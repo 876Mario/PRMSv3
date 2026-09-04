@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'issue_stock';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_setup.php';
 
 $issueId = (int) ($_GET['id'] ?? 0);
@@ -37,13 +38,19 @@ $lineItems = $lineItems->fetchAll(PDO::FETCH_ASSOC);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     try {
+        requireCsrfToken('/inventory/issuing/view.php?id=' . $issueId);
         $pdo->beginTransaction();
 
-        if ($action === 'approve' && has_permission('approve_issue')) {
+        if ($action === 'approve' && has_permission('approve_issue') && $issue['status'] === 'PENDING_APPROVAL') {
             // Segregation: approver must not be the person who created the issue
             if ($_SESSION['user_id'] == $issue['issued_by']) {
                 throw new Exception("Cannot approve your own stock issue (segregation of duties).");
             }
+
+            foreach ($lineItems as $li) {
+                reserveStock($pdo, (int) $li['item_id'], (int) $issue['from_location_id'], (float) $li['quantity_issued']);
+            }
+
             $pdo->prepare("UPDATE inv_issues SET status = 'APPROVED', approved_by = ?, approved_at = NOW() WHERE issue_id = ?")
                 ->execute([$_SESSION['user_id'], $issueId]);
 
@@ -57,22 +64,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach ($lineItems as $li) {
                 requireLocationNotFrozen($pdo, $issue['from_location_id']);
 
-                InventoryService::updateStockLevel($pdo, $li['item_id'], $issue['from_location_id'], $li['quantity_issued'], 'subtract');
+                $reservedQtyStmt = $pdo->prepare("
+                    SELECT COALESCE(SUM(quantity_reserved), 0)
+                    FROM inv_stock
+                    WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE'
+                ");
+                $reservedQtyStmt->execute([(int) $li['item_id'], (int) $issue['from_location_id']]);
+                $reservedQty = (float) $reservedQtyStmt->fetchColumn();
+
+                if ($reservedQty + 0.0001 >= (float) $li['quantity_issued']) {
+                    consumeReservedStock($pdo, (int) $li['item_id'], (int) $issue['from_location_id'], (float) $li['quantity_issued']);
+                } else {
+                    InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $issue['from_location_id'], (float) $li['quantity_issued'], 'subtract');
+                }
                 InventoryService::recordTransaction($pdo, $li['item_id'], $issue['from_location_id'], 'ISSUE', $li['quantity_issued'],
                     $issueId, 'inv_issues',
                     "Issued to " . ($issue['issued_to_user_id'] ? "user " . $issue['issued_to_user_id'] : "dept " . $issue['issued_to_department_id']),
                     $_SESSION['user_id'],
                     $li['lot_number'] ?? null, $li['batch_number'] ?? null, $li['serial_number'] ?? null, null);
             }
+
+            if (!empty($issue['requisition_id'])) {
+                $updateReqItems = $pdo->prepare("
+                    UPDATE inv_requisition_items
+                    SET quantity_issued = quantity_issued + ?
+                    WHERE req_item_id = ?
+                ");
+
+                foreach ($lineItems as $li) {
+                    $remaining = (float) $li['quantity_issued'];
+                    $reqLines = $pdo->prepare("
+                        SELECT req_item_id, quantity_approved, quantity_issued
+                        FROM inv_requisition_items
+                        WHERE requisition_id = ? AND item_id = ?
+                        ORDER BY req_item_id ASC
+                    ");
+                    $reqLines->execute([(int) $issue['requisition_id'], (int) $li['item_id']]);
+
+                    foreach ($reqLines->fetchAll(PDO::FETCH_ASSOC) as $reqLine) {
+                        if ($remaining <= 0) {
+                            break;
+                        }
+
+                        $outstanding = max(0, (float) $reqLine['quantity_approved'] - (float) $reqLine['quantity_issued']);
+                        if ($outstanding <= 0) {
+                            continue;
+                        }
+
+                        $applyQty = min($remaining, $outstanding);
+                        $updateReqItems->execute([$applyQty, $reqLine['req_item_id']]);
+                        $remaining -= $applyQty;
+                    }
+
+                    if ($remaining > 0.0001) {
+                        throw new Exception('Issued quantity exceeds the remaining approved requisition balance.');
+                    }
+                }
+
+                $reqStatusStmt = $pdo->prepare("
+                    SELECT
+                        COALESCE(SUM(quantity_approved), 0) AS approved_total,
+                        COALESCE(SUM(quantity_issued), 0) AS issued_total
+                    FROM inv_requisition_items
+                    WHERE requisition_id = ?
+                ");
+                $reqStatusStmt->execute([(int) $issue['requisition_id']]);
+                $reqTotals = $reqStatusStmt->fetch(PDO::FETCH_ASSOC) ?: ['approved_total' => 0, 'issued_total' => 0];
+
+                $newReqStatus = ((float) $reqTotals['issued_total'] + 0.0001) >= (float) $reqTotals['approved_total']
+                    ? 'ISSUED'
+                    : 'PARTIALLY_ISSUED';
+
+                $pdo->prepare("UPDATE inv_requisitions SET status = ? WHERE requisition_id = ?")
+                    ->execute([$newReqStatus, (int) $issue['requisition_id']]);
+            }
+
             $pdo->prepare("UPDATE inv_issues SET status = 'COMPLETED' WHERE issue_id = ?")->execute([$issueId]);
             logInventoryAudit($pdo, 'inv_issues', $issueId, 'COMPLETED', "Stock dispatched and issue completed");
 
-        } elseif ($action === 'reject' && has_permission('approve_issue')) {
+        } elseif ($action === 'reject' && has_permission('approve_issue') && $issue['status'] === 'PENDING_APPROVAL') {
             $reason = trim($_POST['rejection_reason'] ?? '');
             if (empty($reason)) throw new Exception("Rejection reason is required.");
             $pdo->prepare("UPDATE inv_issues SET status = 'CANCELLED', notes = CONCAT(IFNULL(notes,''), '\nRejected: ', ?) WHERE issue_id = ?")
                 ->execute([$reason, $issueId]);
             logInventoryAudit($pdo, 'inv_issues', $issueId, 'REJECTED', "Rejected: $reason");
+        } else {
+            throw new Exception("Invalid issue action for the current state.");
         }
 
         $pdo->commit();
@@ -131,6 +208,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="col-md-4">
         <?php if ($issue['status'] === 'PENDING_APPROVAL' && has_permission('approve_issue')): ?>
         <form method="POST" class="mb-2">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="approve" class="btn btn-success w-100 btn-lg mb-2">
                 <i class="bi bi-check-circle"></i> Approve Issue
             </button>
@@ -143,6 +221,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if ($issue['status'] === 'APPROVED'): ?>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="dispatch" class="btn btn-primary w-100 btn-lg">
                 <i class="bi bi-box-arrow-right"></i> Dispatch Stock
             </button>

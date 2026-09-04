@@ -2,13 +2,16 @@
 $REQUIRE_PERMISSION = 'transfer_stock';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_setup.php';
 
 $locations = $pdo->query("SELECT location_id, location_code, site_name FROM inv_locations WHERE is_active=1 ORDER BY site_name")->fetchAll(PDO::FETCH_ASSOC);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
+        requireCsrfToken('/inventory/transfers/add.php');
         $pdo->beginTransaction();
+        requireOpenPeriod($pdo);
 
         $transferType  = $_POST['transfer_type'] ?? 'INTERNAL';
         $fromLocId     = (int) ($_POST['from_location_id'] ?? 0);
@@ -19,6 +22,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($fromLocId <= 0 || $toLocId <= 0) throw new Exception("Both source and destination locations are required.");
         if ($fromLocId === $toLocId) throw new Exception("Source and destination must be different.");
         if (empty($reason)) throw new Exception("Transfer reason is required.");
+
+        requireLocationNotFrozen($pdo, $fromLocId);
+        requireLocationNotFrozen($pdo, $toLocId);
 
         $itemIds = $_POST['item_id'] ?? [];
         $qtys    = $_POST['quantity'] ?? [];
@@ -52,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($qty <= 0) continue;
 
             // Verify stock availability
-            $stock = InventoryService::getStockLevel($pdo, $iid, $fromLocId);
+            $stock = InventoryService::getAvailableStockLevel($pdo, $iid, $fromLocId);
             if ($stock < $qty) {
                 $name = $pdo->query("SELECT item_name FROM inv_items WHERE item_id=$iid")->fetchColumn();
                 throw new Exception("Insufficient stock for $name at source. Available: $stock");
@@ -88,6 +94,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 <?php endif; ?>
 
 <form method="POST">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-dark text-dark"><i class="bi bi-info-circle"></i> Transfer Details</div>
         <div class="card-body">
