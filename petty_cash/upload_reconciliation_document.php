@@ -8,18 +8,21 @@ $REQUIRE_PERMISSION = 'verify_petty_cash_reconciliation';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SecureFileStorage.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: /petty_cash/list.php');
     exit;
 }
 
+requireCsrfToken('/petty_cash/list.php');
+
 $reconcile_id = isset($_POST['reconcile_id']) ? (int)$_POST['reconcile_id'] : 0;
 $document_type = isset($_POST['document_type']) ? trim($_POST['document_type']) : '';
 $document_notes = isset($_POST['document_notes']) ? trim($_POST['document_notes']) : '';
 
 if (empty($document_type)) {
-    pop("Please select a document type.", "/petty_cash/view.php?request_id={$request_id}", 2000, "error");
+    pop("Please select a document type.", "/petty_cash/list.php", 2000, "error");
     exit;
 }
 
@@ -61,133 +64,80 @@ if ($file['error'] !== UPLOAD_ERR_OK) {
     exit;
 }
 
-// Validate file type
-$allowedTypes = [
-    'application/pdf',
-    'image/jpeg',
-    'image/png',
-    'image/gif',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-];
-
-if (!function_exists('finfo_open')) {
-    pop("File type validation is not available. Please contact the system administrator.", "/petty_cash/view.php?request_id={$request_id}", 2000, "error");
-    exit;
-}
-
-$finfo = finfo_open(FILEINFO_MIME_TYPE);
-if ($finfo === false) {
-    pop("Unable to validate file type. Please try again.", "/petty_cash/view.php?request_id={$request_id}", 2000, "error");
-    exit;
-}
-
-$mimeType = finfo_file($finfo, $file['tmp_name']);
-finfo_close($finfo);
-
-if (!in_array($mimeType, $allowedTypes)) {
-    pop("Invalid file type. Only PDF, images, and Office documents are allowed.", "/petty_cash/view.php?request_id={$request_id}", 2000, "error");
-    exit;
-}
-
-// Validate file size (50MB max)
-$maxSize = 50 * 1024 * 1024;
-if ($file['size'] > $maxSize) {
-    pop("File size exceeds 50MB limit.", "/petty_cash/view.php?request_id={$request_id}", 2000, "error");
-    exit;
-}
-
 /* ============================================================
    PROCESS FILE UPLOAD
    ============================================================ */
 try {
-    // Create uploads directory if it doesn't exist
-    $uploadsDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/petty_cash_documents';
-    if (!is_dir($uploadsDir)) {
-        if (!mkdir($uploadsDir, 0755, true)) {
-            throw new Exception("Failed to create uploads directory.");
-        }
-    }
-
-    // Generate unique filename
-    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $fileName = "{$document_type}_{$reconcile_id}_" . time() . "_" . uniqid() . "." . strtolower($ext);
-    $filePath = $uploadsDir . '/' . $fileName;
-
-    // Move file
-    if (!move_uploaded_file($file['tmp_name'], $filePath)) {
-        throw new Exception("Failed to move uploaded file.");
-    }
-
-    // Check if petty_cash_reconciliation_documents table exists
     $checkTable = $pdo->prepare("
         SELECT 1 FROM information_schema.TABLES 
         WHERE TABLE_SCHEMA = DATABASE() 
         AND TABLE_NAME = 'petty_cash_reconciliation_documents'
     ");
     $checkTable->execute();
-    
-    if ($checkTable->fetchColumn()) {
-        // Insert document record
-        $insertStmt = $pdo->prepare("
-            INSERT INTO petty_cash_reconciliation_documents
-            (reconcile_id, document_type, file_name, original_file_name, file_path, file_type, file_size, uploaded_by, document_notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        $insertStmt->execute([
-            $reconcile_id,
-            $document_type,
-            $fileName,
-            $file['name'],
-            '/uploads/petty_cash_documents/' . $fileName,
-            $mimeType,
-            $file['size'],
-            (int)$_SESSION['user_id'],
-            $document_notes !== '' ? $document_notes : null
-        ]);
-
-        // Audit log
-        logAudit(
-            $pdo,
-            'petty_cash_reconciliation_documents',
-            (int)$pdo->lastInsertId(),
-            'CREATE',
-            "Document uploaded: {$file['name']} ({$document_type})"
-        );
-
-        logRequestTimeline(
-            $pdo,
-            $request_id,
-            'RECONCILIATION_DOCUMENT_UPLOADED',
-            "Supporting document uploaded by Finance: {$file['name']}"
-        );
-
-        pop(
-            "Document uploaded successfully.",
-            "/petty_cash/view.php?request_id={$request_id}",
-            1500,
-            "success"
-        );
-    } else {
-        // If table doesn't exist yet, at least log the upload
-        logRequestTimeline(
-            $pdo,
-            $request_id,
-            'RECONCILIATION_DOCUMENT_UPLOADED',
-            "Document uploaded: {$file['name']} to /uploads/petty_cash_documents/{$fileName}"
-        );
-
-        pop(
-            "Document uploaded successfully.",
-            "/petty_cash/view.php?request_id={$request_id}",
-            1500,
-            "success"
-        );
+    if (!$checkTable->fetchColumn()) {
+        throw new Exception("Supporting document storage is not available.");
     }
 
+    $stored = SecureFileStorage::storeUploadedFile(
+        $file,
+        'petty_cash_documents',
+        $document_type . '_' . $reconcile_id,
+        [
+            'application/pdf' => 'pdf',
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'application/msword' => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+            'application/vnd.ms-excel' => 'xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+        ],
+        50 * 1024 * 1024
+    );
+
+    $insertStmt = $pdo->prepare("
+        INSERT INTO petty_cash_reconciliation_documents
+        (reconcile_id, document_type, file_name, original_file_name, file_path, file_type, file_size, uploaded_by, document_notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+    $insertStmt->execute([
+        $reconcile_id,
+        $document_type,
+        $stored['stored_name'],
+        $stored['original_name'],
+        $stored['storage_path'],
+        $stored['mime_type'],
+        $stored['file_size'],
+        (int)$_SESSION['user_id'],
+        $document_notes !== '' ? $document_notes : null
+    ]);
+
+    logAudit(
+        $pdo,
+        'petty_cash_reconciliation_documents',
+        (int)$pdo->lastInsertId(),
+        'CREATE',
+        "Document uploaded: {$stored['original_name']} ({$document_type})"
+    );
+
+    logRequestTimeline(
+        $pdo,
+        $request_id,
+        'RECONCILIATION_DOCUMENT_UPLOADED',
+        "Supporting document uploaded by Finance: {$stored['original_name']}"
+    );
+
+    pop(
+        "Document uploaded successfully.",
+        "/petty_cash/view.php?request_id={$request_id}",
+        1500,
+        "success"
+    );
+
 } catch (Throwable $e) {
+    if (isset($stored)) {
+        SecureFileStorage::deleteStoredFile($stored['storage_path'], 'petty_cash_documents');
+    }
     error_log("Document upload error: " . $e->getMessage());
     pop(
         "An error occurred while uploading the document. Please try again or contact support.",

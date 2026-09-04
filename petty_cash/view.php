@@ -325,7 +325,7 @@ if (empty($_SESSION['csrf_token'])) {
                           <td><?= date('M d, Y g:i A', strtotime($doc['uploaded_date'])) ?></td>
                           <td><?= htmlspecialchars(substr($doc['document_notes'] ?? '', 0, 50)) ?></td>
                           <td>
-                            <a href="<?= htmlspecialchars($doc['file_path']) ?>" class="btn btn-xs btn-outline-primary" download>
+                            <a href="/petty_cash/download_reconciliation_document.php?id=<?= (int)$doc['id'] ?>&action=download" class="btn btn-xs btn-outline-primary">
                               <i class="bi bi-download"></i> Download
                             </a>
                           </td>
@@ -1096,6 +1096,7 @@ if (empty($_SESSION['csrf_token'])) {
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <form method="post" action="/petty_cash/upload_reconciliation_document.php" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
         <div class="modal-body">
           <p class="text-muted mb-3">Attach supporting documentation such as receipts, invoices, proof of purchase, or change return documentation.</p>
           
