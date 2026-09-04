@@ -2,6 +2,8 @@
 $REQUIRE_PERMISSION = 'upload_rfq_quote';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SecureFileStorage.php';
 
 $vendor_id = (int)($_GET['vendor_id'] ?? 0);
 
@@ -33,6 +35,7 @@ if ($vendor['rfq_status'] === 'AWARDED') {
 $rfq_id = $vendor['rfq_id'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfToken('/rfq/upload_quote.php?vendor_id=' . $vendor_id);
 
     $amount = $_POST['quote_amount'] ?? 0;
     $gct    = $_POST['gct_amount'] ?? 0;
@@ -49,39 +52,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    /* Upload Handling */
-    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . "/uploads/quotes/";
-
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0777, true);
-    }
-
-    $fileName = time() . "_" . basename($_FILES['quote_file']['name']);
-    $targetPath = $uploadDir . $fileName;
-
-    $allowedTypes = [
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-excel',
+    $mimeExtensionMap = [
+        'application/pdf' => 'pdf',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+        'application/vnd.ms-excel' => 'xls',
     ];
-
-    if (!in_array($_FILES['quote_file']['type'], $allowedTypes)) {
-        pop('Only PDF and Excel files are allowed', '/rfq/upload_quote.php?vendor_id='.$vendor_id, POP_DEFAULT_DELAY_MS, 'error');
-        exit;
-    }
-
-    if ($_FILES['quote_file']['size'] > 50 * 1024 * 1024) { // 50 MB
-        pop('File size exceeds 50 MB limit', '/rfq/upload_quote.php?vendor_id='.$vendor_id, POP_DEFAULT_DELAY_MS, 'error');
-        exit;
-    }
-
-    if (!move_uploaded_file($_FILES['quote_file']['tmp_name'], $targetPath)) {
-        pop('Upload failed', '/rfq/upload_quote.php?vendor_id='.$vendor_id, POP_DEFAULT_DELAY_MS, 'error');
-        exit;
-    }
 
     /* Insert Quote */
     try {
+    $stored = SecureFileStorage::storeUploadedFile(
+        $_FILES['quote_file'],
+        'quotes',
+        'RFQ_QUOTE_' . $rfq_id . '_' . $vendor_id,
+        $mimeExtensionMap,
+        50 * 1024 * 1024
+    );
+
     $stmt = $pdo->prepare("
         INSERT INTO rfq_quotes 
         (rfq_vendor_id, quote_amount, gct_amount, validity_days, quote_file, currency, usd_rate)
@@ -91,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $vendor_id,
         $amount,
         $gct,
-        $fileName,
+        $stored['storage_path'],
         $quoteCurrency,
         $quoteUsdRate
     ]);
@@ -143,7 +129,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header("Location: view.php?id=" . $rfq_id);
     exit;
     } catch (Throwable $e) {
-        require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+        if (isset($stored)) {
+            SecureFileStorage::deleteStoredFile($stored['storage_path'], 'quotes');
+        }
         pop(extractDbMessage($e), '/rfq/upload_quote.php?vendor_id=' . $vendor_id, POP_DEFAULT_DELAY_MS, 'error');
         exit;
     }
@@ -193,6 +181,7 @@ $vendorName = htmlspecialchars($vendor['vendor_name'] ?? '');
             </div>
             <div class="card-body px-4 pb-4">
                 <form method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
 
                     <div class="row g-3 mb-3">
                         <div class="col-sm-4">

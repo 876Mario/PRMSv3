@@ -218,7 +218,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         </td>
                                         <td>
                                             <?php if (!empty($quote['quote_file'])): ?>
-                                                <a href="/uploads/quotes/<?= urlencode($quote['quote_file']) ?>" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                <a href="/rfq/download_quote.php?id=<?= (int)$quote['quote_id'] ?>&action=download" target="_blank" class="btn btn-sm btn-outline-primary">
                                                     <i class="bi bi-download"></i>
                                                 </a>
                                             <?php endif; ?>

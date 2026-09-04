@@ -3,11 +3,14 @@ $REQUIRE_PERMISSION = 'create_rfq';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/SecureFileStorage.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     pop('Invalid request', '/rfq/list.php', POP_DEFAULT_DELAY_MS, 'error');
     exit;
 }
+
+requireCsrfToken('/rfq/list.php');
 
 $rfq_id = (int)($_POST['rfq_id'] ?? 0);
 if ($rfq_id <= 0) {
@@ -43,39 +46,21 @@ try {
         throw new Exception("File upload failed. Please try again.");
     }
 
-    $allowedTypes = ['application/pdf', 'application/msword', 
-                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-    
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mimeType = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
-    
-    if (!in_array($mimeType, $allowedTypes)) {
-        throw new Exception("Invalid file type. Only PDF and Word files are allowed.");
-    }
-    
-    if ($file['size'] > 50 * 1024 * 1024) {
-        throw new Exception("File size exceeds 50 MB limit.");
-    }
-    
-    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/rfq_letters/';
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
-    }
-    
-    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $safeFilename = 'RFQ_LETTER_' . time() . '_' . uniqid() . '.' . $ext;
-    $uploadPath = $uploadDir . $safeFilename;
-    
-    if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-        throw new Exception("Failed to save RFQ letter document.");
-    }
-    
-    $documentPath = '/uploads/rfq_letters/' . $safeFilename;
+    $stored = SecureFileStorage::storeUploadedFile(
+        $file,
+        'rfq_letters',
+        'RFQ_LETTER_' . $rfq_id,
+        [
+            'application/pdf' => 'pdf',
+            'application/msword' => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+        ],
+        50 * 1024 * 1024
+    );
     
     // Update RFQ with letter file path
     $stmt = $pdo->prepare("UPDATE rfqs SET rfq_letter_file = ? WHERE rfq_id = ?");
-    $stmt->execute([$documentPath, $rfq_id]);
+    $stmt->execute([$stored['storage_path'], $rfq_id]);
     
     // Log audit
     logAudit($pdo, 'rfqs', $rfq_id, 'UPDATE', 'RFQ letter uploaded');
@@ -84,6 +69,9 @@ try {
     exit;
     
 } catch (Throwable $e) {
+    if (isset($stored)) {
+        SecureFileStorage::deleteStoredFile($stored['storage_path'], 'rfq_letters');
+    }
     pop(extractDbMessage($e), '/rfq/view.php?id='.$rfq_id, 2500, 'error');
     exit;
 }

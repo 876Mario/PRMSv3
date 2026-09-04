@@ -3,6 +3,7 @@ $REQUIRE_PERMISSION = 'view_requests';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
 
 
@@ -307,7 +308,7 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
         <div class="card border-0 shadow-sm rounded-4 h-100" style="border-left:4px solid #0d6efd !important;">
             <div class="card-body py-3 text-center">
                 <div class="text-muted small mb-1">RFQ Letter</div>
-                <a href="<?= htmlspecialchars($rfq['rfq_letter_file']) ?>" target="_blank" class="btn btn-sm btn-outline-primary rounded-pill">
+                <a href="/rfq/download_letter.php?id=<?= (int)$rfq_id ?>&action=view" target="_blank" class="btn btn-sm btn-outline-primary rounded-pill">
                     <i class="bi bi-file-earmark-pdf me-1"></i>View Letter
                 </a>
             </div>
@@ -325,6 +326,7 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
     <div class="card-body">
         <form method="POST" action="/rfq/upload_rfq_letter.php" enctype="multipart/form-data">
             <input type="hidden" name="rfq_id" value="<?= $rfq_id ?>">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <div class="row g-3 align-items-end">
                 <div class="col-md-8">
                     <input type="file" name="rfq_letter" class="form-control" accept=".pdf,.doc,.docx" required>
@@ -470,7 +472,7 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
                                 </td>
                                 <td class="text-center">
                                     <?php if (!empty($quote['quote_file'])): ?>
-                                    <a href="/uploads/quotes/<?= htmlspecialchars($quote['quote_file']) ?>"
+                                    <a href="/rfq/download_quote.php?id=<?= (int)$quote['quote_id'] ?>&action=view"
                                        target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill">
                                         <i class="bi bi-file-earmark-pdf me-1"></i>View
                                     </a>

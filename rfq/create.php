@@ -46,6 +46,7 @@ if ($stmt->fetch()) {
 /* Handle POST (create RFQ with date and deadline) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
+        requireCsrfToken('/rfq/create.php?request_id=' . $request_id);
         $rfqDate = trim($_POST['rfq_date'] ?? '');
         $submissionDeadline = trim($_POST['submission_deadline'] ?? '');
         
@@ -77,36 +78,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Handle RFQ letter upload (optional)
         $rfqLetterPath = null;
         if (isset($_FILES['rfq_letter']) && $_FILES['rfq_letter']['error'] === UPLOAD_ERR_OK) {
-            $file = $_FILES['rfq_letter'];
-            $allowedTypes = ['application/pdf', 'application/msword', 
-                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-            
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mimeType = finfo_file($finfo, $file['tmp_name']);
-            finfo_close($finfo);
-            
-            if (!in_array($mimeType, $allowedTypes)) {
-                throw new Exception("Invalid file type. Only PDF and Word files are allowed for RFQ letter.");
-            }
-            
-            if ($file['size'] > 50 * 1024 * 1024) {
-                throw new Exception("File size exceeds 50 MB limit.");
-            }
-            
-            $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/rfq_letters/';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
-            
-            $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $safeFilename = 'RFQ_LETTER_' . time() . '_' . uniqid() . '.' . $ext;
-            $uploadPath = $uploadDir . $safeFilename;
-            
-            if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
-                throw new Exception("Failed to save RFQ letter document.");
-            }
-            
-            $rfqLetterPath = '/uploads/rfq_letters/' . $safeFilename;
+            $storedLetter = SecureFileStorage::storeUploadedFile(
+                $_FILES['rfq_letter'],
+                'rfq_letters',
+                'RFQ_LETTER_' . $request_id,
+                [
+                    'application/pdf' => 'pdf',
+                    'application/msword' => 'doc',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                ],
+                50 * 1024 * 1024
+            );
+            $rfqLetterPath = $storedLetter['storage_path'];
         }
 
         /* Generate RFQ Number */
@@ -138,6 +121,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
         
     } catch (Throwable $e) {
+        if (isset($storedLetter)) {
+            SecureFileStorage::deleteStoredFile($storedLetter['storage_path'], 'rfq_letters');
+        }
         $error = extractDbMessage($e);
     }
 }
@@ -159,6 +145,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <?php endif; ?>
                     
                     <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                         <div class="mb-4">
                             <label for="rfq_date" class="form-label fw-bold">
                                 <i class="bi bi-calendar-event"></i>
