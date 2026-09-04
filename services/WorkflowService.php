@@ -406,13 +406,14 @@ class WorkflowService
         }
 
         $this->pdo->beginTransaction();
+        $currentTimestampSql = $this->currentTimestampSql();
 
         try {
             // Update request status
             $stmt = $this->pdo->prepare("
                 UPDATE procurement_requests
                 SET status = ?,
-                    updated_at = NOW()
+                    updated_at = {$currentTimestampSql}
                 WHERE request_id = ?
             ");
             $stmt->execute([$targetStatus, $requestId]);
@@ -446,18 +447,6 @@ class WorkflowService
                         $reqDetails['branch_id']
                     );
                 }
-
-                private function shouldRebuildApprovalChainOnRevert(string $requestType, string $targetStatus): bool
-                {
-                    $requestType = strtoupper($requestType);
-                    $targetStatus = strtoupper($targetStatus);
-
-                    return match ($requestType) {
-                        'PETTY_CASH', 'REIMBURSEMENT' => $targetStatus === 'SUBMITTED',
-                        'REGULAR', 'SERVICE_CONTRACT' => in_array($targetStatus, ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'], true),
-                        default => false,
-                    };
-                }
             }
 
             // Create audit log entries
@@ -472,7 +461,7 @@ class WorkflowService
                 $stmt = $this->pdo->prepare("
                     INSERT INTO workflow_transition_history
                       (request_id, from_status, to_status, is_backward, actor_user_id, actor_role, reason, created_at)
-                    VALUES (?, ?, ?, 1, ?, ?, ?, NOW())
+                    VALUES (?, ?, ?, 1, ?, ?, ?, {$currentTimestampSql})
                 ");
                 $stmt->execute([$requestId, $currentStatus, $targetStatus, $userId, $userRole, $reason]);
             } catch (Throwable $e) {
@@ -488,5 +477,24 @@ class WorkflowService
             }
             throw $e;
         }
+    }
+
+    private function shouldRebuildApprovalChainOnRevert(string $requestType, string $targetStatus): bool
+    {
+        $requestType = strtoupper($requestType);
+        $targetStatus = strtoupper($targetStatus);
+
+        return match ($requestType) {
+            'PETTY_CASH', 'REIMBURSEMENT' => $targetStatus === 'SUBMITTED',
+            'REGULAR', 'SERVICE_CONTRACT' => in_array($targetStatus, ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED'], true),
+            default => false,
+        };
+    }
+
+    private function currentTimestampSql(): string
+    {
+        return $this->pdo?->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite'
+            ? 'CURRENT_TIMESTAMP'
+            : 'NOW()';
     }
 }

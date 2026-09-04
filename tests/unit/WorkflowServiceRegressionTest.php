@@ -27,6 +27,18 @@ final class WorkflowServiceRegressionTest extends PHPUnit\Framework\TestCase
         $pdo = new PDO('sqlite::memory:');
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->exec("CREATE TABLE procurement_requests (request_id INTEGER PRIMARY KEY, request_type TEXT, estimated_value REAL, branch_id INTEGER, status TEXT, updated_at TEXT)");
+        $pdo->exec("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, record_id INTEGER, action TEXT, notes TEXT, changed_by TEXT)");
+        $pdo->exec("CREATE TABLE workflow_transition_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id INTEGER,
+            from_status TEXT,
+            to_status TEXT,
+            is_backward INTEGER,
+            actor_user_id INTEGER,
+            actor_role TEXT,
+            reason TEXT,
+            created_at TEXT
+        )");
         $pdo->exec("CREATE TABLE request_approvals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             request_id INTEGER,
