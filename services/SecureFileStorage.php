@@ -148,11 +148,13 @@ class SecureFileStorage
 
         $safeMime = self::sanitizeMimeType($mimeType);
         $safeName = self::sanitizeDownloadFilename($downloadName);
+        $asciiFallback = preg_replace('/[^A-Za-z0-9._-]/', '_', $safeName) ?: 'download';
+        $encodedName = rawurlencode($safeName);
         $disposition = ($action === 'view' && self::isInlineMimeType($safeMime)) ? 'inline' : 'attachment';
 
         header('Content-Type: ' . $safeMime);
         header('Content-Length: ' . (string)filesize($absolutePath));
-        header('Content-Disposition: ' . $disposition . '; filename="' . addslashes($safeName) . '"');
+        header("Content-Disposition: {$disposition}; filename=\"{$asciiFallback}\"; filename*=UTF-8''{$encodedName}");
         header('Cache-Control: private, no-cache, no-store, must-revalidate');
         header('Pragma: no-cache');
         header('Expires: 0');

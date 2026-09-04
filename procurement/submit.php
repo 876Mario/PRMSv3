@@ -71,6 +71,8 @@ try {
     ");
     $update->execute([$request_id]);
 
+    $pdo->prepare("DELETE FROM request_approvals WHERE request_id = ?")->execute([$request_id]);
+
     logAudit(
         $pdo,
         'procurement_requests',
@@ -186,5 +188,4 @@ pop(
     1500,
     "success"
 );
-
 

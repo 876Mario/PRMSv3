@@ -49,11 +49,21 @@ try {
         (string)$contract['document_path'],
         'contracts'
     );
+    $extensionMap = [
+        'application/pdf' => 'pdf',
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/gif' => 'gif',
+        'application/msword' => 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+    ];
+    $downloadName = trim((string)($contract['contract_number'] ?? 'contract-document'));
+    $downloadName .= isset($extensionMap[$mimeType]) ? '.' . $extensionMap[$mimeType] : '';
 
     SecureFileStorage::streamStoredFile(
         (string)$contract['document_path'],
         $mimeType,
-        (string)(basename((string)$contract['document_path']) ?: 'contract-document'),
+        $downloadName,
         $action,
         'contracts'
     );
