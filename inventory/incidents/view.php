@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'manage_incidents';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_compliance_setup.php';
 
 $incidentId = (int) ($_GET['id'] ?? 0);
@@ -35,6 +36,7 @@ $users = $pdo->query("SELECT user_id, full_name FROM users WHERE status = 'activ
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     try {
+        requireCsrfToken('/inventory/incidents/view.php?id=' . $incidentId);
         $pdo->beginTransaction();
 
         if ($action === 'start_investigation' && $incident['status'] === 'REPORTED') {
@@ -70,14 +72,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $adjLine = $pdo->prepare("INSERT INTO inv_adjustment_items (adjustment_id, item_id, system_quantity, physical_quantity, variance_quantity, unit_cost) VALUES (?,?,?,?,?,?)");
                 foreach ($lineItems as $li) {
                     $systemQty = InventoryService::getStockLevel($pdo, $li['item_id'], $incident['location_id']);
+                    if ((float) $li['quantity_lost'] > $systemQty + 0.0001) {
+                        throw new Exception("Incident loss quantity cannot exceed current stock on hand for item {$li['item_code']}.");
+                    }
                     $physQty = $systemQty - $li['quantity_lost'];
                     $variance = -$li['quantity_lost'];
                     $adjLine->execute([$adjustmentId, $li['item_id'], $systemQty, max(0, $physQty), $variance, $li['unit_cost']]);
 
                     // Deduct stock
-                    InventoryService::updateStockLevel($pdo, $li['item_id'], $incident['location_id'], -$li['quantity_lost']);
-                    InventoryService::recordTransaction($pdo, $li['item_id'], $incident['location_id'], 'ADJUSTMENT', -$li['quantity_lost'],
-                        "Incident loss: {$incident['incident_number']}", $_SESSION['user_id'], $adjNumber);
+                    InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $incident['location_id'], (float) $li['quantity_lost'], 'subtract');
+                    InventoryService::recordTransaction($pdo, (int) $li['item_id'], (int) $incident['location_id'], 'ADJUSTMENT_OUT', (float) $li['quantity_lost'],
+                        $adjustmentId, 'inv_adjustments', "Incident loss: {$incident['incident_number']}", $_SESSION['user_id'],
+                        $li['batch_lot_number'] ?? null, null, $li['serial_number'] ?? null, null);
                 }
             }
 
@@ -157,6 +163,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
             <div class="card-body">
                 <h6>Assign Investigator</h6>
                 <form method="POST">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                     <select name="investigator_id" class="form-select mb-2" required>
                         <option value="">Select investigator...</option>
                         <?php foreach ($users as $u): ?>
@@ -174,6 +181,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
             <div class="card-body">
                 <h6>Update Investigation</h6>
                 <form method="POST">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                     <div class="mb-2">
                         <textarea name="investigation_notes" class="form-control" rows="3" placeholder="Investigation notes..."><?= htmlspecialchars($incident['investigation_notes'] ?? '') ?></textarea>
                     </div>
@@ -183,6 +191,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
                     <button type="submit" name="action" value="update_investigation" class="btn btn-info w-100 mb-2"><i class="bi bi-save"></i> Save Notes</button>
                 </form>
                 <form method="POST">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
                     <button type="submit" name="action" value="resolve" class="btn btn-success w-100"
                             onclick="return confirm('Resolve incident? Stock adjustments will be created for lost items.')">
                         <i class="bi bi-check-circle"></i> Resolve &amp; Create Adjustment
@@ -194,6 +203,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if ($incident['status'] === 'RESOLVED'): ?>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="close" class="btn btn-dark w-100 btn-lg"><i class="bi bi-lock"></i> Close Incident</button>
         </form>
         <?php endif; ?>

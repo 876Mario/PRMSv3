@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'manage_returns';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_compliance_setup.php';
 
 $returnId = (int) ($_GET['id'] ?? 0);
@@ -32,6 +33,7 @@ $lineItems = $lineItems->fetchAll(PDO::FETCH_ASSOC);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     try {
+        requireCsrfToken('/inventory/returns/view.php?id=' . $returnId);
         $pdo->beginTransaction();
 
         if ($action === 'submit' && $return['status'] === 'DRAFT') {
@@ -61,9 +63,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Deduct stock for each line item
             foreach ($lineItems as $li) {
                 if ($return['from_location_id']) {
-                    InventoryService::updateStockLevel($pdo, $li['item_id'], $return['from_location_id'], -$li['quantity']);
-                    InventoryService::recordTransaction($pdo, $li['item_id'], $return['from_location_id'], 'RETURN_TO_SUPPLIER', -$li['quantity'],
-                        "Return {$return['return_number']}: {$return['return_type']}", $_SESSION['user_id'], $return['return_number']);
+                    InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $return['from_location_id'], (float) $li['quantity'], 'subtract');
+                    InventoryService::recordTransaction($pdo, (int) $li['item_id'], (int) $return['from_location_id'], 'RETURN_TO_SUPPLIER', (float) $li['quantity'],
+                        $returnId, 'inv_returns', "Return {$return['return_number']}: {$return['return_type']}", $_SESSION['user_id'],
+                        $li['batch_lot_number'] ?? null, null, $li['serial_number'] ?? null, null);
                 }
             }
             $pdo->prepare("UPDATE inv_returns SET status = 'DISPATCHED', dispatched_at = NOW() WHERE return_id = ?")->execute([$returnId]);
@@ -130,15 +133,18 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="col-md-4">
         <?php if ($return['status'] === 'DRAFT'): ?>
         <form method="POST" class="mb-2">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="submit" class="btn btn-warning w-100 btn-lg"><i class="bi bi-send"></i> Submit for Approval</button>
         </form>
         <?php endif; ?>
 
         <?php if ($return['status'] === 'PENDING_APPROVAL'): ?>
         <form method="POST" class="mb-2">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="approve" class="btn btn-success w-100 btn-lg"><i class="bi bi-check-circle"></i> Approve</button>
         </form>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <div class="mb-2"><input type="text" name="rejection_reason" class="form-control" placeholder="Rejection reason..."></div>
             <button type="submit" name="action" value="reject" class="btn btn-danger w-100"><i class="bi bi-x-circle"></i> Reject</button>
         </form>
@@ -146,6 +152,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if ($return['status'] === 'APPROVED'): ?>
         <form method="POST" class="mb-2">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="dispatch" class="btn btn-primary w-100 btn-lg"
                     onclick="return confirm('Dispatch return? Stock will be deducted.')">
                 <i class="bi bi-truck"></i> Dispatch to Supplier
@@ -155,6 +162,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if ($return['status'] === 'DISPATCHED'): ?>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="complete" class="btn btn-success w-100 btn-lg"><i class="bi bi-check2-all"></i> Mark Completed</button>
         </form>
         <?php endif; ?>

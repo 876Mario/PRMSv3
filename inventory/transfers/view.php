@@ -2,6 +2,7 @@
 $REQUIRE_PERMISSION = 'transfer_stock';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
 require_once __DIR__ . '/../check_setup.php';
 
 $transferId = (int) ($_GET['id'] ?? 0);
@@ -36,9 +37,10 @@ $lineItems = $lineItems->fetchAll(PDO::FETCH_ASSOC);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     try {
+        requireCsrfToken('/inventory/transfers/view.php?id=' . $transferId);
         $pdo->beginTransaction();
 
-        if ($action === 'approve' && has_permission('approve_transfer')) {
+        if ($action === 'approve' && has_permission('approve_transfer') && $transfer['status'] === 'PENDING_APPROVAL') {
             if ($_SESSION['user_id'] == $transfer['requested_by']) {
                 throw new Exception("Cannot approve your own transfer (segregation of duties).");
             }
@@ -50,17 +52,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 lockDocumentByReference($pdo, 'inv_transfers', $transferId);
                 logInventoryAudit($pdo, 'inv_transfers', $transferId, 'APPROVED', "Transfer approved — awaiting Financial Secretary approval");
             } else {
+                foreach ($lineItems as $li) {
+                    reserveStock($pdo, (int) $li['item_id'], (int) $transfer['source_location_id'], (float) $li['quantity']);
+                }
+
                 $pdo->prepare("UPDATE inv_transfers SET status = 'APPROVED', approved_by = ?, approved_at = NOW() WHERE transfer_id = ?")
                     ->execute([$_SESSION['user_id'], $transferId]);
                 lockDocumentByReference($pdo, 'inv_transfers', $transferId);
-                logInventoryAudit($pdo, 'inv_transfers', $transferId, 'APPROVED', "Transfer approved");
+                logInventoryAudit($pdo, 'inv_transfers', $transferId, 'APPROVED', "Transfer approved and stock reserved");
             }
 
         } elseif ($action === 'fs_approve' && $transfer['status'] === 'PENDING_FS_APPROVAL') {
             // Financial Secretary approval for inter-MDA transfers
+            foreach ($lineItems as $li) {
+                reserveStock($pdo, (int) $li['item_id'], (int) $transfer['source_location_id'], (float) $li['quantity']);
+            }
+
             $pdo->prepare("UPDATE inv_transfers SET financial_secretary_approval = 1, fs_approved_by = ?, fs_approved_at = NOW(), status = 'APPROVED' WHERE transfer_id = ?")
                 ->execute([$_SESSION['user_id'], $transferId]);
-            logInventoryAudit($pdo, 'inv_transfers', $transferId, 'FS_APPROVED', "Financial Secretary approval granted");
+            logInventoryAudit($pdo, 'inv_transfers', $transferId, 'FS_APPROVED', "Financial Secretary approval granted and stock reserved");
 
         } elseif ($action === 'dispatch' && $transfer['status'] === 'APPROVED') {
             // Enforce period and freeze controls
@@ -69,7 +79,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Deduct stock from source
             foreach ($lineItems as $li) {
-                InventoryService::updateStockLevel($pdo, $li['item_id'], $transfer['source_location_id'], $li['quantity'], 'subtract');
+                $reservedQtyStmt = $pdo->prepare("
+                    SELECT COALESCE(SUM(quantity_reserved), 0)
+                    FROM inv_stock
+                    WHERE item_id = ? AND location_id = ? AND stock_status = 'USABLE'
+                ");
+                $reservedQtyStmt->execute([(int) $li['item_id'], (int) $transfer['source_location_id']]);
+                $reservedQty = (float) $reservedQtyStmt->fetchColumn();
+
+                if ($reservedQty + 0.0001 >= (float) $li['quantity']) {
+                    consumeReservedStock($pdo, (int) $li['item_id'], (int) $transfer['source_location_id'], (float) $li['quantity']);
+                } else {
+                    InventoryService::updateStockLevel($pdo, (int) $li['item_id'], (int) $transfer['source_location_id'], (float) $li['quantity'], 'subtract');
+                }
                 InventoryService::recordTransaction($pdo, $li['item_id'], $transfer['source_location_id'], 'TRANSFER_OUT', $li['quantity'],
                     $transferId, 'inv_transfers', "Transfer to " . $transfer['to_loc'], $_SESSION['user_id'],
                     $li['batch_lot_number'], null, $li['serial_number'], null);
@@ -79,9 +101,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             logInventoryAudit($pdo, 'inv_transfers', $transferId, 'DISPATCHED', "Stock dispatched");
 
         } elseif ($action === 'receive' && $transfer['status'] === 'IN_TRANSIT') {
+            requireOpenPeriod($pdo);
+            requireLocationNotFrozen($pdo, $transfer['destination_location_id']);
+
             // Add stock to destination
-            foreach ($lineItems as $idx => $li) {
+            foreach ($lineItems as $li) {
                 $qtyReceived = (float) ($_POST['qty_received'][$li['transfer_item_id']] ?? $li['quantity']);
+                if ($qtyReceived < 0) {
+                    throw new Exception("Received quantity cannot be negative.");
+                }
+                if ($qtyReceived > (float) $li['quantity']) {
+                    throw new Exception("Received quantity cannot exceed the dispatched quantity.");
+                }
                 $pdo->prepare("UPDATE inv_transfer_items SET quantity_received = ? WHERE transfer_item_id = ?")
                     ->execute([$qtyReceived, $li['transfer_item_id']]);
 
@@ -96,12 +127,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute([$transferId]);
             logInventoryAudit($pdo, 'inv_transfers', $transferId, 'COMPLETED', "Transfer received");
 
-        } elseif ($action === 'reject' && has_permission('approve_transfer')) {
+        } elseif ($action === 'reject' && has_permission('approve_transfer') && in_array($transfer['status'], ['PENDING_APPROVAL', 'PENDING_FS_APPROVAL'], true)) {
             $reason = trim($_POST['rejection_reason'] ?? '');
             if (empty($reason)) throw new Exception("Rejection reason is required.");
             $pdo->prepare("UPDATE inv_transfers SET status = 'CANCELLED', notes = CONCAT(IFNULL(notes,''), '\nRejected: ', ?) WHERE transfer_id = ?")
                 ->execute([$reason, $transferId]);
             logInventoryAudit($pdo, 'inv_transfers', $transferId, 'REJECTED', "Rejected: $reason");
+        } else {
+            throw new Exception("Invalid action for current status.");
         }
 
         $pdo->commit();
@@ -157,6 +190,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="col-md-4">
         <?php if ($transfer['status'] === 'PENDING_APPROVAL' && has_permission('approve_transfer')): ?>
         <form method="POST" class="mb-2">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="approve" class="btn btn-success w-100 btn-lg mb-2">
                 <i class="bi bi-check-circle"></i> Approve Transfer
             </button>
@@ -172,6 +206,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
             <i class="bi bi-exclamation-triangle"></i> <strong>Inter-MDA Transfer</strong> — Requires Financial Secretary approval per GoJ Financial Instructions.
         </div>
         <form method="POST" class="mb-2">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="fs_approve" class="btn btn-warning w-100 btn-lg mb-2">
                 <i class="bi bi-shield-check"></i> Financial Secretary Approval
             </button>
@@ -184,6 +219,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if ($transfer['status'] === 'APPROVED'): ?>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <button type="submit" name="action" value="dispatch" class="btn btn-primary w-100 btn-lg">
                 <i class="bi bi-truck"></i> Dispatch Stock
             </button>
@@ -192,6 +228,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 
         <?php if ($transfer['status'] === 'IN_TRANSIT'): ?>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(ensureCsrfToken()) ?>">
             <p class="text-muted small">Confirm quantities received:</p>
             <?php foreach ($lineItems as $li): ?>
             <div class="input-group mb-2">
