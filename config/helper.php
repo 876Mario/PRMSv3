@@ -92,13 +92,18 @@ function require_valid_id(string $key, string $redirect): int
 
 function generateRequestNumber(PDO $pdo): string
 {
-    $last = $pdo->query("
+    $query = "
         SELECT request_number
         FROM procurement_requests
         WHERE request_number LIKE 'PR%'
         ORDER BY request_id DESC
         LIMIT 1
-    ")->fetchColumn();
+    ";
+    if ($pdo->inTransaction()) {
+        $query .= " FOR UPDATE";
+    }
+
+    $last = $pdo->query($query)->fetchColumn();
 
     return $last
         ? 'PR' . str_pad(((int)substr($last, 2)) + 1, 3, '0', STR_PAD_LEFT)
@@ -107,13 +112,18 @@ function generateRequestNumber(PDO $pdo): string
 
 function generateCommitmentNumber(PDO $pdo): string
 {
-    $last = $pdo->query("
+    $query = "
         SELECT commitment_number
         FROM commitments
         WHERE commitment_number LIKE 'CM%'
         ORDER BY commitment_id DESC
         LIMIT 1
-    ")->fetchColumn();
+    ";
+    if ($pdo->inTransaction()) {
+        $query .= " FOR UPDATE";
+    }
+
+    $last = $pdo->query($query)->fetchColumn();
 
     return $last
         ? 'CM' . str_pad(((int)substr($last, 2)) + 1, 3, '0', STR_PAD_LEFT)
@@ -122,13 +132,18 @@ function generateCommitmentNumber(PDO $pdo): string
 
 function generatePONumber(PDO $pdo): string
 {
-    $last = $pdo->query("
+    $query = "
         SELECT po_number
         FROM purchase_orders
         WHERE po_number LIKE 'PO%'
         ORDER BY po_id DESC
         LIMIT 1
-    ")->fetchColumn();
+    ";
+    if ($pdo->inTransaction()) {
+        $query .= " FOR UPDATE";
+    }
+
+    $last = $pdo->query($query)->fetchColumn();
 
     return $last
         ? 'PO' . str_pad(((int)substr($last, 2)) + 1, 3, '0', STR_PAD_LEFT)

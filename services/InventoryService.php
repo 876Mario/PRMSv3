@@ -50,12 +50,17 @@ function inventoryComplianceTablesExist(PDO $pdo): bool
 
 function generateInventoryNumber(PDO $pdo, string $prefix, string $table, string $column): string
 {
-    $stmt = $pdo->prepare("
+    $sql = "
         SELECT $column FROM $table
         WHERE $column LIKE :prefix
         ORDER BY LENGTH($column) DESC, $column DESC
         LIMIT 1
-    ");
+    ";
+    if ($pdo->inTransaction()) {
+        $sql .= " FOR UPDATE";
+    }
+
+    $stmt = $pdo->prepare($sql);
     $stmt->execute([':prefix' => $prefix . '%']);
     $last = $stmt->fetchColumn();
 

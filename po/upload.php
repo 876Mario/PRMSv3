@@ -3,6 +3,29 @@ $REQUIRE_PERMISSION = 'upload_purchase_order';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/services/SecureFileStorage.php";
+
+function generateYearlyUploadedPONumber(PDO $pdo): string
+{
+    $year = date('Y');
+    $sql = "
+        SELECT po_number
+        FROM purchase_orders
+        WHERE po_number LIKE ?
+        ORDER BY po_id DESC
+        LIMIT 1
+    ";
+    if ($pdo->inTransaction()) {
+        $sql .= " FOR UPDATE";
+    }
+
+    $seqStmt = $pdo->prepare($sql);
+    $seqStmt->execute(["PO-$year-%"]);
+    $lastPo = $seqStmt->fetchColumn();
+    $nextNumber = $lastPo ? (int)substr((string)$lastPo, -4) + 1 : 1;
+
+    return sprintf("PO-%s-%04d", $year, $nextNumber);
+}
 
 /* ================================
    Validate commitment_id
@@ -66,15 +89,7 @@ if (!$commitment) {
 $currency = 'JMD'; // Commitments/POs are always stored in JMD
 $request_id = (int)$commitment['request_id'];
 
-/* ================================
-   Generate PO Number
-================================ */
-$year = date('Y');
-$seqStmt = $pdo->prepare("SELECT po_number FROM purchase_orders WHERE po_number LIKE ? ORDER BY po_id DESC LIMIT 1");
-$seqStmt->execute(["PO-$year-%"]);
-$lastPo = $seqStmt->fetchColumn();
-$nextNumber = $lastPo ? (int)substr($lastPo, -4) + 1 : 1;
-$po_number = sprintf("PO-%s-%04d", $year, $nextNumber);
+$po_number = generateYearlyUploadedPONumber($pdo);
 
 /* ================================
    Handle POST - Upload PO
@@ -136,6 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $uploadedDocumentPath = $storedFile['storage_path'];
 
         $pdo->beginTransaction();
+        $po_number = generateYearlyUploadedPONumber($pdo);
 
         // Check duplicate
         $check = $pdo->prepare("SELECT po_id FROM purchase_orders WHERE commitment_id = ?");
