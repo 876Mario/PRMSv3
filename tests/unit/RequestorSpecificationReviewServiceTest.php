@@ -92,6 +92,36 @@ class RequestorSpecificationReviewServiceTest extends PHPUnit\Framework\TestCase
         $service->decideBranchHeadApproval(2, 'APPROVE', 'Approved', 2001, false);
     }
 
+    public function testPendingBranchHeadApprovalsAreScopedToAuthorizedBranchHead(): void
+    {
+        $_SESSION = ['user_id' => 30, 'role_name' => 'HOD', 'full_name' => 'Helen HOD', '_granted_permissions' => []];
+        $service = new RFQQuoteApprovalService($this->pdo, 30, 'HOD');
+
+        $rows = $service->getPendingBranchHeadApprovals();
+
+        $this->assertCount(1, $rows);
+        $this->assertSame(2, (int) $rows[0]['rfq_id']);
+    }
+
+    public function testPendingBranchHeadApprovalsAreHiddenFromUnauthorizedUser(): void
+    {
+        $_SESSION = ['user_id' => 20, 'role_name' => 'Procurement Officer', 'full_name' => 'Peter Procurement', '_granted_permissions' => []];
+        $service = new RFQQuoteApprovalService($this->pdo, 20, 'Procurement Officer');
+
+        $this->assertSame([], $service->getPendingBranchHeadApprovals());
+    }
+
+    public function testPendingBranchHeadApprovalsAreVisibleToOverrideUser(): void
+    {
+        $_SESSION = ['user_id' => 40, 'role_name' => 'Admin', 'full_name' => 'Ada Admin', '_granted_permissions' => ['override_branch_head_approval']];
+        $service = new RFQQuoteApprovalService($this->pdo, 40, 'Admin');
+
+        $rows = $service->getPendingBranchHeadApprovals();
+
+        $this->assertCount(1, $rows);
+        $this->assertSame(2, (int) $rows[0]['rfq_id']);
+    }
+
     private function createSchema(): void
     {
         $this->pdo->exec("CREATE TABLE roles (id INTEGER PRIMARY KEY, name TEXT NOT NULL)");

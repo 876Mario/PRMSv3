@@ -895,7 +895,15 @@ $csrfToken = ensureCsrfToken();
   let onConfirm = null;
 
   function createActionToken(prefix, requestType, requestId) {
-    return [prefix, requestType, requestId, Date.now(), Math.random().toString(36).slice(2, 10)].join('-');
+    const randomPart = (() => {
+      if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(8);
+        window.crypto.getRandomValues(bytes);
+        return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+      }
+      return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+    })();
+    return [prefix, requestType, requestId, Date.now(), randomPart].join('-');
   }
 
   function postPrintNoticeEvent(payload) {

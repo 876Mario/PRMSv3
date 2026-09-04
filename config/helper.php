@@ -315,7 +315,15 @@ function previewServiceContractNumber(PDO $pdo): string
         return 'SC' . str_pad((string) peekSequenceValue($pdo, 'service_contract_number', 1), 4, '0', STR_PAD_LEFT);
     }
 
-    $nextNum = (int) $pdo->query("SELECT COUNT(*) + 1 FROM service_contracts")->fetchColumn();
+    $query = "
+        SELECT contract_number
+        FROM service_contracts
+        WHERE contract_number LIKE 'SC%'
+        ORDER BY contract_id DESC
+        LIMIT 1
+    ";
+    $last = $pdo->query($query)->fetchColumn();
+    $nextNum = $last ? ((int) substr((string) $last, 2)) + 1 : 1;
     return 'SC' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
 }
 
@@ -325,7 +333,18 @@ function generateServiceContractNumber(PDO $pdo): string
         return 'SC' . str_pad((string) nextSequenceValue($pdo, 'service_contract_number', 1), 4, '0', STR_PAD_LEFT);
     }
 
-    $nextNum = (int) $pdo->query("SELECT COUNT(*) + 1 FROM service_contracts")->fetchColumn();
+    $query = "
+        SELECT contract_number
+        FROM service_contracts
+        WHERE contract_number LIKE 'SC%'
+        ORDER BY contract_id DESC
+        LIMIT 1
+    ";
+    if (dbSupportsSelectForUpdate($pdo)) {
+        $query .= " FOR UPDATE";
+    }
+    $last = $pdo->query($query)->fetchColumn();
+    $nextNum = $last ? ((int) substr((string) $last, 2)) + 1 : 1;
     return 'SC' . str_pad((string) $nextNum, 4, '0', STR_PAD_LEFT);
 }
 
