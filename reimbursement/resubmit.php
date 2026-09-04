@@ -4,7 +4,10 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 
-$id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+requirePostRequest('/reimbursement/list.php');
+requireCsrfToken('/reimbursement/list.php');
+
+$id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 
 try {
     if ($id <= 0) {
@@ -37,7 +40,17 @@ try {
 
     $pdo->beginTransaction();
 
-    $pdo->prepare("DELETE FROM request_approvals WHERE request_id = ?")->execute([$id]);
+    $pdo->prepare("
+        UPDATE request_approvals
+        SET status = CASE WHEN status = 'pending' THEN 'rejected' ELSE status END,
+            comments = CASE
+                WHEN status = 'pending' THEN CONCAT(COALESCE(NULLIF(comments, ''), 'No comments'), ' [Workflow reset after decline resubmission]')
+                ELSE comments
+            END,
+            approved_by = CASE WHEN status = 'pending' THEN COALESCE(approved_by, ?) ELSE approved_by END,
+            approved_at = CASE WHEN status = 'pending' THEN COALESCE(approved_at, NOW()) ELSE approved_at END
+        WHERE request_id = ?
+    ")->execute([$_SESSION['user_id'], $id]);
 
     $pdo->prepare("
         UPDATE procurement_requests

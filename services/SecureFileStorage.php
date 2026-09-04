@@ -97,7 +97,16 @@ class SecureFileStorage
                 return null;
             }
 
-            $root = realpath(self::getPrivateStorageRoot());
+            $root = rtrim(self::getPrivateStorageRoot(), '/');
+            if ($root === '') {
+                return null;
+            }
+
+            if (!is_dir($root) && !mkdir($root, 0750, true) && !is_dir($root)) {
+                return null;
+            }
+
+            $root = realpath($root);
             if ($root === false) {
                 return null;
             }

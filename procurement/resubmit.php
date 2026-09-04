@@ -4,7 +4,10 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 
-$id = $_GET['id'] ?? null;
+requirePostRequest('/procurement/list.php');
+requireCsrfToken('/procurement/list.php');
+
+$id = $_POST['request_id'] ?? null;
 
 try {
     if (!$id || !is_numeric($id)) {
@@ -33,26 +36,30 @@ try {
         throw new Exception("Only declined requests can be resubmitted.");
     }
 
-    // Start transaction
     $pdo->beginTransaction();
 
-    // Clean up old approval chain entries from the declined submission
     $pdo->prepare("
-        DELETE FROM request_approvals
+        UPDATE request_approvals
+        SET status = CASE WHEN status = 'pending' THEN 'rejected' ELSE status END,
+            comments = CASE
+                WHEN status = 'pending' THEN CONCAT(COALESCE(NULLIF(comments, ''), 'No comments'), ' [Workflow reset after decline resubmission]')
+                ELSE comments
+            END,
+            approved_by = CASE WHEN status = 'pending' THEN COALESCE(approved_by, ?) ELSE approved_by END,
+            approved_at = CASE WHEN status = 'pending' THEN COALESCE(approved_at, NOW()) ELSE approved_at END
         WHERE request_id = ?
-    ")->execute([$id]);
+    ")->execute([$_SESSION['user_id'], $id]);
 
-    // Reset request to DRAFT status and clear decline reason
     $pdo->prepare("
         UPDATE procurement_requests
         SET status = 'DRAFT',
             approved_by = NULL,
             approved_at = NULL,
-            decline_reason = NULL
+            decline_reason = NULL,
+            updated_at = NOW()
         WHERE request_id = ?
     ")->execute([$id]);
 
-    // Audit log for resubmission reset
     logAudit(
         $pdo,
         'procurement_requests',
@@ -70,7 +77,6 @@ try {
 
     $pdo->commit();
 
-    // Notify the approver that a declined request has been resubmitted
     require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
     notifyRequestResubmitted($id);
 

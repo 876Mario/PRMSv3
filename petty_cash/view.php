@@ -634,7 +634,7 @@ if (empty($_SESSION['csrf_token'])) {
           $isRequestor = (int)($_SESSION['user_id'] ?? 0) === (int)$request['created_by'];
           
           // Finance approval at submission stage
-          $canApprove = in_array($request['status'], ['SUBMITTED', 'HOD_APPROVED'], true) && $isFinanceOfficer;
+          $canApprove = $request['status'] === 'SUBMITTED' && $isFinanceOfficer;
           
           // Finance disbursement at FUNDS_VERIFIED or FINANCE_AUTHORIZED
           $canDisburse = in_array($request['status'], ['FUNDS_VERIFIED', 'FINANCE_AUTHORIZED']) && $isFinanceOfficer && $disbursement;

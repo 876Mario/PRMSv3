@@ -1469,10 +1469,13 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                             $resubmitUrl = '/petty_cash/resubmit.php';
                         }
                         ?>
-                        <a href="<?= $resubmitUrl ?>?id=<?= (int)$request['request_id'] ?>"
-                           class="btn btn-warning" onclick="return confirm('Resubmit this request for approval?')">
-                            <i class="bi bi-arrow-repeat me-1"></i>Resubmit Request
-                        </a>
+                        <form method="post" action="<?= $resubmitUrl ?>" class="d-inline">
+                            <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                            <button type="submit" class="btn btn-warning" onclick="return confirm('Resubmit this request for approval?')">
+                                <i class="bi bi-arrow-repeat me-1"></i>Resubmit Request
+                            </button>
+                        </form>
                     <?php endif; ?>
                 </div>
             </div>

@@ -616,7 +616,7 @@ if (empty($_SESSION['csrf_token'])) {
           <?php 
           // Finance approval actions
           $isFinanceOfficer = ($_SESSION['role_name'] ?? '') === 'Finance Officer';
-          $canApprove = in_array($request['status'], ['SUBMITTED', 'HOD_APPROVED'], true) && $isFinanceOfficer;
+          $canApprove = $request['status'] === 'SUBMITTED' && $isFinanceOfficer;
           // Final approval once the invoice has cleared verification (or the
           // request bypassed the invoice stages while funds were verified).
           $canFinalApprove = in_array($request['status'], ['FUNDS_VERIFIED', 'INVOICE_VERIFIED'], true) && $isFinanceOfficer;
