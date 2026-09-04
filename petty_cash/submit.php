@@ -73,15 +73,17 @@ try {
         WHERE request_id = ?
     ");
     $update->execute([$request_id]);
-    $pdo->prepare("
-        UPDATE request_approvals
-        SET status = 'rejected',
-            comments = CONCAT(COALESCE(NULLIF(comments, ''), 'No comments'), ' [Superseded by resubmission]'),
-            approved_by = COALESCE(approved_by, ?),
-            approved_at = COALESCE(approved_at, NOW())
-        WHERE request_id = ?
-          AND status = 'pending'
-    ")->execute([$_SESSION['user_id'], $request_id]);
+    if (strtoupper((string)$request['status']) === 'RETURNED_FOR_CORRECTION') {
+        $pdo->prepare("
+            UPDATE request_approvals
+            SET status = 'rejected',
+                comments = CONCAT(COALESCE(NULLIF(comments, ''), 'No comments'), ' [Superseded by resubmission]'),
+                approved_by = COALESCE(approved_by, ?),
+                approved_at = COALESCE(approved_at, NOW())
+            WHERE request_id = ?
+              AND status = 'pending'
+        ")->execute([$_SESSION['user_id'], $request_id]);
+    }
 
     /* ================================
        Log Status Change to History

@@ -29,31 +29,13 @@ if (!in_array($action, ['approve', 'decline', 'return'])) {
    Determine Approver Role & Authorize
 ================================ */
 $userRole = $_SESSION['role_name'] ?? '';
-$userId = (int)($_SESSION['user_id'] ?? 0);
 $approverRole = null;
-$isHodOrBranchHeadApproval = false;
 
-// Check if user is HOD or Branch Head
-if (in_array($userRole, ['HOD', 'Branch Head'])) {
-    // Validate HOD/Branch Head authorization
-    if (isAuthorizedToApprovePettyCashReimbursement($pdo, $userId, $userRole, $request_id)) {
-        $approverRole = $userRole;
-        $isHodOrBranchHeadApproval = true;
-    } else {
-        pop(
-            "You are not authorized to approve this reimbursement request. It is outside your scope.",
-            "/reimbursement/view.php?request_id=".$request_id,
-            2000,
-            "error"
-        );
-        exit;
-    }
-} elseif ($userRole === 'Finance Officer') {
-    // Finance Officer approval
+if (in_array($userRole, ['Finance Officer', 'Admin', 'SuperAdmin'], true)) {
     $approverRole = 'Finance Officer';
 } else {
     pop(
-        "Only HOD, Branch Head, and Finance Officers can approve reimbursement requests.",
+        "Only Finance Officers can approve reimbursement requests.",
         "/reimbursement/view.php?request_id=".$request_id,
         2000,
         "error"
@@ -83,15 +65,7 @@ if (!$request) {
 /* ================================
    Status Validation
 ================================ */
-// HOD/Branch Head only act at the initial SUBMITTED stage. Finance Officer
-// also verifies funds at SUBMITTED, but performs the final reimbursement
-// approval once the invoice has cleared verification (FUNDS_VERIFIED when
-// no invoice has been required yet, or INVOICE_VERIFIED once Procurement
-// has verified the goods/service). Without these later statuses being
-// accepted here, a verified invoice had no way to advance the request.
-$allowedStatuses = $isHodOrBranchHeadApproval
-    ? ['SUBMITTED']
-    : ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'INVOICE_VERIFIED'];
+$allowedStatuses = ['SUBMITTED', 'FUNDS_VERIFIED', 'INVOICE_VERIFIED'];
 
 if (!in_array(strtoupper($request['status']), $allowedStatuses, true)) {
     pop(
@@ -119,33 +93,16 @@ if (function_exists('signedRequestUploadPending') && signedRequestUploadPending(
 try {
     $pdo->beginTransaction();
 
-    // Determine new status based on approver role and action
-    if ($isHodOrBranchHeadApproval) {
-        // HOD/Branch Head approves or rejects/returns at first stage
-        if ($action === 'approve') {
-            $newStatus = 'HOD_APPROVED';
-        } elseif ($action === 'return') {
-            $newStatus = 'RETURNED_FOR_CORRECTION';
+    if ($action === 'approve') {
+        if (strtoupper($request['status']) === 'SUBMITTED') {
+            $newStatus = 'FUNDS_VERIFIED';
         } else {
-            // decline
-            $newStatus = 'DECLINED';
+            $newStatus = 'APPROVED';
         }
+    } elseif ($action === 'return') {
+        $newStatus = 'RETURNED_FOR_CORRECTION';
     } else {
-        // Finance Officer does fund verification first, then the final
-        // reimbursement approval once the request has cleared invoice
-        // verification (FUNDS_VERIFIED / INVOICE_VERIFIED).
-        if ($action === 'approve') {
-            if (in_array(strtoupper($request['status']), ['SUBMITTED', 'HOD_APPROVED'], true)) {
-                $newStatus = 'FUNDS_VERIFIED';
-            } else {
-                $newStatus = 'APPROVED';
-            }
-        } elseif ($action === 'return') {
-            $newStatus = 'RETURNED_FOR_CORRECTION';
-        } else {
-            // decline
-            $newStatus = 'DECLINED';
-        }
+        $newStatus = 'DECLINED';
     }
     
     // Store previous status for audit
@@ -207,28 +164,6 @@ try {
         $_SESSION['user_id'],
         $comments ?: (($action === 'approve') ? 'Approved by ' . $approverRole : 'Declined by ' . $approverRole)
     ]);
-
-    /* ================================
-       If HOD/Branch Head approved, create approval chain for Finance Officer
-    ================================ */
-    if ($isHodOrBranchHeadApproval && $action === 'approve') {
-        // Check if Finance Officer approval is already scheduled
-        $checkFo = $pdo->prepare("
-            SELECT id FROM request_approvals 
-            WHERE request_id = ? AND role = 'Finance Officer'
-        ");
-        $checkFo->execute([$request_id]);
-        
-        if (!$checkFo->fetchColumn()) {
-            // Create approval record for Finance Officer
-            $foStmt = $pdo->prepare("
-                INSERT INTO request_approvals 
-                (request_id, role, status, stage_order, entity_type, created_at)
-                VALUES (?, 'Finance Officer', 'pending', 2, 'REQUEST', NOW())
-            ");
-            $foStmt->execute([$request_id]);
-        }
-    }
 
     /* ================================
        Audit Log

@@ -1,5 +1,5 @@
 <?php
-$REQUIRE_PERMISSION = 'view_request';
+$REQUIRE_PERMISSION = 'view_requests';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/helper.php';
@@ -18,7 +18,7 @@ $params = [];
 if ($version > 0) {
     $sql = "
         SELECT pr.request_id, pr.request_number, pr.status, pr.created_by,
-               srd.document_path, srd.file_type, srd.original_file_name, srd.version_number
+               srd.doc_id, srd.document_path, srd.file_type, srd.original_file_name, srd.version_number
         FROM signed_request_documents srd
         INNER JOIN procurement_requests pr ON pr.request_id = srd.request_id
         WHERE srd.request_id = ?
@@ -30,7 +30,7 @@ if ($version > 0) {
 } else {
     $sql = "
         SELECT pr.request_id, pr.request_number, pr.status, pr.created_by,
-               srd.document_path, srd.file_type, srd.original_file_name, srd.version_number
+               srd.doc_id, srd.document_path, srd.file_type, srd.original_file_name, srd.version_number
         FROM signed_request_documents srd
         INNER JOIN procurement_requests pr ON pr.request_id = srd.request_id
         WHERE srd.request_id = ?
@@ -55,7 +55,7 @@ enforceRequestRecordAccess($document, '/procurement/list.php');
 logAudit(
     $pdo,
     'signed_request_documents',
-    $requestId,
+    (int)($document['doc_id'] ?? 0),
     strtoupper($action) === 'VIEW' ? 'VIEW' : 'DOWNLOAD',
     'Signed request document accessed for request ' . ($document['request_number'] ?? ('#' . $requestId))
 );

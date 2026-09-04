@@ -14,9 +14,7 @@ if (!isset($_GET['id'])) {
 
 $request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
+$csrfToken = ensureCsrfToken();
 
 if ($request_id <= 0) {
     pop(
@@ -1230,7 +1228,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                         <?php endif; ?>
                         <form method="post" action="<?= $submitUrl ?>" class="d-grid">
                             <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
-                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                             <button type="submit" class="btn btn-primary" onclick="return confirm('Submit this request?')">
                                 <i class="bi bi-send me-1"></i>Submit Request
                             </button>
@@ -1471,7 +1469,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                         ?>
                         <form method="post" action="<?= $resubmitUrl ?>" class="d-inline">
                             <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
-                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                             <button type="submit" class="btn btn-warning" onclick="return confirm('Resubmit this request for approval?')">
                                 <i class="bi bi-arrow-repeat me-1"></i>Resubmit Request
                             </button>
@@ -1713,7 +1711,7 @@ $canDeleteRequestDocument = hasPermission('procurement_delete_request_document')
         <div class="border-top pt-3">
             <h6 class="fw-bold"><i class="bi bi-cloud-upload me-1"></i> Upload Document</h6>
             <form method="post" action="/procurement/upload_document.php" enctype="multipart/form-data">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <input type="hidden" name="request_id" value="<?= $request_id ?>">
                 <div class="row g-2 align-items-end">
                     <div class="col-md-3">
@@ -1876,7 +1874,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <?php if (in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin'], true) && $current !== 'PROCUREMENT_STAGE'): ?>
                                 <form method="post" action="/procurement/start_procurement.php" class="d-inline">
                                     <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
-                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                                     <button type="submit" class="btn btn-outline-dark btn-sm">
                                         <i class="bi bi-play-circle me-1"></i>Start Procurement Stage
                                     </button>
@@ -1894,7 +1892,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <?php if ($rfqOptional && $current !== 'SUBMITTED' && in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin'], true)): ?>
                                 <form method="post" action="/procurement/skip_rfq.php" class="d-inline">
                                     <input type="hidden" name="request_id" value="<?= (int)$request['request_id'] ?>">
-                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                                     <button type="submit"
                                             class="btn btn-outline-secondary btn-sm"
                                             onclick="return confirm('You are proceeding without an RFQ. The request will move to Awarded, and you will still need to complete Commitment, Purchase Order, Invoice, and Payment steps before the request can be closed. Continue?')">
@@ -2031,7 +2029,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <h6 class="fw-bold mb-3">Upload Signed Request</h6>
                 <form method="post" action="/procurement/upload_signed_request.php" enctype="multipart/form-data" class="js-signed-upload-form" data-request-id="<?= (int)$request_id ?>" data-request-type="REGULAR" data-upload-notice-enabled="<?= $uploadNoticeEnabled ? '1' : '0' ?>">
                     <input type="hidden" name="request_id" value="<?= $request_id ?>">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                     <input type="hidden" name="signed_notice_upload_ack" value="0">
                     <input type="hidden" name="signed_notice_action_token" value="">
                     
@@ -2345,7 +2343,7 @@ function timelineMeta(string $action): array {
     const modalMessageEl = document.getElementById('signedRequestNoticeMessage');
     const confirmBtn = document.getElementById('signedRequestNoticeConfirmBtn');
     const modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
-    const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
+    const csrfToken = <?= json_encode($csrfToken) ?>;
     let onConfirm = null;
 
     function createActionToken(prefix, requestType, requestId) {

@@ -128,10 +128,7 @@ SignedRequestNoticeService::seedDefaultSettings($pdo);
 $printNoticeEnabled = SignedRequestNoticeService::isPrintNoticeEnabled($pdo);
 $uploadNoticeEnabled = SignedRequestNoticeService::isUploadNoticeEnabled($pdo);
 
-// Generate CSRF token for uploads
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
+$csrfToken = ensureCsrfToken();
 ?>
 
 <div class="container-fluid mt-4">
@@ -514,7 +511,7 @@ if (empty($_SESSION['csrf_token'])) {
               <div class="card card-body">
                 <form method="post" action="/petty_cash/upload_signed_request.php" enctype="multipart/form-data" class="js-signed-upload-form" data-request-id="<?= (int)$request_id ?>" data-request-type="PETTY_CASH" data-upload-notice-enabled="<?= $uploadNoticeEnabled ? '1' : '0' ?>">
                   <input type="hidden" name="request_id" value="<?= $request_id ?>">
-                  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                   <input type="hidden" name="signed_notice_upload_ack" value="0">
                   <input type="hidden" name="signed_notice_action_token" value="">
                   
@@ -620,7 +617,7 @@ if (empty($_SESSION['csrf_token'])) {
               <i class="bi bi-pencil"></i> Edit Request
             </a>
             <form method="post" action="/petty_cash/submit.php" class="d-inline">
-              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <button type="submit" class="btn btn-success btn-sm w-100">
                 <i class="bi bi-send"></i> Submit for Approval
@@ -653,7 +650,7 @@ if (empty($_SESSION['csrf_token'])) {
               <small><strong>Action Required:</strong> Verify funds and authorize this petty cash request.</small>
             </div>
             <form method="post" action="/petty_cash/approve.php" class="d-inline">
-              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <input type="hidden" name="action" value="approve">
               <button type="submit" class="btn btn-success btn-sm w-100 mb-2">
@@ -661,7 +658,7 @@ if (empty($_SESSION['csrf_token'])) {
               </button>
             </form>
             <form method="post" action="/petty_cash/approve.php" class="d-inline">
-              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <input type="hidden" name="action" value="decline">
               <button type="submit" class="btn btn-danger btn-sm w-100">
@@ -818,7 +815,7 @@ if (empty($_SESSION['csrf_token'])) {
   const modalMessageEl = document.getElementById('signedRequestNoticeMessage');
   const confirmBtn = document.getElementById('signedRequestNoticeConfirmBtn');
   const modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
-  const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
+  const csrfToken = <?= json_encode($csrfToken) ?>;
   let onConfirm = null;
 
   function createActionToken(prefix, requestType, requestId) {
@@ -1096,7 +1093,7 @@ if (empty($_SESSION['csrf_token'])) {
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <form method="post" action="/petty_cash/upload_reconciliation_document.php" enctype="multipart/form-data">
-        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
         <div class="modal-body">
           <p class="text-muted mb-3">Attach supporting documentation such as receipts, invoices, proof of purchase, or change return documentation.</p>
           

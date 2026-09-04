@@ -92,7 +92,12 @@ class SecureFileStorage
         }
 
         if (str_starts_with($storedPath, self::PRIVATE_SCHEME)) {
-            $relative = trim(substr($storedPath, strlen(self::PRIVATE_SCHEME)), '/');
+            $relative = substr($storedPath, strlen(self::PRIVATE_SCHEME));
+            if ($relative === false || $relative === '' || str_starts_with($relative, '/') || str_starts_with($relative, '\\')) {
+                return null;
+            }
+
+            $relative = trim($relative, '/');
             if ($relative === '' || str_contains($relative, '..')) {
                 return null;
             }
@@ -109,8 +114,13 @@ class SecureFileStorage
             $root = realpath($root) ?: $root;
             $root = rtrim(str_replace('\\', '/', $root), '/');
             $relative = ltrim(str_replace('\\', '/', $relative), '/');
+            $path = $root . '/' . $relative;
 
-            return $root . '/' . $relative;
+            if (!str_starts_with($path, $root . '/')) {
+                return null;
+            }
+
+            return $path;
         }
 
         if ($legacyRelativeDirectory !== null && !str_starts_with($storedPath, '/')) {
@@ -207,6 +217,10 @@ class SecureFileStorage
 
         if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
             throw new RuntimeException('File upload failed. Please try again.');
+        }
+
+        if (!isset($file['tmp_name']) || !is_uploaded_file((string)$file['tmp_name'])) {
+            throw new RuntimeException('Invalid uploaded file.');
         }
 
         $size = filesize((string)($file['tmp_name'] ?? ''));

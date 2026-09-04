@@ -29,31 +29,13 @@ if (!in_array($action, ['approve', 'decline', 'return'])) {
    Determine Approver Role & Authorize
 ================================ */
 $userRole = $_SESSION['role_name'] ?? '';
-$userId = (int)($_SESSION['user_id'] ?? 0);
 $approverRole = null;
-$isHodOrBranchHeadApproval = false;
 
-// Check if user is HOD or Branch Head
-if (in_array($userRole, ['HOD', 'Branch Head'])) {
-    // Validate HOD/Branch Head authorization
-    if (isAuthorizedToApprovePettyCashReimbursement($pdo, $userId, $userRole, $request_id)) {
-        $approverRole = $userRole;
-        $isHodOrBranchHeadApproval = true;
-    } else {
-        pop(
-            "You are not authorized to approve this petty cash request. It is outside your scope.",
-            "/petty_cash/view.php?request_id=".$request_id,
-            2000,
-            "error"
-        );
-        exit;
-    }
-} elseif ($userRole === 'Finance Officer') {
-    // Finance Officer approval
+if (in_array($userRole, ['Finance Officer', 'Admin', 'SuperAdmin'], true)) {
     $approverRole = 'Finance Officer';
 } else {
     pop(
-        "Only HOD, Branch Head, and Finance Officers can approve petty cash requests.",
+        "Only Finance Officers can approve petty cash requests.",
         "/petty_cash/view.php?request_id=".$request_id,
         2000,
         "error"
@@ -83,9 +65,7 @@ if (!$request) {
 /* ================================
    Status Validation
 ================================ */
-$allowedStatuses = $isHodOrBranchHeadApproval
-    ? ['SUBMITTED']
-    : ['SUBMITTED', 'HOD_APPROVED'];
+$allowedStatuses = ['SUBMITTED'];
 
 if (!in_array(strtoupper($request['status']), $allowedStatuses, true)) {
     pop(
@@ -113,27 +93,12 @@ if (function_exists('signedRequestUploadPending') && signedRequestUploadPending(
 try {
     $pdo->beginTransaction();
 
-    // Determine new status based on approver role and action
-    if ($isHodOrBranchHeadApproval) {
-        // HOD/Branch Head approves or rejects/returns at first stage
-        if ($action === 'approve') {
-            $newStatus = 'HOD_APPROVED';
-        } elseif ($action === 'return') {
-            $newStatus = 'RETURNED_FOR_CORRECTION';
-        } else {
-            // decline
-            $newStatus = 'DECLINED';
-        }
+    if ($action === 'approve') {
+        $newStatus = 'FUNDS_VERIFIED';
+    } elseif ($action === 'return') {
+        $newStatus = 'RETURNED_FOR_CORRECTION';
     } else {
-        // Finance Officer does fund verification
-        if ($action === 'approve') {
-            $newStatus = 'FUNDS_VERIFIED';
-        } elseif ($action === 'return') {
-            $newStatus = 'RETURNED_FOR_CORRECTION';
-        } else {
-            // decline
-            $newStatus = 'DECLINED';
-        }
+        $newStatus = 'DECLINED';
     }
     
     // Store previous status for audit
@@ -202,31 +167,9 @@ try {
     ]);
 
     /* ================================
-       If HOD/Branch Head approved, create approval chain for Finance Officer
-    ================================ */
-    if ($isHodOrBranchHeadApproval && $action === 'approve') {
-        // Check if Finance Officer approval is already scheduled
-        $checkFo = $pdo->prepare("
-            SELECT id FROM request_approvals 
-            WHERE request_id = ? AND role = 'Finance Officer'
-        ");
-        $checkFo->execute([$request_id]);
-        
-        if (!$checkFo->fetchColumn()) {
-            // Create approval record for Finance Officer
-            $foStmt = $pdo->prepare("
-                INSERT INTO request_approvals 
-                (request_id, role, status, stage_order, entity_type, created_at)
-                VALUES (?, 'Finance Officer', 'pending', 2, 'REQUEST', NOW())
-            ");
-            $foStmt->execute([$request_id]);
-        }
-    }
-
-    /* ================================
        If approved by Finance Officer, create disbursement record
     ================================ */
-    if (!$isHodOrBranchHeadApproval && $action === 'approve') {
+    if ($action === 'approve') {
         // Check if a disbursement record already exists
         $checkDisb = $pdo->prepare("SELECT disburse_id FROM petty_cash_disbursements WHERE request_id = ?");
         $checkDisb->execute([$request_id]);

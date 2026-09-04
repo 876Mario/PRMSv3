@@ -120,10 +120,7 @@ SignedRequestNoticeService::seedDefaultSettings($pdo);
 $printNoticeEnabled = SignedRequestNoticeService::isPrintNoticeEnabled($pdo);
 $uploadNoticeEnabled = SignedRequestNoticeService::isUploadNoticeEnabled($pdo);
 
-// Generate CSRF token for uploads
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
+$csrfToken = ensureCsrfToken();
 ?>
 
 <div class="container-fluid mt-4">
@@ -499,7 +496,7 @@ if (empty($_SESSION['csrf_token'])) {
               <div class="card card-body">
                 <form method="post" action="/reimbursement/upload_signed_request.php" enctype="multipart/form-data" class="js-signed-upload-form" data-request-id="<?= (int)$request_id ?>" data-request-type="REIMBURSEMENT" data-upload-notice-enabled="<?= $uploadNoticeEnabled ? '1' : '0' ?>">
                   <input type="hidden" name="request_id" value="<?= $request_id ?>">
-                  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                   <input type="hidden" name="signed_notice_upload_ack" value="0">
                   <input type="hidden" name="signed_notice_action_token" value="">
                   
@@ -605,7 +602,7 @@ if (empty($_SESSION['csrf_token'])) {
               <i class="bi bi-pencil"></i> Edit Request
             </a>
             <form method="post" action="/reimbursement/submit.php" class="d-inline">
-              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <button type="submit" class="btn btn-success btn-sm w-100">
                 <i class="bi bi-send"></i> Submit for Approval
@@ -627,7 +624,7 @@ if (empty($_SESSION['csrf_token'])) {
               <small><strong>Action Required:</strong> Verify funds and approve this reimbursement request.</small>
             </div>
             <form method="post" action="/reimbursement/approve.php" class="d-inline">
-              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <input type="hidden" name="action" value="approve">
               <button type="submit" class="btn btn-success btn-sm w-100 mb-2">
@@ -635,7 +632,7 @@ if (empty($_SESSION['csrf_token'])) {
               </button>
             </form>
             <form method="post" action="/reimbursement/approve.php" class="d-inline">
-              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <input type="hidden" name="action" value="decline">
               <button type="submit" class="btn btn-danger btn-sm w-100">
@@ -649,7 +646,7 @@ if (empty($_SESSION['csrf_token'])) {
               <small><strong>Action Required:</strong> Approve this reimbursement request for payment.</small>
             </div>
             <form method="post" action="/reimbursement/approve.php" class="d-inline">
-              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <input type="hidden" name="action" value="approve">
               <button type="submit" class="btn btn-success btn-sm w-100 mb-2">
@@ -657,7 +654,7 @@ if (empty($_SESSION['csrf_token'])) {
               </button>
             </form>
             <form method="post" action="/reimbursement/approve.php" class="d-inline">
-              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <input type="hidden" name="request_id" value="<?= $request_id ?>">
               <input type="hidden" name="action" value="decline">
               <button type="submit" class="btn btn-danger btn-sm w-100">
@@ -737,7 +734,7 @@ if (empty($_SESSION['csrf_token'])) {
       </div>
       <form method="post" action="/reimbursement/mark_reimbursed.php">
         <div class="modal-body">
-          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="request_id" value="<?= $request_id ?>">
           <div class="mb-3">
             <label for="payment_reference" class="form-label">Payment Reference (Optional)</label>
@@ -772,7 +769,7 @@ if (empty($_SESSION['csrf_token'])) {
       </div>
       <form method="post" action="/reimbursement/confirm_receipt.php">
         <div class="modal-body">
-          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="request_id" value="<?= $request_id ?>">
           <p>Please confirm that you have received the reimbursement payment for this request.</p>
           <div class="mb-3">
@@ -884,7 +881,7 @@ if (empty($_SESSION['csrf_token'])) {
   const modalMessageEl = document.getElementById('signedRequestNoticeMessage');
   const confirmBtn = document.getElementById('signedRequestNoticeConfirmBtn');
   const modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
-  const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
+  const csrfToken = <?= json_encode($csrfToken) ?>;
   let onConfirm = null;
 
   function createActionToken(prefix, requestType, requestId) {
