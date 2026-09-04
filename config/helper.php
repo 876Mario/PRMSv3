@@ -767,13 +767,15 @@ function canCurrentUserAccessRequestRecord(array $request): bool
 function enforceRequestRecordAccess(array $request, string $redirect): void
 {
     if (!canCurrentUserAccessRequestRecord($request)) {
-        logAudit(
-            $GLOBALS['pdo'] ?? null,
-            'procurement_requests',
-            (int)($request['request_id'] ?? 0),
-            'ACCESS_DENIED',
-            'User ' . ($_SESSION['full_name'] ?? $_SESSION['user_id'] ?? 'unknown') . ' attempted to access request outside permitted scope'
-        );
+        if (($GLOBALS['pdo'] ?? null) instanceof PDO) {
+            logAudit(
+                $GLOBALS['pdo'],
+                'procurement_requests',
+                (int)($request['request_id'] ?? 0),
+                'ACCESS_DENIED',
+                'User ' . ($_SESSION['full_name'] ?? $_SESSION['user_id'] ?? 'unknown') . ' attempted to access request outside permitted scope'
+            );
+        }
         pop('You do not have permission to access this request.', $redirect, POP_DEFAULT_DELAY_MS, 'error');
         exit;
     }

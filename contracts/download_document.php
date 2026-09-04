@@ -22,11 +22,10 @@ if (!$contract || empty($contract['document_path'])) {
     exit;
 }
 
-$isRequestor = (string)($_SESSION['role_name'] ?? '') === 'Requestor';
 $canAccess = has_permission('manage_contracts')
     || (int)($contract['created_by'] ?? 0) === (int)($_SESSION['user_id'] ?? 0);
 
-if ($isRequestor && !$canAccess) {
+if (!$canAccess) {
     $linkedRequests = $pdo->prepare("SELECT request_id, created_by, status FROM procurement_requests WHERE contract_id = ?");
     $linkedRequests->execute([$contractId]);
 
@@ -38,7 +37,7 @@ if ($isRequestor && !$canAccess) {
     }
 }
 
-if ($isRequestor && !$canAccess) {
+if (!$canAccess) {
     pop('You do not have permission to access this contract document.', '/contracts/list.php', POP_DEFAULT_DELAY_MS, 'error');
     exit;
 }
