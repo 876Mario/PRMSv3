@@ -374,7 +374,9 @@ class RequestDocumentService {
     public function getActiveSignedDocument() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT * FROM signed_request_versions
+                SELECT version_id, request_id, document_path, file_name, file_size, mime_type,
+                       uploaded_by, uploaded_at, is_active, replacement_reason, replaced_at, replaced_by
+                FROM signed_request_versions
                 WHERE request_id = ? AND is_active = 1
                 ORDER BY uploaded_at DESC
                 LIMIT 1
@@ -392,7 +394,9 @@ class RequestDocumentService {
     public function getVersionHistory() {
         try {
             $stmt = $this->pdo->prepare("
-                SELECT * FROM signed_request_versions
+                SELECT version_id, request_id, document_path, file_name, file_size, mime_type,
+                       uploaded_by, uploaded_at, is_active, replacement_reason, replaced_at, replaced_by
+                FROM signed_request_versions
                 WHERE request_id = ?
                 ORDER BY uploaded_at DESC
             ");

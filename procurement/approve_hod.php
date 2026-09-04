@@ -55,11 +55,11 @@ if (signedRequestUploadPending($request)) {
    and if user can approve
 ================================ */
 $stmt = $pdo->prepare("
-    SELECT *
+    SELECT id, role, stage_order
     FROM request_approvals
     WHERE request_id = ?
       AND status = 'pending'
-    ORDER BY stage_order ASC
+    ORDER BY stage_order ASC, id ASC
     LIMIT 1
 ");
 $stmt->execute([$id]);

@@ -63,17 +63,18 @@ if ((int)$seedCheck->fetchColumn() === 0) {
    Check approval stage
 ================================ */
 $stmt = $pdo->prepare("
-    SELECT *
+    SELECT id, role, stage_order
     FROM request_approvals
     WHERE entity_type = 'PO'
       AND entity_id = ?
-      AND role = ?
       AND status = 'pending'
+    ORDER BY stage_order ASC, id ASC
+    LIMIT 1
 ");
-$stmt->execute([$id, $current_role]);
+$stmt->execute([$id]);
 $approval = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$approval) {
+if (!$approval || $approval['role'] !== $current_role) {
     modalPop("Unauthorized", "Not your approval stage.", "/po/view.php?po_id=".$id, "error");
     exit;
 }

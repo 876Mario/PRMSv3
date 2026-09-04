@@ -90,6 +90,28 @@ if (function_exists('signedRequestUploadPending') && signedRequestUploadPending(
    exit;
 }
 
+$pendingApprovalStmt = $pdo->prepare("
+    SELECT id, role, stage_order
+    FROM request_approvals
+    WHERE request_id = ?
+      AND status = 'pending'
+      AND (entity_type = 'REQUEST' OR entity_type IS NULL)
+    ORDER BY stage_order ASC, id ASC
+    LIMIT 1
+");
+$pendingApprovalStmt->execute([$request_id]);
+$pendingApproval = $pendingApprovalStmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$pendingApproval || $pendingApproval['role'] !== $approverRole) {
+    pop(
+        "This request is not currently awaiting {$approverRole} approval.",
+        "/petty_cash/view.php?request_id=".$request_id,
+        2000,
+        "error"
+    );
+    exit;
+}
+
 try {
     $pdo->beginTransaction();
 
@@ -154,16 +176,13 @@ try {
             approved_by = ?,
             approved_at = NOW(),
             comments = ?
-        WHERE request_id = ?
-          AND role = ?
-          AND status = 'pending'
+        WHERE id = ?
     ");
     $approvalUpdate->execute([
         $approvalStatus,
         $_SESSION['user_id'],
         $approvalComments,
-        $request_id,
-        $approverRole
+        $pendingApproval['id']
     ]);
 
     /* ================================
