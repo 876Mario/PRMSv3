@@ -13,7 +13,8 @@ if ($reportId <= 0) {
     exit;
 }
 
-$stmt = $pdo->prepare("\n    SELECT r.report_id, r.rfq_id, r.report_file, rfq.rfq_number, pr.request_number
+$stmt = $pdo->prepare("\n    SELECT r.report_id, r.rfq_id, r.report_file, rfq.rfq_number,
+           pr.request_id, pr.request_number, pr.status, pr.created_by
     FROM rfq_evaluation_reports r
     INNER JOIN rfqs rfq ON rfq.rfq_id = r.rfq_id
     INNER JOIN procurement_requests pr ON pr.request_id = rfq.request_id
@@ -28,6 +29,8 @@ if (!$report || empty($report['report_file'])) {
     exit;
 }
 
+enforceRequestRecordAccess($report, '/rfq/list.php');
+
 $fileName = basename(str_replace('private://rfq_evaluation_reports/', '', (string)$report['report_file']));
 logAudit($pdo, 'rfq_evaluation_reports', $reportId, strtoupper($action) === 'VIEW' ? 'VIEW' : 'DOWNLOAD', 'RFQ evaluation report accessed for ' . ($report['rfq_number'] ?? ('#' . $report['rfq_id'])));
 
@@ -37,7 +40,7 @@ try {
         'application/pdf',
         $fileName !== '' ? $fileName : 'evaluation-report.pdf',
         $action,
-        'evaluation_reports'
+        'uploads/evaluation_reports'
     );
 } catch (Throwable $e) {
     pop(extractDbMessage($e), '/rfq/view_report.php?id=' . $reportId, POP_DEFAULT_DELAY_MS, 'error');

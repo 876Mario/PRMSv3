@@ -34,7 +34,7 @@ if (!$quote || empty($quote['quote_file'])) {
 
 enforceRequestRecordAccess($quote, '/rfq/list.php');
 
-$mimeType = SecureFileStorage::detectStoredMimeType((string)$quote['quote_file'], 'quotes');
+$mimeType = SecureFileStorage::detectStoredMimeType((string)$quote['quote_file'], 'uploads/quotes');
 $extensionMap = [
     'application/pdf' => 'pdf',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
@@ -54,7 +54,7 @@ try {
         $mimeType,
         $downloadName,
         $action,
-        'quotes'
+        'uploads/quotes'
     );
 } catch (Throwable $e) {
     pop(extractDbMessage($e), '/rfq/view.php?id=' . (int)$quote['rfq_id'], POP_DEFAULT_DELAY_MS, 'error');
