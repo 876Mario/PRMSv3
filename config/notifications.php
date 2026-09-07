@@ -116,55 +116,55 @@ function notificationsEnabled(): bool {
         error_log("Notification check error: {$e->getMessage()}");
         return true;
     }
+}
 
-    function shouldSendProcurementNotificationForRequest(int $requestId): bool
-    {
-        global $pdo;
-        if ($requestId <= 0) {
-            return false;
-        }
-
-        try {
-            $stmt = $pdo->prepare("SELECT status FROM procurement_requests WHERE request_id = ? LIMIT 1");
-            $stmt->execute([$requestId]);
-            $status = $stmt->fetchColumn();
-            if ($status === false) {
-                return false;
-            }
-
-            if (function_exists('canProcurementRoleViewRequestStatus')) {
-                return canProcurementRoleViewRequestStatus((string)$status);
-            }
-
-            return in_array(strtoupper((string)$status), ['DIRECTOR_APPROVED', 'RFQ_LETTER_AVAILABLE'], true);
-        } catch (Throwable $e) {
-            error_log("Procurement notification gating failed for request {$requestId}: " . $e->getMessage());
-            return false;
-        }
+function shouldSendProcurementNotificationForRequest(int $requestId): bool
+{
+    global $pdo;
+    if ($requestId <= 0) {
+        return false;
     }
 
-    function shouldSendProcurementNotificationForRfq(int $rfqId): bool
-    {
-        global $pdo;
-        if ($rfqId <= 0) {
+    try {
+        $stmt = $pdo->prepare("SELECT status FROM procurement_requests WHERE request_id = ? LIMIT 1");
+        $stmt->execute([$requestId]);
+        $status = $stmt->fetchColumn();
+        if ($status === false) {
             return false;
         }
 
-        try {
-            $stmt = $pdo->prepare("
-                SELECT pr.request_id
-                FROM rfqs r
-                INNER JOIN procurement_requests pr ON pr.request_id = r.request_id
-                WHERE r.rfq_id = ?
-                LIMIT 1
-            ");
-            $stmt->execute([$rfqId]);
-            $requestId = (int)($stmt->fetchColumn() ?: 0);
-            return $requestId > 0 && shouldSendProcurementNotificationForRequest($requestId);
-        } catch (Throwable $e) {
-            error_log("Procurement RFQ notification gating failed for RFQ {$rfqId}: " . $e->getMessage());
-            return false;
+        if (function_exists('canProcurementRoleViewRequestStatus')) {
+            return canProcurementRoleViewRequestStatus((string)$status);
         }
+
+        return in_array(strtoupper((string)$status), ['DIRECTOR_APPROVED', 'RFQ_LETTER_AVAILABLE'], true);
+    } catch (Throwable $e) {
+        error_log("Procurement notification gating failed for request {$requestId}: " . $e->getMessage());
+        return false;
+    }
+}
+
+function shouldSendProcurementNotificationForRfq(int $rfqId): bool
+{
+    global $pdo;
+    if ($rfqId <= 0) {
+        return false;
+    }
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_id
+            FROM rfqs r
+            INNER JOIN procurement_requests pr ON pr.request_id = r.request_id
+            WHERE r.rfq_id = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$rfqId]);
+        $requestId = (int)($stmt->fetchColumn() ?: 0);
+        return $requestId > 0 && shouldSendProcurementNotificationForRequest($requestId);
+    } catch (Throwable $e) {
+        error_log("Procurement RFQ notification gating failed for RFQ {$rfqId}: " . $e->getMessage());
+        return false;
     }
 }
 
