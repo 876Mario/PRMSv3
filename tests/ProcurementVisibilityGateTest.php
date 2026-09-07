@@ -57,9 +57,12 @@ pvSession(35, 'Procurement Manager');
 pvAssert('Procurement Manager cannot access pre-director request', !canCurrentUserAccessRequestRecord($preDirector));
 pvAssert('Procurement Manager can access director-approved request', canCurrentUserAccessRequestRecord($postDirector));
 
+pvSession(37, 'Procurement');
+pvAssert('Procurement cannot access pre-director request', !canCurrentUserAccessRequestRecord($preDirector));
+pvAssert('Procurement can access director-approved request', canCurrentUserAccessRequestRecord($postDirector));
+
 pvSession(36, 'Admin');
 pvAssert('System Administrator can access pre-director request', canCurrentUserAccessRequestRecord($preDirector));
 
 echo "\n" . ($failed === 0 ? "All {$passed} tests passed.\n" : "{$failed} FAILED / {$passed} passed.\n");
 exit($failed > 0 ? 1 : 0);
-
