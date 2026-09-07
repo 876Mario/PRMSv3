@@ -134,6 +134,8 @@ if (!empty($_GET['to'])) {
     $params[':to'] = $_GET['to'];
 }
 
+applyProcurementVisibilityWhere($where, 'pr');
+
 $whereSQL = $where ? 'WHERE '.implode(' AND ', $where) : '';
 
 /* ================================
@@ -385,6 +387,10 @@ $statusOptions = [
     'CANCELLED'             => 'Cancelled',
     'PAUSED'                => 'Paused',
 ];
+
+if (isProcurementVisibilityRestrictedRole()) {
+    $statusOptions = array_intersect_key($statusOptions, array_flip(procurementVisibleStatuses()));
+}
 
 $hasFilters = !empty($_GET['q']) || !empty($_GET['request_status']) || !empty($_GET['po_status']) || !empty($_GET['from']) || !empty($_GET['to']) || !empty($_GET['branch_id']) || !empty($_GET['requestor']) || !empty($_GET['budget_year']) || !empty($_GET['workflow_path']) || !empty($_GET['request_number']);
 

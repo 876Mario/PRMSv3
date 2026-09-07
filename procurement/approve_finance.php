@@ -99,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 finance_reviewed_at = NOW()
             WHERE request_id = ?
         ")->execute([$nextStatus, $user_id, $id]);
+        logProcurementVisibilityGranted($pdo, $id, $nextStatus, (string)($request['status'] ?? ''));
 
         logAudit($pdo, 'procurement_requests', $id, 'STATUS_CHANGE', 'Finance Verified Funds — Status changed to ' . $nextStatus);
         logRequestTimeline($pdo, $id, $nextStatus, 'Finance verification by ' . ($_SESSION['full_name'] ?? 'Unknown'));

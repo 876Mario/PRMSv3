@@ -1052,6 +1052,88 @@ function isRequestOwner(array $request): bool
         && (int)($request['created_by'] ?? 0) === (int)($_SESSION['user_id'] ?? 0);
 }
 
+function procurementVisibilityRestrictedRoles(): array
+{
+    return ['Procurement', 'Procurement Officer', 'Procurement Manager'];
+}
+
+function procurementVisibleStatuses(): array
+{
+    return [
+        'DIRECTOR_APPROVED',
+        'GC_APPROVED',
+        'RFQ_LETTER_AVAILABLE',
+        'QUOTE_REVIEW_PENDING',
+        'QUOTE_REQUESTOR_REVIEW_PENDING',
+        'QUOTE_REQUESTOR_REVIEW_APPROVED',
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING',
+        'QUOTE_APPROVED',
+        'PROCUREMENT_STAGE',
+        'EVALUATION_STAGE',
+        'COMMITTEE_RECOMMENDED',
+        'COMMITMENTS_PENDING',
+        'COMMITMENT_APPROVED',
+        'PO_PENDING',
+        'PO_APPROVED',
+        'INVOICE_RECEIVED',
+        'AWARDED',
+        'COMPLETED',
+    ];
+}
+
+function isProcurementVisibilityRestrictedRole(?string $role = null): bool
+{
+    $role = (string)($role ?? ($_SESSION['role_name'] ?? $_SESSION['role'] ?? ''));
+    return in_array($role, procurementVisibilityRestrictedRoles(), true);
+}
+
+function canProcurementRoleViewRequestStatus(?string $status): bool
+{
+    return in_array(strtoupper((string)$status), procurementVisibleStatuses(), true);
+}
+
+function getProcurementVisibilitySqlCondition(string $alias = 'pr'): string
+{
+    if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $alias)) {
+        $alias = 'pr';
+    }
+
+    $statuses = array_map(
+        static fn(string $status): string => "'" . $status . "'",
+        procurementVisibleStatuses()
+    );
+
+    return "UPPER({$alias}.status) IN (" . implode(', ', $statuses) . ")";
+}
+
+function applyProcurementVisibilityWhere(array &$where, string $alias = 'pr'): void
+{
+    if (!isProcurementVisibilityRestrictedRole()) {
+        return;
+    }
+
+    $where[] = getProcurementVisibilitySqlCondition($alias);
+}
+
+function logProcurementVisibilityGranted(PDO $pdo, int $requestId, string $newStatus, ?string $previousStatus = null): void
+{
+    if (strtoupper($newStatus) !== 'DIRECTOR_APPROVED') {
+        return;
+    }
+
+    if ($previousStatus !== null && strtoupper($previousStatus) === 'DIRECTOR_APPROVED') {
+        return;
+    }
+
+    logAudit(
+        $pdo,
+        'procurement_requests',
+        $requestId,
+        'PROCUREMENT_VISIBILITY_GRANTED',
+        'Request reached DIRECTOR_APPROVED and is now visible to Procurement Unit roles.'
+    );
+}
+
 function canCurrentUserAccessRequestRecord(array $request): bool
 {
     $role = (string)($_SESSION['role_name'] ?? '');
@@ -1062,6 +1144,10 @@ function canCurrentUserAccessRequestRecord(array $request): bool
 
     if (strtoupper((string)($request['status'] ?? '')) === 'DRAFT') {
         return function_exists('canViewDraft') ? canViewDraft($request) : false;
+    }
+
+    if (isProcurementVisibilityRestrictedRole($role)) {
+        return canProcurementRoleViewRequestStatus((string)($request['status'] ?? ''));
     }
 
     return $role !== 'Requestor';
@@ -1087,8 +1173,12 @@ function enforceRequestRecordAccess(array $request, string $redirect): void
 function canCurrentUserEditOrSubmitRequest(array $request): bool
 {
     $role = (string)($_SESSION['role_name'] ?? '');
-    if (in_array($role, ['Procurement Officer', 'Admin', 'SuperAdmin'], true)) {
+    if (in_array($role, ['Admin', 'SuperAdmin'], true)) {
         return true;
+    }
+
+    if (isProcurementVisibilityRestrictedRole($role)) {
+        return canProcurementRoleViewRequestStatus((string)($request['status'] ?? ''));
     }
 
     return isRequestOwner($request);

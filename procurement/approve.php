@@ -178,6 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 approved_at = NOW()
             WHERE request_id = ?
         ")->execute([$nextStatus, $user_id, $id]);
+        logProcurementVisibilityGranted($pdo, $id, $nextStatus, (string)($request['status'] ?? ''));
 
         logAudit(
             $pdo,

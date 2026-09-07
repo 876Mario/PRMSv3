@@ -7,6 +7,8 @@
  * All public methods are static so callers don't need to instantiate the class;
  * a global $pdo is expected (same pattern as config/notifications.php).
  */
+require_once dirname(__DIR__) . '/config/helper.php';
+
 class NotificationService
 {
     // -----------------------------------------------------------------------
@@ -20,6 +22,47 @@ class NotificationService
     const TYPE_DRAFT_READY         = 'draft_ready';
     const TYPE_SUBMISSION          = 'submission';
     const TYPE_FINANCE_ACTION      = 'finance_action_required';
+
+    private static function procurementVisibleStatusListSql(): string
+    {
+        $statuses = function_exists('procurementVisibleStatuses')
+            ? procurementVisibleStatuses()
+            : ['DIRECTOR_APPROVED', 'RFQ_LETTER_AVAILABLE'];
+        $quoted = array_map(
+            static fn(string $status): string => "'" . strtoupper($status) . "'",
+            $statuses
+        );
+        return implode(', ', $quoted);
+    }
+
+    private static function isProcurementVisibilityRestrictedUser(int $userId): bool
+    {
+        global $pdo;
+        if (!$pdo || $userId <= 0) {
+            return false;
+        }
+
+        try {
+            $stmt = $pdo->prepare("
+                SELECT r.name
+                FROM users u
+                JOIN roles r ON r.id = u.role_id
+                WHERE u.user_id = ?
+                LIMIT 1
+            ");
+            $stmt->execute([$userId]);
+            $roleName = (string)($stmt->fetchColumn() ?: '');
+
+            if (function_exists('isProcurementVisibilityRestrictedRole')) {
+                return isProcurementVisibilityRestrictedRole($roleName);
+            }
+
+            return in_array($roleName, ['Procurement', 'Procurement Officer', 'Procurement Manager'], true);
+        } catch (Throwable $e) {
+            error_log("NotificationService::isProcurementVisibilityRestrictedUser error: " . $e->getMessage());
+            return false;
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Write
@@ -168,11 +211,24 @@ class NotificationService
         global $pdo;
         if (!$pdo) return [];
         try {
+            $visibilityFilter = '';
+            if (self::isProcurementVisibilityRestrictedUser($userId)) {
+                $visibilityFilter = " AND (
+                    n.request_id IS NULL
+                    OR EXISTS (
+                        SELECT 1
+                        FROM procurement_requests pr
+                        WHERE pr.request_id = n.request_id
+                          AND UPPER(pr.status) IN (" . self::procurementVisibleStatusListSql() . ")
+                    )
+                )";
+            }
             $stmt = $pdo->prepare("
                 SELECT id, request_id, type, title, body, request_ref,
                        action_url, stage, requestor_name, priority, created_at
-                FROM user_notifications
-                WHERE user_id = ? AND is_read = 0
+                FROM user_notifications n
+                WHERE n.user_id = ? AND n.is_read = 0
+                {$visibilityFilter}
                 ORDER BY created_at DESC
                 LIMIT 100
             ");
@@ -196,12 +252,25 @@ class NotificationService
         if (!$pdo) return [];
         $limit = max(1, min(200, $limit));
         try {
+            $visibilityFilter = '';
+            if (self::isProcurementVisibilityRestrictedUser($userId)) {
+                $visibilityFilter = " AND (
+                    n.request_id IS NULL
+                    OR EXISTS (
+                        SELECT 1
+                        FROM procurement_requests pr
+                        WHERE pr.request_id = n.request_id
+                          AND UPPER(pr.status) IN (" . self::procurementVisibleStatusListSql() . ")
+                    )
+                )";
+            }
             $stmt = $pdo->prepare("
                 SELECT id, request_id, type, title, body, request_ref,
                        action_url, stage, requestor_name, priority,
                        is_read, created_at, read_at
-                FROM user_notifications
-                WHERE user_id = :uid
+                FROM user_notifications n
+                WHERE n.user_id = :uid
+                {$visibilityFilter}
                 ORDER BY created_at DESC
                 LIMIT :lim
             ");
@@ -223,9 +292,22 @@ class NotificationService
         global $pdo;
         if (!$pdo) return 0;
         try {
+            $visibilityFilter = '';
+            if (self::isProcurementVisibilityRestrictedUser($userId)) {
+                $visibilityFilter = " AND (
+                    n.request_id IS NULL
+                    OR EXISTS (
+                        SELECT 1
+                        FROM procurement_requests pr
+                        WHERE pr.request_id = n.request_id
+                          AND UPPER(pr.status) IN (" . self::procurementVisibleStatusListSql() . ")
+                    )
+                )";
+            }
             $stmt = $pdo->prepare("
-                SELECT COUNT(*) FROM user_notifications
-                WHERE user_id = ? AND is_read = 0
+                SELECT COUNT(*) FROM user_notifications n
+                WHERE n.user_id = ? AND n.is_read = 0
+                {$visibilityFilter}
             ");
             $stmt->execute([$userId]);
             return (int)$stmt->fetchColumn();
