@@ -5,6 +5,12 @@ require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
 
+$branchVisibilityFilter = (function_exists('isProcurementVisibilityRestrictedRole')
+    && function_exists('getProcurementVisibilitySqlCondition')
+    && isProcurementVisibilityRestrictedRole())
+    ? " AND " . getProcurementVisibilitySqlCondition('pr')
+    : "";
+
 $query = "
     SELECT 
         b.branch_id,
@@ -12,7 +18,7 @@ $query = "
         COUNT(pr.request_id) as count,
         SUM(pr.estimated_value) as total_value
     FROM branches b
-    LEFT JOIN procurement_requests pr ON b.branch_id = pr.branch_id
+    LEFT JOIN procurement_requests pr ON b.branch_id = pr.branch_id{$branchVisibilityFilter}
     GROUP BY b.branch_id, b.branch_name
     ORDER BY total_value DESC
 ";

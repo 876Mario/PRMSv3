@@ -98,7 +98,6 @@ class CronNotificationRoutingService
             'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => self::isBranchHeadReviewPending($pdo, $requestId)
                 ? self::resolveActiveUsersByRole($pdo, 'Branch Head', $branchId, 'Branch Head quote approval pending')
                 : [],
-            'HOD_APPROVED',
             'DIRECTOR_APPROVED',
             'GC_APPROVED',
             'RFQ_LETTER_AVAILABLE',
@@ -107,7 +106,6 @@ class CronNotificationRoutingService
             'COMMITTEE_RECOMMENDED',
             'QUOTE_REVIEW_PENDING',
             'QUOTE_APPROVED',
-            'FUNDS_VERIFIED',
             'COMMITMENT_APPROVED',
             'PO_PENDING' => self::resolveActiveUsersByRole($pdo, 'Procurement Officer', null, self::reasonForStatus($status)),
             'COMMITMENTS_PENDING',

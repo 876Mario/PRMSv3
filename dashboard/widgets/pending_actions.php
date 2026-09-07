@@ -12,6 +12,8 @@
 
 $userRole = $_SESSION['role_name'] ?? '';
 $userId   = (int)($_SESSION['user_id'] ?? 0);
+$isProcurementVisibilityRestrictedRole = function_exists('isProcurementVisibilityRestrictedRole')
+    && isProcurementVisibilityRestrictedRole($userRole);
 
 if (!isset($pdo)) {
     require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
@@ -95,6 +97,9 @@ $requestApprovalsStmt = $pdo->prepare("
       AND ra.role        = ?
       AND ra.status      = 'pending'
       AND UPPER(pr.status) NOT IN ('DRAFT','DECLINED','COMPLETED','AWARDED','PAUSED','CANCELLED')
+      " . ($isProcurementVisibilityRestrictedRole && function_exists('getProcurementVisibilitySqlCondition')
+            ? " AND " . getProcurementVisibilitySqlCondition('pr')
+            : "") . "
     ORDER BY {$dashboardOrderBy} {$dashboardDir}
 ");
 $requestApprovalsStmt->execute([$userRole]);
@@ -120,6 +125,9 @@ if (!function_exists('isMonitoringRole') ||
         'FUNDS_VERIFIED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'COMMITMENT_DECLINED',
         'PO_PENDING', 'INVOICE_RECEIVED',
     ];
+    if ($isProcurementVisibilityRestrictedRole && function_exists('procurementVisibleStatuses')) {
+        $allWorkflowStatuses = array_values(array_intersect($allWorkflowStatuses, procurementVisibleStatuses()));
+    }
     $myStatuses = [];
     foreach ($allWorkflowStatuses as $st) {
         if (in_array($userRole, stageOwner($st), true)) {

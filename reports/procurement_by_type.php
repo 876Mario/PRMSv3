@@ -5,12 +5,19 @@ require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
 require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
 
+$visibilityWhere = (function_exists('isProcurementVisibilityRestrictedRole')
+    && function_exists('getProcurementVisibilitySqlCondition')
+    && isProcurementVisibilityRestrictedRole())
+    ? "WHERE " . getProcurementVisibilitySqlCondition('procurement_requests')
+    : "";
+
 $query = "
     SELECT 
         COALESCE(procurement_method, 'UNSPECIFIED') as type,
         COUNT(*) as count,
         SUM(estimated_value) as total_value
     FROM procurement_requests
+    {$visibilityWhere}
     GROUP BY procurement_method
     ORDER BY total_value DESC
 ";

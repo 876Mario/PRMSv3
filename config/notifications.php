@@ -7,6 +7,7 @@
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/app.php';
+require_once __DIR__ . '/helper.php';
 
 /* Load in-app notification service (always available, independent of email toggle) */
 if (!class_exists('NotificationService')) {
@@ -114,6 +115,56 @@ function notificationsEnabled(): bool {
     } catch (Exception $e) {
         error_log("Notification check error: {$e->getMessage()}");
         return true;
+    }
+
+    function shouldSendProcurementNotificationForRequest(int $requestId): bool
+    {
+        global $pdo;
+        if ($requestId <= 0) {
+            return false;
+        }
+
+        try {
+            $stmt = $pdo->prepare("SELECT status FROM procurement_requests WHERE request_id = ? LIMIT 1");
+            $stmt->execute([$requestId]);
+            $status = $stmt->fetchColumn();
+            if ($status === false) {
+                return false;
+            }
+
+            if (function_exists('canProcurementRoleViewRequestStatus')) {
+                return canProcurementRoleViewRequestStatus((string)$status);
+            }
+
+            return in_array(strtoupper((string)$status), ['DIRECTOR_APPROVED', 'RFQ_LETTER_AVAILABLE'], true);
+        } catch (Throwable $e) {
+            error_log("Procurement notification gating failed for request {$requestId}: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    function shouldSendProcurementNotificationForRfq(int $rfqId): bool
+    {
+        global $pdo;
+        if ($rfqId <= 0) {
+            return false;
+        }
+
+        try {
+            $stmt = $pdo->prepare("
+                SELECT pr.request_id
+                FROM rfqs r
+                INNER JOIN procurement_requests pr ON pr.request_id = r.request_id
+                WHERE r.rfq_id = ?
+                LIMIT 1
+            ");
+            $stmt->execute([$rfqId]);
+            $requestId = (int)($stmt->fetchColumn() ?: 0);
+            return $requestId > 0 && shouldSendProcurementNotificationForRequest($requestId);
+        } catch (Throwable $e) {
+            error_log("Procurement RFQ notification gating failed for RFQ {$rfqId}: " . $e->getMessage());
+            return false;
+        }
     }
 }
 
@@ -988,6 +1039,7 @@ HTML;
  */
 function notifyProcurementOfCommitment(int $requestId, string $commitmentNumber): bool {
     if (!notificationsEnabled()) return false;
+    if (!shouldSendProcurementNotificationForRequest($requestId)) return false;
 
     global $pdo;
     try {
@@ -1701,6 +1753,7 @@ HTML;
  */
 function notifyProcurementOfApproval(int $requestId, string $approvalStatus): bool {
     if (!notificationsEnabled()) return false;
+    if (!shouldSendProcurementNotificationForRequest($requestId)) return false;
 
     global $pdo;
     try {
@@ -1836,6 +1889,7 @@ HTML;
  */
 function notifyProcurementOfDecline(int $requestId, string $declineReason): bool {
     if (!notificationsEnabled()) return false;
+    if (!shouldSendProcurementNotificationForRequest($requestId)) return false;
 
     global $pdo;
     try {
@@ -2111,6 +2165,7 @@ HTML;
  */
 function notifyProcurementRFQReady(int $requestId): bool {
     if (!notificationsEnabled()) return false;
+    if (!shouldSendProcurementNotificationForRequest($requestId)) return false;
 
     global $pdo;
     try {
@@ -2572,6 +2627,7 @@ HTML;
  */
 function notifyProcurementCommitmentFormNeeded(int $requestId): bool {
     if (!notificationsEnabled()) return false;
+    if (!shouldSendProcurementNotificationForRequest($requestId)) return false;
 
     global $pdo;
     try {
@@ -2975,6 +3031,9 @@ function notifyProcurementPauseResume(int $requestId, string $action, string $re
     global $pdo;
 
     if (!notificationsEnabled()) {
+        return false;
+    }
+    if (!shouldSendProcurementNotificationForRequest($requestId)) {
         return false;
     }
 
@@ -3736,6 +3795,9 @@ function notifyRequestorSpecReviewRejected(int $rfqId, string $reason): bool {
 }
 
 function notifyProcurementAllApprovalsComplete(int $rfqId): bool {
+    if (!shouldSendProcurementNotificationForRfq($rfqId)) {
+        return false;
+    }
     return sendVendorAwardNotification($rfqId);
 }
 

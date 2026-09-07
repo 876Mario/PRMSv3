@@ -3,9 +3,18 @@ if (!isset($pdo)) {
     require_once __DIR__.'/_init.php';
 }
 
+$pipelineVisibilityWhere = '';
+if (function_exists('isProcurementVisibilityRestrictedRole')
+    && function_exists('getProcurementVisibilitySqlCondition')
+    && isProcurementVisibilityRestrictedRole()
+) {
+    $pipelineVisibilityWhere = 'WHERE ' . getProcurementVisibilitySqlCondition('procurement_requests');
+}
+
 $pipeline = $pdo->query("
     SELECT UPPER(status) AS status, COUNT(*) AS cnt, SUM(estimated_value) AS total_value
     FROM procurement_requests
+    {$pipelineVisibilityWhere}
     GROUP BY UPPER(status)
     ORDER BY FIELD(UPPER(status), 'DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'EVALUATION_STAGE', 'COMMITTEE_RECOMMENDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'PO_APPROVED', 'INVOICE_RECEIVED', 'AWARDED', 'COMPLETED', 'DECLINED')
 ")->fetchAll(PDO::FETCH_ASSOC);

@@ -65,28 +65,7 @@ if (!$request) {
     exit;
 }
 
-/* ================================
-   Draft visibility enforcement
-   (server-side guard — do NOT rely on UI alone)
-================================ */
-if (!canViewDraft($request)) {
-    logAudit(
-        $pdo,
-        'procurement_requests',
-        $id,
-        'ACCESS_DENIED',
-        'User ' . ($_SESSION['full_name'] ?? $_SESSION['user_id']) .
-        ' (' . ($_SESSION['role_name'] ?? 'unknown') . ') ' .
-        'attempted to view DRAFT request — access denied.'
-    );
-    pop(
-        'You do not have permission to view this draft request.',
-        '/procurement/list.php',
-        POP_DEFAULT_DELAY_MS,
-        'error'
-    );
-    exit;
-}
+enforceRequestRecordAccess($request, '/procurement/list.php');
 
 /* ================================
    Monitoring-role flag — suppress action buttons for read-only viewers

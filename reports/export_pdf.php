@@ -21,6 +21,16 @@ try {
     $reportType = $_GET['report'] ?? 'branch_outstanding';
     $date = date('d M Y');
     $time = date('g:i A');
+    $procurementVisibilityWhere = (function_exists('isProcurementVisibilityRestrictedRole')
+        && function_exists('getProcurementVisibilitySqlCondition')
+        && isProcurementVisibilityRestrictedRole())
+        ? ' WHERE ' . getProcurementVisibilitySqlCondition('procurement_requests')
+        : '';
+    $procurementVisibilityJoinClause = (function_exists('isProcurementVisibilityRestrictedRole')
+        && function_exists('getProcurementVisibilitySqlCondition')
+        && isProcurementVisibilityRestrictedRole())
+        ? ' AND ' . getProcurementVisibilitySqlCondition('pr')
+        : '';
 
     // Initialize variables
     $title = "Report";
@@ -30,7 +40,7 @@ try {
     // Handle different report types
     switch ($reportType) {
         case 'procurement_status':
-            $data = $pdo->query("SELECT status, COUNT(*) as count, COALESCE(SUM(estimated_value), 0) as total_value FROM procurement_requests GROUP BY status ORDER BY count DESC")->fetchAll();
+            $data = $pdo->query("SELECT status, COUNT(*) as count, COALESCE(SUM(estimated_value), 0) as total_value FROM procurement_requests{$procurementVisibilityWhere} GROUP BY status ORDER BY count DESC")->fetchAll();
             $title = "Procurement by Status";
             $subtitle = "Distribution of procurement requests across different statuses";
             
@@ -55,7 +65,7 @@ HTML;
         break;
 
     case 'procurement_type':
-        $data = $pdo->query("SELECT COALESCE(procurement_method, 'UNSPECIFIED') as type, COUNT(*) as count, COALESCE(SUM(estimated_value), 0) as total_value FROM procurement_requests GROUP BY procurement_method ORDER BY total_value DESC")->fetchAll();
+        $data = $pdo->query("SELECT COALESCE(procurement_method, 'UNSPECIFIED') as type, COUNT(*) as count, COALESCE(SUM(estimated_value), 0) as total_value FROM procurement_requests{$procurementVisibilityWhere} GROUP BY procurement_method ORDER BY total_value DESC")->fetchAll();
         $title = "Procurement by Type";
         $subtitle = "Procurement methods and their distribution";
         
@@ -88,7 +98,7 @@ HTML;
         break;
 
     case 'procurement_branch':
-        $data = $pdo->query("SELECT b.branch_id, b.branch_name, COUNT(pr.request_id) as count, COALESCE(SUM(pr.estimated_value), 0) as total_value FROM branches b LEFT JOIN procurement_requests pr ON b.branch_id = pr.branch_id GROUP BY b.branch_id, b.branch_name ORDER BY total_value DESC")->fetchAll();
+        $data = $pdo->query("SELECT b.branch_id, b.branch_name, COUNT(pr.request_id) as count, COALESCE(SUM(pr.estimated_value), 0) as total_value FROM branches b LEFT JOIN procurement_requests pr ON b.branch_id = pr.branch_id{$procurementVisibilityJoinClause} GROUP BY b.branch_id, b.branch_name ORDER BY total_value DESC")->fetchAll();
         $title = "Procurement by Department/Branch";
         $subtitle = "Procurement requests and spending by department or branch";
         
@@ -406,4 +416,3 @@ HTML;
     echo "Error generating PDF: " . htmlspecialchars($e->getMessage());
 }
 ?>
-

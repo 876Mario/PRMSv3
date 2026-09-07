@@ -3,9 +3,28 @@ if (!isset($pdo)) {
 require_once __DIR__.'/_init.php';
 }
 
+$activityVisibilityWhere = '';
+if (function_exists('isProcurementVisibilityRestrictedRole')
+    && function_exists('getProcurementVisibilitySqlCondition')
+    && isProcurementVisibilityRestrictedRole()
+) {
+    $activityVisibilityWhere = "
+        WHERE (
+            table_name <> 'procurement_requests'
+            OR EXISTS (
+                SELECT 1
+                FROM procurement_requests pr
+                WHERE pr.request_id = audit_log.record_id
+                  AND " . getProcurementVisibilitySqlCondition('pr') . "
+            )
+        )
+    ";
+}
+
 $recent = $pdo->query("
     SELECT table_name, action, notes, change_date
     FROM audit_log
+    {$activityVisibilityWhere}
     ORDER BY change_date DESC
     LIMIT 100
 ")->fetchAll(PDO::FETCH_ASSOC);
