@@ -52,7 +52,7 @@ if ($request_id <= 0) {
 }
 
 SignedRequestNoticeService::seedDefaultSettings($pdo);
-$uploadNoticeEnabled = SignedRequestNoticeService::isUploadNoticeEnabled($pdo);
+$uploadNoticeEnabled = SignedRequestNoticeService::isSubmitToProcurementConfirmationEnabled($pdo);
 if ($uploadNoticeEnabled) {
     $acknowledged = (string)($_POST['signed_notice_upload_ack'] ?? '0') === '1';
     if (!$acknowledged) {

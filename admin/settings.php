@@ -6,13 +6,42 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/services/SignedRequestNoticeService.php';
 
+if (!function_exists('settingsEnabledLabel')) {
+    function settingsEnabledLabel(bool $enabled): string
+    {
+        return $enabled ? 'Enabled' : 'Disabled';
+    }
+}
+
+if (!function_exists('readSystemConfigFlag')) {
+    function readSystemConfigFlag(PDO $pdo, string $key, bool $default = true): bool
+    {
+        try {
+            $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = ? LIMIT 1");
+            $stmt->execute([$key]);
+            $value = $stmt->fetchColumn();
+            if ($value === false || $value === null || $value === '') {
+                return $default;
+            }
+            return (int)$value === 1;
+        } catch (Throwable $e) {
+            return $default;
+        }
+    }
+}
+
 // Handle form submission BEFORE any output
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $enable_notifications = isset($_POST['enable_notifications']) ? 1 : 0;
         $enable_rfq_auto_email = isset($_POST['enable_rfq_auto_email']) ? 1 : 0;
         $signedRequestPrintNoticeEnabled = isset($_POST['signed_request_print_notice_enabled']) ? 1 : 0;
-        $signedDocumentUploadNoticeEnabled = isset($_POST['signed_document_upload_notice_enabled']) ? 1 : 0;
+        $confirmationSubmitToProcurementEnabled = isset($_POST['confirmation_submit_to_procurement_enabled']) ? 1 : 0;
+        $oldSubmitToProcurementSetting = readSystemConfigFlag(
+            $pdo,
+            SignedRequestNoticeService::SUBMIT_TO_PROCUREMENT_CONFIRMATION_KEY,
+            readSystemConfigFlag($pdo, SignedRequestNoticeService::UPLOAD_NOTICE_KEY, true)
+        );
         
         // Update notification setting
         $stmt = $pdo->prepare("
@@ -39,13 +68,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ");
         $stmt->execute([$signedRequestPrintNoticeEnabled]);
 
-        // Update signed document upload notice setting
+        // Update original signed document confirmation setting
+        $stmt = $pdo->prepare("
+            INSERT INTO system_config (config_key, config_value, description, created_at)
+            VALUES ('confirmation_submit_to_procurement_enabled', ?, 'Enable/disable original signed document confirmation before submission (1=enabled, 0=disabled)', NOW())
+            ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)
+        ");
+        $stmt->execute([$confirmationSubmitToProcurementEnabled]);
+
+        // Keep legacy key in sync for backward compatibility in older pages/scripts.
         $stmt = $pdo->prepare("
             INSERT INTO system_config (config_key, config_value, description, created_at)
             VALUES ('signed_document_upload_notice_enabled', ?, 'Enable/disable signed document upload confirmation popup (1=enabled, 0=disabled)', NOW())
             ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)
         ");
-        $stmt->execute([$signedDocumentUploadNoticeEnabled]);
+        $stmt->execute([$confirmationSubmitToProcurementEnabled]);
 
         // Update procurement threshold if provided
         if (isset($_POST['direct_procurement_threshold'])) {
@@ -159,13 +196,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'System settings updated: enable_notifications=' . ($enable_notifications ? 'ON' : 'OFF')
                 . ', enable_rfq_auto_email=' . ($enable_rfq_auto_email ? 'ON' : 'OFF')
                 . ', signed_request_print_notice_enabled=' . ($signedRequestPrintNoticeEnabled ? 'ON' : 'OFF')
-                . ', signed_document_upload_notice_enabled=' . ($signedDocumentUploadNoticeEnabled ? 'ON' : 'OFF')
+                . ', confirmation_submit_to_procurement_enabled=' . ($confirmationSubmitToProcurementEnabled ? 'ON' : 'OFF')
                 . (isset($newThreshold) ? ', threshold=' . number_format($newThreshold, 2) : '')
                 . (isset($newPCLimit)  ? ', petty_cash_limit=' . number_format($newPCLimit, 2) : '')
                 . (isset($newUsdRate)  ? ', usd_to_jmd_rate=' . number_format($newUsdRate, 4) : '')
                 . (isset($newHODThreshold) ? ', hod_approval_threshold=' . number_format($newHODThreshold, 2) : '')
                 . (isset($newCommitteeThreshold) ? ', committee_review_threshold=' . number_format($newCommitteeThreshold, 2) : '')
         );
+
+        if ($oldSubmitToProcurementSetting !== ((bool)$confirmationSubmitToProcurementEnabled)) {
+            logAudit(
+                $pdo,
+                'system_config',
+                0,
+                'UPDATED_SYSTEM_SETTING',
+                'Setting=confirmation_submit_to_procurement_enabled'
+                    . ', Old Value=' . settingsEnabledLabel($oldSubmitToProcurementSetting)
+                    . ', New Value=' . settingsEnabledLabel((bool)$confirmationSubmitToProcurementEnabled)
+            );
+        }
         
         $_SESSION['toast'] = [
             'message' => 'Notification settings updated successfully!',
@@ -204,7 +253,7 @@ try {
 
 SignedRequestNoticeService::seedDefaultSettings($pdo);
 $signedRequestPrintNoticeEnabled = SignedRequestNoticeService::isPrintNoticeEnabled($pdo);
-$signedDocumentUploadNoticeEnabled = SignedRequestNoticeService::isUploadNoticeEnabled($pdo);
+$confirmationSubmitToProcurementEnabled = SignedRequestNoticeService::isSubmitToProcurementConfirmationEnabled($pdo);
 
 // Get current threshold settings
 $currentThreshold = getDirectProcurementThreshold($pdo);
@@ -354,6 +403,24 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                                             <li><strong>Petty Cash / Reimbursement:</strong> Always use their dedicated direct workflows</li>
                                         </ul>
                                     </div>
+                                    <hr class="my-3">
+                                    <h6 class="fw-bold mb-2"><i class="bi bi-shield-check me-1"></i> Original Signed Document Confirmation</h6>
+                                    <div class="form-check form-switch py-2">
+                                        <input
+                                            class="form-check-input"
+                                            type="checkbox"
+                                            id="confirmation_submit_to_procurement_enabled"
+                                            name="confirmation_submit_to_procurement_enabled"
+                                            value="1"
+                                            <?= $confirmationSubmitToProcurementEnabled ? 'checked' : '' ?>
+                                        >
+                                        <label class="form-check-label fw-bold" for="confirmation_submit_to_procurement_enabled">
+                                            Enable confirmation before submission
+                                        </label>
+                                        <p class="text-muted small mt-2 mb-0">
+                                            When enabled, users must acknowledge that the original signed document will be submitted to Procurement before proceeding.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -415,22 +482,6 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                                         </label>
                                         <p class="text-muted small mt-2 mb-0">
                                             Shows the Procurement-first original-document handling reminder after users open the print form.
-                                        </p>
-                                    </div>
-                                    <div class="form-check form-switch py-2">
-                                        <input 
-                                            class="form-check-input" 
-                                            type="checkbox" 
-                                            id="signed_document_upload_notice_enabled" 
-                                            name="signed_document_upload_notice_enabled"
-                                            value="1"
-                                            <?= $signedDocumentUploadNoticeEnabled ? 'checked' : '' ?>
-                                        >
-                                        <label class="form-check-label fw-bold" for="signed_document_upload_notice_enabled">
-                                            Enable popup during signed document upload
-                                        </label>
-                                        <p class="text-muted small mt-2 mb-0">
-                                            Requires users to confirm the Procurement-first original-document handling reminder before upload completion.
                                         </p>
                                     </div>
                                 </div>

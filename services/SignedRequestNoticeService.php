@@ -7,6 +7,7 @@ class SignedRequestNoticeService
 {
     public const PRINT_NOTICE_KEY = 'signed_request_print_notice_enabled';
     public const UPLOAD_NOTICE_KEY = 'signed_document_upload_notice_enabled';
+    public const SUBMIT_TO_PROCUREMENT_CONFIRMATION_KEY = 'confirmation_submit_to_procurement_enabled';
 
     private const VALID_REQUEST_TYPES = ['REGULAR', 'REIMBURSEMENT', 'PETTY_CASH'];
     private const VALID_CONTEXTS = ['PRINT', 'UPLOAD'];
@@ -31,6 +32,12 @@ class SignedRequestNoticeService
             '1',
             'Enable/disable signed document upload confirmation popup (1=enabled, 0=disabled)'
         ]);
+
+        $stmt->execute([
+            self::SUBMIT_TO_PROCUREMENT_CONFIRMATION_KEY,
+            '1',
+            'Enable/disable original signed document confirmation before submission (1=enabled, 0=disabled)'
+        ]);
     }
 
     public static function isPrintNoticeEnabled(PDO $pdo): bool
@@ -43,6 +50,16 @@ class SignedRequestNoticeService
         return self::isNoticeEnabled($pdo, self::UPLOAD_NOTICE_KEY, true);
     }
 
+    public static function isSubmitToProcurementConfirmationEnabled(PDO $pdo): bool
+    {
+        if (self::hasConfigValue($pdo, self::SUBMIT_TO_PROCUREMENT_CONFIRMATION_KEY)) {
+            return self::isNoticeEnabled($pdo, self::SUBMIT_TO_PROCUREMENT_CONFIRMATION_KEY, true);
+        }
+
+        // Backward-compatible fallback while older environments are being migrated.
+        return self::isNoticeEnabled($pdo, self::UPLOAD_NOTICE_KEY, true);
+    }
+
     public static function isNoticeEnabled(PDO $pdo, string $configKey, bool $defaultValue = true): bool
     {
         try {
@@ -50,11 +67,26 @@ class SignedRequestNoticeService
             $stmt->execute([$configKey]);
             $value = $stmt->fetchColumn();
             if ($value === false || $value === null || $value === '') {
+                error_log('SignedRequestNoticeService::isNoticeEnabled missing config for key=' . $configKey . '; defaulting to ' . ($defaultValue ? 'enabled' : 'disabled'));
                 return $defaultValue;
             }
             return (int)$value === 1;
         } catch (Throwable $e) {
+            error_log('SignedRequestNoticeService::isNoticeEnabled failed for key=' . $configKey . ': ' . $e->getMessage() . '; defaulting to ' . ($defaultValue ? 'enabled' : 'disabled'));
             return $defaultValue;
+        }
+    }
+
+    private static function hasConfigValue(PDO $pdo, string $configKey): bool
+    {
+        try {
+            $stmt = $pdo->prepare('SELECT config_value FROM system_config WHERE config_key = ? LIMIT 1');
+            $stmt->execute([$configKey]);
+            $value = $stmt->fetchColumn();
+            return $value !== false && $value !== null && $value !== '';
+        } catch (Throwable $e) {
+            error_log('SignedRequestNoticeService::hasConfigValue failed for key=' . $configKey . ': ' . $e->getMessage());
+            return false;
         }
     }
 

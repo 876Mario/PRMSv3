@@ -192,7 +192,7 @@ $poTotal   = $po ? (float)$po['po_total'] : 0;
 $requestType = $request['request_type'] ?? 'REGULAR';
 SignedRequestNoticeService::seedDefaultSettings($pdo);
 $printNoticeEnabled = SignedRequestNoticeService::isPrintNoticeEnabled($pdo);
-$uploadNoticeEnabled = SignedRequestNoticeService::isUploadNoticeEnabled($pdo);
+$uploadNoticeEnabled = SignedRequestNoticeService::isSubmitToProcurementConfirmationEnabled($pdo);
 $estimatedValueRaw = (float)($request['estimated_value'] ?? 0);
 $branchId = (int)($request['branch_id'] ?? 0);
 $requestCurrency = normalizeCurrency($request['currency'] ?? 'JMD');
@@ -2317,12 +2317,13 @@ function timelineMeta(string $action): array {
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header bg-warning-subtle">
-                <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Important Document Handling Notice</h5>
+                <h5 class="modal-title" id="signedRequestNoticeTitle"><i class="bi bi-exclamation-triangle me-2"></i>Important Document Handling Notice</h5>
             </div>
             <div class="modal-body">
                 <p id="signedRequestNoticeMessage" class="mb-0"></p>
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" id="signedRequestNoticeCancelBtn" style="display:none;">Cancel</button>
                 <button type="button" class="btn btn-primary" id="signedRequestNoticeConfirmBtn">I Understand</button>
             </div>
         </div>
@@ -2334,11 +2335,14 @@ function timelineMeta(string $action): array {
     const modalEl = document.getElementById('signedRequestHandlingNoticeModal');
     if (!modalEl || typeof bootstrap === 'undefined') return;
 
+    const modalTitleEl = document.getElementById('signedRequestNoticeTitle');
     const modalMessageEl = document.getElementById('signedRequestNoticeMessage');
+    const cancelBtn = document.getElementById('signedRequestNoticeCancelBtn');
     const confirmBtn = document.getElementById('signedRequestNoticeConfirmBtn');
     const modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
     const csrfToken = <?= json_encode($csrfToken) ?>;
     let onConfirm = null;
+    let onCancel = null;
 
     function createActionToken(prefix, requestType, requestId) {
         const randomPart = (() => {
@@ -2370,10 +2374,20 @@ function timelineMeta(string $action): array {
         });
     }
 
-    function showNotice(message, buttonLabel, callback) {
+    function showNotice(message, buttonLabel, callback, options) {
+        const config = options || {};
+        if (modalTitleEl) {
+            modalTitleEl.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>' + (config.title || 'Important Document Handling Notice');
+        }
         modalMessageEl.textContent = message;
-        confirmBtn.textContent = buttonLabel;
+        confirmBtn.textContent = config.confirmLabel || buttonLabel;
+        if (cancelBtn) {
+            const showCancel = config.showCancel === true;
+            cancelBtn.style.display = showCancel ? '' : 'none';
+            cancelBtn.textContent = config.cancelLabel || 'Cancel';
+        }
         onConfirm = callback;
+        onCancel = typeof config.onCancel === 'function' ? config.onCancel : null;
         console.debug('[SignedUploadNotice] Modal opened', { buttonLabel: buttonLabel });
         modal.show();
     }
@@ -2433,11 +2447,24 @@ function timelineMeta(string $action): array {
         console.debug('[SignedUploadNotice] User confirmed');
         const callback = onConfirm;
         onConfirm = null;
+        onCancel = null;
         if (typeof callback === 'function') {
             callback();
         }
         modal.hide();
     });
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function () {
+            const callback = onCancel;
+            onConfirm = null;
+            onCancel = null;
+            if (typeof callback === 'function') {
+                callback();
+            }
+            modal.hide();
+        });
+    }
 
     document.querySelectorAll('.js-signed-print-btn').forEach(function (btn) {
         btn.addEventListener('click', function (event) {
@@ -2563,6 +2590,15 @@ function timelineMeta(string $action): array {
                     form.dataset.noticeInProgress = '0';
                     console.debug('[SignedUploadNotice] Workflow updated: proceeding to upload submission');
                     resumeUploadSubmission(form);
+                },
+                {
+                    title: 'Confirmation Required',
+                    showCancel: true,
+                    cancelLabel: 'Cancel',
+                    confirmLabel: 'Continue Upload',
+                    onCancel: function () {
+                        form.dataset.noticeInProgress = '0';
+                    }
                 }
             );
         });
