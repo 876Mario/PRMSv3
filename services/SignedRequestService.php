@@ -325,7 +325,7 @@ class SignedRequestService {
             ];
 
         } catch (Exception $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($startedTransaction && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             
@@ -478,7 +478,7 @@ class SignedRequestService {
             ];
 
         } catch (Exception $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($startedTransaction && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             error_log("Signed request registration error for request $requestId: " . $e->getMessage());

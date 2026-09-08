@@ -498,18 +498,16 @@ $wfResponsibilities = $wfRespService->getPipelineResponsibility(
 <div class="container mt-4">
 
 <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
-    <div class="d-flex align-items-center gap-3">
-        <div>
-            <h3 class="section-title mb-1">
-                <i class="bi bi-file-earmark-text me-2"></i>Request: <?= htmlspecialchars($request['request_number']) ?>
-            </h3>
-            <small class="text-muted">
-                <?= htmlspecialchars($request['branch_name'] ?? 'Department of Government Chemist') ?>
-                <?php if ($request['approved_by_name']): ?>
-                    &middot; Approved by <strong><?= htmlspecialchars($request['approved_by_name']) ?></strong>
-                <?php endif; ?>
-            </small>
-        </div>
+    <div class="d-flex flex-column align-items-start">
+        <h3 class="section-title mb-1">
+            <i class="bi bi-file-earmark-text me-2"></i>Request: <?= htmlspecialchars($request['request_number']) ?>
+        </h3>
+        <small class="text-muted">
+            <?= htmlspecialchars($request['branch_name'] ?? 'Department of Government Chemist') ?>
+            <?php if ($request['approved_by_name']): ?>
+                &middot; Approved by <strong><?= htmlspecialchars($request['approved_by_name']) ?></strong>
+            <?php endif; ?>
+        </small>
     </div>
     <div class="d-flex gap-2 flex-wrap align-items-center">
         <span class="badge bg-<?= $badge[0] ?> fs-6">
@@ -518,7 +516,6 @@ $wfResponsibilities = $wfRespService->getPipelineResponsibility(
         <?php if (in_array($status, ['GC_APPROVED','AWARDED','COMPLETED'])): ?>
             <span class="badge bg-dark fs-6"><i class="bi bi-lock me-1"></i>Locked</span>
         <?php endif; ?>
-        </div>
     </div>
 </div>
 

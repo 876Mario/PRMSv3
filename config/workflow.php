@@ -1258,29 +1258,34 @@ function ensureRequestApprovalChain(PDO $pdo, array $request): array {
         return ['repaired' => false, 'reason' => 'signed_request_pending', 'roles' => []];
     }
 
-    $pendingStmt = $pdo->prepare("
-        SELECT COUNT(*)
-        FROM request_approvals
-        WHERE request_id = ?
-          AND entity_type = 'REQUEST'
-          AND status = 'pending'
-    ");
-    $pendingStmt->execute([$requestId]);
-    $pendingCount = (int)$pendingStmt->fetchColumn();
-    if ($pendingCount > 0) {
-        return ['repaired' => false, 'reason' => 'pending_exists', 'roles' => []];
+    try {
+        $pendingStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM request_approvals
+            WHERE request_id = ?
+              AND entity_type = 'REQUEST'
+              AND status = 'pending'
+        ");
+        $pendingStmt->execute([$requestId]);
+        $pendingCount = (int)$pendingStmt->fetchColumn();
+        if ($pendingCount > 0) {
+            return ['repaired' => false, 'reason' => 'pending_exists', 'roles' => []];
+        }
+
+        $roles = createApprovalChain($pdo, $requestId, $requestType, $estimatedValue, $branchId);
+        logAudit(
+            $pdo,
+            'procurement_requests',
+            $requestId,
+            'APPROVAL_CHAIN_REPAIRED',
+            'Missing pending approval chain repaired for submitted request: ' . implode(' → ', $roles)
+        );
+
+        return ['repaired' => true, 'reason' => 'recreated_pending_chain', 'roles' => $roles];
+    } catch (Throwable $e) {
+        error_log('ensureRequestApprovalChain failed for request_id=' . $requestId . ': ' . $e->getMessage());
+        return ['repaired' => false, 'reason' => 'repair_failed', 'roles' => []];
     }
-
-    $roles = createApprovalChain($pdo, $requestId, $requestType, $estimatedValue, $branchId);
-    logAudit(
-        $pdo,
-        'procurement_requests',
-        $requestId,
-        'APPROVAL_CHAIN_REPAIRED',
-        'Missing pending approval chain repaired for submitted request: ' . implode(' → ', $roles)
-    );
-
-    return ['repaired' => true, 'reason' => 'recreated_pending_chain', 'roles' => $roles];
 }
 
 /**

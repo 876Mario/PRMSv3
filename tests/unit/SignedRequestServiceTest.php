@@ -122,4 +122,43 @@ class SignedRequestServiceTest extends PHPUnit\Framework\TestCase
         $stmt = $this->pdo->query("SELECT COUNT(*) FROM request_approvals WHERE request_id = 1 AND status = 'pending'");
         $this->assertSame(2, (int)$stmt->fetchColumn());
     }
+
+    public function testRegisterStoredDocumentDoesNotRollbackOuterTransactionOnFailure(): void
+    {
+        $service = new SignedRequestService($this->pdo);
+        $this->pdo->beginTransaction();
+        $this->pdo->exec('DROP TABLE signed_request_documents');
+
+        $result = $service->registerStoredDocument(
+            1,
+            'REGULAR',
+            '/uploads/request_documents/signed-request.pdf',
+            'signed-request.pdf',
+            'application/pdf',
+            12345,
+            10
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertTrue($this->pdo->inTransaction());
+        $this->pdo->rollBack();
+    }
+
+    public function testRegisterStoredDocumentSucceedsWhenApprovalChainRepairFails(): void
+    {
+        $service = new SignedRequestService($this->pdo);
+        $this->pdo->exec('DROP TABLE request_approvals');
+
+        $result = $service->registerStoredDocument(
+            1,
+            'REGULAR',
+            '/uploads/request_documents/signed-request.pdf',
+            'signed-request.pdf',
+            'application/pdf',
+            12345,
+            10
+        );
+
+        $this->assertTrue($result['success']);
+    }
 }
