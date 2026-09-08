@@ -2163,13 +2163,14 @@ function timelineMeta(string $action): array {
 ═══════════════════════════════════════════════════════ -->
 <div class="modal fade" id="declineModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" action="/procurement/decline.php" class="modal-content">
+        <form method="POST" action="/procurement/decline.php" class="modal-content js-workflow-action-form" data-no-loader>
             <div class="modal-header bg-danger text-white">
                 <h5 class="modal-title"><i class="bi bi-x-octagon me-2"></i>Decline Procurement Request</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" name="id" value="<?= $request['request_id'] ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Reason for decline</label>
                     <textarea name="reason" class="form-control" rows="4" required
@@ -2189,13 +2190,14 @@ function timelineMeta(string $action): array {
 ═══════════════════════════════════════════════════════ -->
 <div class="modal fade" id="cancelRequestModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" action="/procurement/cancel.php" class="modal-content">
+        <form method="POST" action="/procurement/cancel.php" class="modal-content js-workflow-action-form" data-no-loader>
             <div class="modal-header bg-secondary text-white">
                 <h5 class="modal-title"><i class="bi bi-slash-circle me-2"></i>Cancel Procurement Request</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" name="id" value="<?= $request['request_id'] ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <p class="text-muted small mb-3">Cancellation stops this request permanently. The reason will be recorded in the audit trail and stakeholders will be notified.</p>
                 <div class="mb-3">
                     <label class="form-label fw-bold">Reason for cancellation <span class="text-danger">*</span></label>
@@ -2213,7 +2215,7 @@ function timelineMeta(string $action): array {
 
 <div class="modal fade" id="pauseResumeModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" action="/procurement/pause_resume.php" class="modal-content">
+        <form method="POST" action="/procurement/pause_resume.php" class="modal-content js-workflow-action-form" data-no-loader>
             <div class="modal-header <?= $current === 'PAUSED' ? 'bg-success text-white' : 'bg-warning text-dark' ?>">
                 <h5 class="modal-title">
                     <i class="bi <?= $current === 'PAUSED' ? 'bi-play-circle' : 'bi-pause-circle' ?> me-2"></i><?= $current === 'PAUSED' ? 'Resume Procurement' : 'Pause Procurement' ?>
@@ -2223,6 +2225,7 @@ function timelineMeta(string $action): array {
             <div class="modal-body">
                 <input type="hidden" name="id" value="<?= (int)$request['request_id'] ?>">
                 <input type="hidden" name="action" value="<?= $current === 'PAUSED' ? 'resume' : 'pause' ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <p class="text-muted small mb-3">A reason is required and will be recorded in the audit trail. Participants and stakeholders will be notified.</p>
                 <div class="mb-3">
                     <label class="form-label fw-bold">Reason <span class="text-danger">*</span></label>
@@ -2242,13 +2245,14 @@ function timelineMeta(string $action): array {
 
 <div class="modal fade" id="sendBackModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" action="/procurement/send_back.php" class="modal-content">
+        <form method="POST" action="/procurement/send_back.php" class="modal-content js-workflow-action-form" data-no-loader>
             <div class="modal-header bg-warning text-dark">
                 <h5 class="modal-title"><i class="bi bi-arrow-counterclockwise me-2"></i>Send Back for Edit</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" name="id" value="<?= $request['request_id'] ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <p class="text-muted small mb-3">This returns the request to draft so it can be updated and submitted again.</p>
                 <div class="mb-0">
                     <label class="form-label fw-bold">Reason for sending back</label>
@@ -2267,13 +2271,14 @@ function timelineMeta(string $action): array {
 <?php if ($canRevertStage ?? false): ?>
 <div class="modal fade" id="revertStageModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" action="/procurement/revert_status.php" class="modal-content">
+        <form method="POST" action="/procurement/revert_status.php" class="modal-content js-workflow-action-form" data-no-loader>
             <div class="modal-header bg-secondary text-white">
                 <h5 class="modal-title"><i class="bi bi-skip-backward me-2"></i>Revert Workflow Stage</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" name="id" value="<?= $request['request_id'] ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <div class="alert alert-warning small mb-3">
                     <i class="bi bi-exclamation-triangle me-1"></i>
                     Reverting a workflow stage moves the request backwards. Any approvals granted
@@ -2311,6 +2316,39 @@ function timelineMeta(string $action): array {
     </div>
 </div>
 <?php endif; ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.js-workflow-action-form').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            if (form.dataset.submitting === '1') {
+                event.preventDefault();
+                return;
+            }
+
+            form.dataset.submitting = '1';
+
+            const submitter = event.submitter || form.querySelector('button[type="submit"]');
+            if (submitter) {
+                submitter.disabled = true;
+            }
+
+            const modalEl = form.closest('.modal');
+            if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                const modal = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.hide();
+            }
+
+            document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+                backdrop.remove();
+            });
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+        });
+    });
+});
+</script>
 
 
 <div class="modal fade" id="signedRequestHandlingNoticeModal" tabindex="-1" aria-hidden="true">

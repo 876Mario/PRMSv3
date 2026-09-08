@@ -27,6 +27,8 @@ if (!$id || !is_numeric($id)) {
     exit;
 }
 
+requireCsrfToken('/procurement/view.php?id=' . (int)$id);
+
 if ($reason === '') {
     $_SESSION['error'] = "Cancellation reason is required.";
     header("Location: /procurement/view.php?id=" . $id);
