@@ -1,4 +1,17 @@
 <?php
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+register_shutdown_function(function () {
+    $error = error_get_last();
+    if ($error !== NULL) {
+        echo '<pre>';
+        print_r($error);
+        echo '</pre>';
+    }
+});
+
 $REQUIRE_PERMISSION = 'view_purchase_orders';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
