@@ -3,7 +3,7 @@
  * Upload Document for a Procurement Request
  * Handles signed POs, signed commitments, and other documents per request
  */
-$REQUIRE_PERMISSION = 'view_request';
+$REQUIRE_PERMISSION = 'upload_supporting_document';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
