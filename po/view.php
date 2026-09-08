@@ -1,17 +1,4 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-register_shutdown_function(function () {
-    $error = error_get_last();
-    if ($error !== NULL) {
-        echo '<pre>';
-        print_r($error);
-        echo '</pre>';
-    }
-});
-
 $REQUIRE_PERMISSION = 'view_purchase_orders';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/db.php";
@@ -33,6 +20,41 @@ $po_id = (int)$po_id;
 /* ================================
    Fetch PO + Commitment
 ================================ */
+$purchaseOrdersHasPoFile = true;
+$purchaseOrdersHasDocumentPath = true;
+try {
+    $pdo->query("SELECT po_file FROM purchase_orders LIMIT 1");
+} catch (PDOException $e) {
+    if (
+        strpos($e->getMessage(), '1054') === false &&
+        strpos($e->getMessage(), '42S22') === false &&
+        stripos($e->getMessage(), 'unknown column') === false &&
+        stripos($e->getMessage(), 'no such column') === false
+    ) {
+        throw $e;
+    }
+    $purchaseOrdersHasPoFile = false;
+    error_log("PO view fallback active (purchase_orders.po_file missing): " . $e->getMessage());
+}
+
+try {
+    $pdo->query("SELECT document_path FROM purchase_orders LIMIT 1");
+} catch (PDOException $e) {
+    if (
+        strpos($e->getMessage(), '1054') === false &&
+        strpos($e->getMessage(), '42S22') === false &&
+        stripos($e->getMessage(), 'unknown column') === false &&
+        stripos($e->getMessage(), 'no such column') === false
+    ) {
+        throw $e;
+    }
+    $purchaseOrdersHasDocumentPath = false;
+    error_log("PO view fallback active (purchase_orders.document_path missing): " . $e->getMessage());
+}
+
+$poFileSelect = $purchaseOrdersHasPoFile ? 'po.po_file' : 'NULL AS po_file';
+$documentPathSelect = $purchaseOrdersHasDocumentPath ? 'po.document_path' : 'NULL AS document_path';
+
 $stmt = $pdo->prepare("
     SELECT 
         po.po_id,
@@ -45,8 +67,8 @@ $stmt = $pdo->prepare("
         po.po_date,
         po.po_type,
         po.approved_at,
-        po.po_file,
-        po.document_path,
+        {$poFileSelect},
+        {$documentPathSelect},
         c.commitment_number,
         c.commitment_total
     FROM purchase_orders po
