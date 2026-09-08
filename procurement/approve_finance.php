@@ -72,8 +72,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $financeApproval = $financeStmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$financeApproval) {
-            pop('No pending Finance officer approval found', '/procurement/view.php?id='.$id, POP_DEFAULT_DELAY_MS, 'error');
-            exit;
+            $repairResult = ensureRequestApprovalChain($pdo, $request);
+            if (!empty($repairResult['repaired'])) {
+                error_log('approve_finance.php repaired missing pending approvals for request_id=' . $id);
+                $financeStmt->execute([$id]);
+                $financeApproval = $financeStmt->fetch(PDO::FETCH_ASSOC);
+            }
+            if (!$financeApproval) {
+                pop('No pending Finance officer approval found', '/procurement/view.php?id='.$id, POP_DEFAULT_DELAY_MS, 'error');
+                exit;
+            }
         }
 
         // Determine next status dynamically based on approval chain

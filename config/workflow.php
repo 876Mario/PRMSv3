@@ -1230,6 +1230,60 @@ function ensureApprovalChainsExist(PDO $pdo): void {
 }
 
 /**
+ * Ensure one request has an actionable pending approval chain when it is in
+ * SUBMITTED status and the signed request requirement is already satisfied.
+ *
+ * Returns metadata for diagnostics and caller decisions.
+ *
+ * @return array{
+ *   repaired: bool,
+ *   reason: string,
+ *   roles: array<int, string>
+ * }
+ */
+function ensureRequestApprovalChain(PDO $pdo, array $request): array {
+    $requestId = (int)($request['request_id'] ?? 0);
+    $requestType = (string)($request['request_type'] ?? 'REGULAR');
+    $status = strtoupper((string)($request['status'] ?? ''));
+    $branchId = isset($request['branch_id']) ? (int)$request['branch_id'] : null;
+    $estimatedValue = (float)($request['estimated_value'] ?? 0);
+
+    if ($requestId <= 0) {
+        return ['repaired' => false, 'reason' => 'invalid_request_id', 'roles' => []];
+    }
+    if ($status !== 'SUBMITTED') {
+        return ['repaired' => false, 'reason' => 'status_not_submitted', 'roles' => []];
+    }
+    if (signedRequestUploadPending($request)) {
+        return ['repaired' => false, 'reason' => 'signed_request_pending', 'roles' => []];
+    }
+
+    $pendingStmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM request_approvals
+        WHERE request_id = ?
+          AND entity_type = 'REQUEST'
+          AND status = 'pending'
+    ");
+    $pendingStmt->execute([$requestId]);
+    $pendingCount = (int)$pendingStmt->fetchColumn();
+    if ($pendingCount > 0) {
+        return ['repaired' => false, 'reason' => 'pending_exists', 'roles' => []];
+    }
+
+    $roles = createApprovalChain($pdo, $requestId, $requestType, $estimatedValue, $branchId);
+    logAudit(
+        $pdo,
+        'procurement_requests',
+        $requestId,
+        'APPROVAL_CHAIN_REPAIRED',
+        'Missing pending approval chain repaired for submitted request: ' . implode(' → ', $roles)
+    );
+
+    return ['repaired' => true, 'reason' => 'recreated_pending_chain', 'roles' => $roles];
+}
+
+/**
  * ========================================
  * SERVICE CONTRACT WORKFLOW FUNCTIONS
  * ========================================

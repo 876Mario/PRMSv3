@@ -28,6 +28,8 @@ if (!$request) {
 }
 
 try {
+    $pdo->beginTransaction();
+
     // Validate document type
     $documentType = $_POST['document_type'] ?? 'OTHER';
     if (!in_array($documentType, ['SIGNED_PO', 'SIGNED_COMMITMENT', 'SIGNED_REQUEST', 'MEMO', 'OTHER'])) {
@@ -55,6 +57,9 @@ try {
         strtoupper($documentType) . '_' . $request_id,
         [
             'application/pdf' => 'pdf',
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
             'application/msword' => 'doc',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
             'application/vnd.ms-excel' => 'xls',
@@ -126,10 +131,16 @@ try {
                 error_log('Warning: Failed to send notification for signed request ' . $request_id . ': ' . $e->getMessage());
             }
         } else {
-            $successMessage = "$typeLabel uploaded, but it could not be registered as the signed request.";
-            $successType = "warning";
+            error_log(
+                'Signed request registration failed after document upload. request_id='
+                . $request_id . ' user_id=' . (int)($_SESSION['user_id'] ?? 0)
+                . ' reason=' . ($registration['message'] ?? 'unknown')
+            );
+            throw new Exception($registration['message'] ?? 'The signed request could not be registered.');
         }
     }
+
+    $pdo->commit();
 
     pop(
         $successMessage,
@@ -139,6 +150,9 @@ try {
     );
 
 } catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     if (isset($stored)) {
         SecureFileStorage::deleteStoredFile($stored['storage_path']);
     }

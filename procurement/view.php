@@ -200,6 +200,20 @@ $requestUsdRate = (float)($request['usd_rate'] ?? 0);
 // Always use JMD for threshold comparison
 $estimatedValue = ($requestCurrency === 'USD') ? $estimatedValueRaw * ($requestUsdRate ?: 155.00) : $estimatedValueRaw;
 
+if (strtoupper((string)($request['status'] ?? '')) === 'SUBMITTED' && !signedRequestUploadPending($request)) {
+    $repairResult = ensureRequestApprovalChain($pdo, [
+        'request_id' => (int)$request['request_id'],
+        'request_type' => (string)$requestType,
+        'status' => (string)($request['status'] ?? ''),
+        'branch_id' => isset($request['branch_id']) ? (int)$request['branch_id'] : null,
+        'estimated_value' => $estimatedValue,
+        'signed_request_document_path' => (string)($request['signed_request_document_path'] ?? ''),
+    ]);
+    if (!empty($repairResult['repaired'])) {
+        error_log('procurement/view.php repaired missing pending approvals for request_id=' . (int)$request['request_id']);
+    }
+}
+
 /* ================================
    Fetch service contract details (SERVICE_CONTRACT requests only)
 ================================ */
@@ -504,6 +518,7 @@ $wfResponsibilities = $wfRespService->getPipelineResponsibility(
         <?php if (in_array($status, ['GC_APPROVED','AWARDED','COMPLETED'])): ?>
             <span class="badge bg-dark fs-6"><i class="bi bi-lock me-1"></i>Locked</span>
         <?php endif; ?>
+        </div>
     </div>
 </div>
 
@@ -1021,7 +1036,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     $nextStepDisplay = "Procurement paused. Resume is required before workflow actions can continue.";
                     $nextStepIcon = 'bi-pause-circle';
                     $nextStepColor = 'text-warning';
-                } elseif ($nextApproverRole && $nextApprovalId) {
+                } elseif ($nextApproverRole) {
                     $nextStepDisplay = "Awaiting {$nextApproverRole} approval";
                     $nextStepIcon = 'bi-person-check';
                     $nextStepColor = 'text-info';
@@ -1227,7 +1242,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     $canSendBackForEdit = false;
                     
                     // Check if there's a pending approval for this user (regardless of current status)
-                    if ($current !== 'PAUSED' && $nextApproverRole && $nextApprovalId && hasPermission('approve_request')) {
+                    if ($current !== 'PAUSED' && $nextApproverRole && hasPermission('approve_request')) {
                         $userCanApprove = canApproveStage($role, $nextApproverRole, $estimatedValue);
                         
                         // Map role to endpoint
@@ -1282,7 +1297,6 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     $canSendBackForEdit = $current !== 'PAUSED' && (
                         (
                             $nextApproverRole
-                            && $nextApprovalId
                             && $userCanApprove
                             && in_array($role, ['HOD', 'Branch Head', 'Director HRM&A', 'Deputy Government Chemist', 'Government Chemist', 'Admin', 'SuperAdmin'], true)
                         )
@@ -1295,7 +1309,8 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     ?>
                     
                     <?php $signedRequestPending = signedRequestUploadPending($request); ?>
-                    <?php if ($nextApproverRole && $nextApprovalId && hasPermission('approve_request')): ?>
+                    <div id="approvalActionContainer">
+                    <?php if ($nextApproverRole && hasPermission('approve_request')): ?>
                         <?php if ($signedRequestPending): ?>
                             <button type="button" class="btn btn-outline-warning" disabled
                                     title="The requester must print, sign, and upload the signed request form before approval becomes available.">
@@ -1312,6 +1327,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                             </button>
                         <?php endif; ?>
                     <?php endif; ?>
+                    </div>
 
                     <?php if ($current === 'SUBMITTED' && hasPermission('approve_request')): ?>
                         <button type="button" class="btn btn-outline-danger"
@@ -1705,9 +1721,9 @@ $canDeleteRequestDocument = hasPermission('procurement_delete_request_document')
                         </select>
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label small">File (PDF, Word, Excel)</label>
+                        <label class="form-label small">File (PDF, Image, Word, Excel)</label>
                         <input type="file" name="document_file" class="form-control form-control-sm"
-                               accept=".pdf,.doc,.docx,.xls,.xlsx" required>
+                               accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx" required>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small">Notes (optional)</label>
@@ -1967,6 +1983,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     <i class="bi bi-check-circle me-1"></i> Signed Request Status
                 </h6>
                 
+                <div id="signedRequestStatusPanel">
                 <?php if (!empty($request['signed_request_document_path'])): ?>
                     <!-- Signed Request Received -->
                     <div class="alert alert-success mb-3" style="font-size: 0.9rem;">
@@ -2373,6 +2390,48 @@ function timelineMeta(string $action): array {
         HTMLFormElement.prototype.submit.call(form);
     }
 
+    function renderSignedUploadSuccess(form, payload) {
+        const statusPanel = document.getElementById('signedRequestStatusPanel');
+        const approvalActionContainer = document.getElementById('approvalActionContainer');
+        const requestId = payload.request_id || parseInt(form.dataset.requestId || '0', 10);
+        const receivedDateRaw = payload.signed_request_received_date || '';
+        const receivedLabel = receivedDateRaw ? new Date(receivedDateRaw.replace(' ', 'T')).toLocaleString() : 'Just now';
+
+        if (statusPanel) {
+            statusPanel.innerHTML = `
+                <div class="alert alert-success mb-3" style="font-size: 0.9rem;">
+                    <strong><i class="bi bi-check-circle-fill me-1"></i> Received</strong><br>
+                    <small class="text-muted d-block mt-1">Received: ${receivedLabel}</small>
+                </div>
+                <a href="/procurement/download_signed_request.php?request_id=${encodeURIComponent(requestId)}&action=view"
+                   target="_blank" class="btn btn-outline-success btn-sm w-100">
+                    <i class="bi bi-download me-1"></i> View Signed Document
+                </a>
+                <button class="btn btn-outline-secondary btn-sm w-100 mt-2"
+                        data-bs-toggle="collapse" data-bs-target="#uploadSignedRequest">
+                    <i class="bi bi-upload me-1"></i> Upload Revised Version
+                </button>
+            `;
+        }
+
+        if (approvalActionContainer && payload.next_approver_role) {
+            if (payload.user_can_approve) {
+                approvalActionContainer.innerHTML = `
+                    <a href="${payload.approval_endpoint}?id=${encodeURIComponent(requestId)}"
+                       class="btn btn-success" onclick="return confirm('Approve this request?')">
+                        <i class="bi ${payload.approval_icon || 'bi-check-circle'} me-1"></i>${payload.approval_label || 'Approve'}
+                    </a>
+                `;
+            } else {
+                approvalActionContainer.innerHTML = `
+                    <button type="button" class="btn btn-success" disabled title="Awaiting approval from ${payload.next_approver_role}">
+                        <i class="bi bi-hourglass-split me-1"></i>Pending ${payload.next_approver_role} Approval
+                    </button>
+                `;
+            }
+        }
+    }
+
     confirmBtn.addEventListener('click', function () {
         console.debug('[SignedUploadNotice] User confirmed');
         const callback = onConfirm;
@@ -2437,10 +2496,55 @@ function timelineMeta(string $action): array {
             const tokenInput = form.querySelector('input[name="signed_notice_action_token"]');
             const alreadyAcknowledged = ackInput && ackInput.value === '1';
 
-            if (!enabled || alreadyAcknowledged) {
-                if (alreadyAcknowledged) {
-                    console.debug('[SignedUploadNotice] Workflow updated: upload submission resumed after confirmation');
+            if (!enabled) {
+                return;
+            }
+
+            if (alreadyAcknowledged) {
+                event.preventDefault();
+                const submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
                 }
+                fetch(form.getAttribute('action') || '/procurement/upload_signed_request.php', {
+                    method: 'POST',
+                    body: new FormData(form),
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    }
+                }).then(function (response) {
+                    return response.json().catch(function () {
+                        return { success: false, message: 'Unexpected server response.' };
+                    });
+                }).then(function (payload) {
+                    if (!payload || !payload.success) {
+                        throw new Error((payload && payload.message) ? payload.message : 'Upload failed.');
+                    }
+                    renderSignedUploadSuccess(form, payload);
+                    if (window.Swal) {
+                        window.Swal.fire({ icon: 'success', title: 'Signed request uploaded', text: payload.message || 'Upload complete.' });
+                    } else {
+                        alert(payload.message || 'Signed request uploaded successfully.');
+                    }
+                    const collapseEl = document.getElementById('uploadSignedRequest');
+                    if (collapseEl && typeof bootstrap !== 'undefined') {
+                        bootstrap.Collapse.getOrCreateInstance(collapseEl).hide();
+                    }
+                }).catch(function (error) {
+                    console.error('[SignedUploadNotice] Upload failed', error);
+                    if (window.Swal) {
+                        window.Swal.fire({ icon: 'error', title: 'Upload failed', text: error.message || 'Unable to upload signed request.' });
+                    } else {
+                        alert(error.message || 'Unable to upload signed request.');
+                    }
+                }).finally(function () {
+                    form.dataset.noticeInProgress = '0';
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                    }
+                });
                 return;
             }
 
