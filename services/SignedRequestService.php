@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/SecureFileStorage.php';
+require_once __DIR__ . '/../config/workflow.php';
 
 class SignedRequestService {
     private $pdo;
@@ -163,20 +164,23 @@ class SignedRequestService {
      * Returns array: ['success' => bool, 'message' => string, 'path' => string or null]
      */
     public function uploadDocument($requestId, $requestType, $fileArray, $uploadedByUserId) {
+        error_log("SignedRequestService::uploadDocument start request_id={$requestId} request_type={$requestType} uploader={$uploadedByUserId}");
         // Validate input
         if (!in_array($requestType, ['REGULAR', 'REIMBURSEMENT', 'PETTY_CASH'])) {
+            error_log("SignedRequestService::uploadDocument invalid request type request_id={$requestId} request_type={$requestType}");
             return ['success' => false, 'message' => 'Invalid request type'];
         }
 
         // Validate file
         $validation = $this->validateFile($fileArray);
         if (!$validation['valid']) {
+            error_log("SignedRequestService::uploadDocument validation failed request_id={$requestId} error={$validation['error']}");
             return ['success' => false, 'message' => $validation['error']];
         }
 
         // Verify request exists and user has permission
         $stmt = $this->pdo->prepare("
-            SELECT request_id, request_type, created_by, status 
+            SELECT request_id, request_type, created_by, status, branch_id, estimated_value
             FROM procurement_requests 
             WHERE request_id = ? AND request_type = ?
         ");
@@ -184,6 +188,7 @@ class SignedRequestService {
         $request = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$request) {
+            error_log("SignedRequestService::uploadDocument request not found/type mismatch request_id={$requestId} request_type={$requestType}");
             return ['success' => false, 'message' => 'Request not found or type mismatch'];
         }
 
@@ -195,6 +200,7 @@ class SignedRequestService {
         ) || $this->userHasUploadPermission($requestType);
 
         if (!$isAuthorized) {
+            error_log("SignedRequestService::uploadDocument unauthorized request_id={$requestId} request_type={$requestType} effective_user={$effectiveUserId}");
             // Log unauthorized attempt
             logAudit(
                 $this->pdo,
@@ -208,7 +214,11 @@ class SignedRequestService {
         }
 
         try {
-            $this->pdo->beginTransaction();
+            $startedTransaction = false;
+            if (!$this->pdo->inTransaction()) {
+                $this->pdo->beginTransaction();
+                $startedTransaction = true;
+            }
 
             $stored = SecureFileStorage::storeUploadedFile(
                 $fileArray,
@@ -276,7 +286,25 @@ class SignedRequestService {
                 $requestId
             ]);
 
-            $this->pdo->commit();
+            if (function_exists('ensureRequestApprovalChain')) {
+                $ensureResult = ensureRequestApprovalChain($this->pdo, [
+                    'request_id' => $requestId,
+                    'request_type' => $requestType,
+                    'status' => (string)($request['status'] ?? ''),
+                    'branch_id' => isset($request['branch_id']) ? (int)$request['branch_id'] : null,
+                    'estimated_value' => (float)($request['estimated_value'] ?? 0),
+                    'signed_request_document_path' => $relativePath,
+                ]);
+                error_log(
+                    "SignedRequestService::uploadDocument workflow check request_id={$requestId} repaired="
+                    . (!empty($ensureResult['repaired']) ? '1' : '0')
+                    . " reason=" . ($ensureResult['reason'] ?? 'unknown')
+                );
+            }
+
+            if ($startedTransaction) {
+                $this->pdo->commit();
+            }
 
             // Log the successful upload
             logAudit(
@@ -297,7 +325,9 @@ class SignedRequestService {
             ];
 
         } catch (Exception $e) {
-            $this->pdo->rollBack();
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             
             // Clean up partial upload if it exists
             if (isset($fullPath) && file_exists($fullPath)) {
@@ -316,12 +346,14 @@ class SignedRequestService {
      * Returns array: ['success' => bool, 'message' => string, 'version' => int|null]
      */
     public function registerStoredDocument($requestId, $requestType, $relativePath, $originalName, $mimeType, $fileSize, $uploadedByUserId) {
+        error_log("SignedRequestService::registerStoredDocument start request_id={$requestId} request_type={$requestType} path={$relativePath} uploader={$uploadedByUserId}");
         if (!in_array($requestType, ['REGULAR', 'REIMBURSEMENT', 'PETTY_CASH'])) {
+            error_log("SignedRequestService::registerStoredDocument invalid request type request_id={$requestId} request_type={$requestType}");
             return ['success' => false, 'message' => 'Invalid request type'];
         }
 
         $stmt = $this->pdo->prepare("
-            SELECT request_id, request_type, created_by, status
+            SELECT request_id, request_type, created_by, status, branch_id, estimated_value
             FROM procurement_requests
             WHERE request_id = ? AND request_type = ?
         ");
@@ -329,6 +361,7 @@ class SignedRequestService {
         $request = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$request) {
+            error_log("SignedRequestService::registerStoredDocument request not found/type mismatch request_id={$requestId} request_type={$requestType}");
             return ['success' => false, 'message' => 'Request not found or type mismatch'];
         }
 
@@ -339,6 +372,7 @@ class SignedRequestService {
         ) || $this->userHasUploadPermission($requestType);
 
         if (!$isAuthorized) {
+            error_log("SignedRequestService::registerStoredDocument unauthorized request_id={$requestId} request_type={$requestType} effective_user={$effectiveUserId}");
             logAudit(
                 $this->pdo,
                 'signed_request_documents',
@@ -351,7 +385,11 @@ class SignedRequestService {
         }
 
         try {
-            $this->pdo->beginTransaction();
+            $startedTransaction = false;
+            if (!$this->pdo->inTransaction()) {
+                $this->pdo->beginTransaction();
+                $startedTransaction = true;
+            }
 
             $versionStmt = $this->pdo->prepare("
                 SELECT COALESCE(MAX(version_number), 0) as current_version
@@ -403,7 +441,25 @@ class SignedRequestService {
                 $requestId
             ]);
 
-            $this->pdo->commit();
+            if (function_exists('ensureRequestApprovalChain')) {
+                $ensureResult = ensureRequestApprovalChain($this->pdo, [
+                    'request_id' => $requestId,
+                    'request_type' => $requestType,
+                    'status' => (string)($request['status'] ?? ''),
+                    'branch_id' => isset($request['branch_id']) ? (int)$request['branch_id'] : null,
+                    'estimated_value' => (float)($request['estimated_value'] ?? 0),
+                    'signed_request_document_path' => $relativePath,
+                ]);
+                error_log(
+                    "SignedRequestService::registerStoredDocument workflow check request_id={$requestId} repaired="
+                    . (!empty($ensureResult['repaired']) ? '1' : '0')
+                    . " reason=" . ($ensureResult['reason'] ?? 'unknown')
+                );
+            }
+
+            if ($startedTransaction) {
+                $this->pdo->commit();
+            }
 
             logAudit(
                 $this->pdo,

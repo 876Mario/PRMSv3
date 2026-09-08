@@ -105,6 +105,15 @@ $stmt->execute([$id]);
 $nextApproval = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$nextApproval) {
+    $repairResult = ensureRequestApprovalChain($pdo, $request);
+    if (!empty($repairResult['repaired'])) {
+        error_log('approve.php repaired missing pending approvals for request_id=' . (int)$id);
+        $stmt->execute([$id]);
+        $nextApproval = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+}
+
+if (!$nextApproval) {
     modalPop(
         "No Pending Approvals",
         "All approval stages are complete or this request has no pending approvals.",

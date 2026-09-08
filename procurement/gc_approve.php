@@ -83,8 +83,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $gcApproval = $gcStmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$gcApproval) {
-            pop('No pending GC approval found', '/procurement/view.php?id='.$id, POP_DEFAULT_DELAY_MS, 'error');
-            exit;
+            $repairResult = ensureRequestApprovalChain($pdo, $request);
+            if (!empty($repairResult['repaired'])) {
+                error_log('gc_approve.php repaired missing pending approvals for request_id=' . $id);
+                $gcStmt->execute([$id]);
+                $gcApproval = $gcStmt->fetch(PDO::FETCH_ASSOC);
+            }
+            if (!$gcApproval) {
+                pop('No pending GC approval found', '/procurement/view.php?id='.$id, POP_DEFAULT_DELAY_MS, 'error');
+                exit;
+            }
         }
 
         // Determine next status dynamically based on approval chain

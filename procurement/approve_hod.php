@@ -66,6 +66,15 @@ $stmt->execute([$id]);
 $nextApproval = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$nextApproval) {
+    $repairResult = ensureRequestApprovalChain($pdo, $request);
+    if (!empty($repairResult['repaired'])) {
+        error_log('approve_hod.php repaired missing pending approvals for request_id=' . $id);
+        $stmt->execute([$id]);
+        $nextApproval = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+}
+
+if (!$nextApproval) {
     pop('No pending approvals for this request', '/procurement/view.php?id='.$id, POP_DEFAULT_DELAY_MS, 'warning');
     exit;
 }
