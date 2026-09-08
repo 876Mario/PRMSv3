@@ -228,35 +228,66 @@ $invoices = $invStmt->fetchAll(PDO::FETCH_ASSOC);
 // ================================
 // Fetch approved PO variations
 // ================================
-$adjStmt = $pdo->prepare("
-    SELECT 
-        pv.variation_id,
-        pv.variation_amount,
-        pv.reason,
-        pv.approved_at,
-        pv.status,
-        pv.commitment_id,
+$poVariationHasCommitmentId = false;
+try {
+    $pdo->query("SELECT commitment_id FROM po_variations LIMIT 1");
+    $poVariationHasCommitmentId = true;
+} catch (PDOException $e) {
+    if (
+        strpos($e->getMessage(), '1054') === false &&
+        strpos($e->getMessage(), '42S22') === false &&
+        stripos($e->getMessage(), 'unknown column') === false &&
+        stripos($e->getMessage(), 'no such column') === false
+    ) {
+        throw $e;
+    }
+    error_log("PO view fallback active (po_variations.commitment_id missing): " . $e->getMessage());
+}
 
-        CASE
-            WHEN pv.commitment_id IS NULL THEN 0
-            WHEN COALESCE(cap.pending_count, 0) = 0 THEN 1
-            ELSE 0
-        END AS supp_commitment_fully_approved
-
-    FROM po_variations pv
-    LEFT JOIN commitments c
-        ON pv.commitment_id = c.commitment_id
-    LEFT JOIN (
-        SELECT entity_id AS commitment_id, COUNT(*) AS pending_count
-        FROM request_approvals
-        WHERE entity_type='COMMITMENT'
-          AND status='pending'
-        GROUP BY entity_id
-    ) cap ON cap.commitment_id = pv.commitment_id
-    WHERE pv.po_id = ?
-  AND pv.status IN ('PENDING','APPROVED')
-  ORDER BY pv.approved_at ASC
-");
+if ($poVariationHasCommitmentId) {
+    $adjStmt = $pdo->prepare("
+        SELECT 
+            pv.variation_id,
+            pv.variation_amount,
+            pv.reason,
+            pv.approved_at,
+            pv.status,
+            pv.commitment_id,
+            CASE
+                WHEN pv.commitment_id IS NULL THEN 0
+                WHEN COALESCE(cap.pending_count, 0) = 0 THEN 1
+                ELSE 0
+            END AS supp_commitment_fully_approved
+        FROM po_variations pv
+        LEFT JOIN commitments c
+            ON pv.commitment_id = c.commitment_id
+        LEFT JOIN (
+            SELECT entity_id AS commitment_id, COUNT(*) AS pending_count
+            FROM request_approvals
+            WHERE entity_type='COMMITMENT'
+              AND status='pending'
+            GROUP BY entity_id
+        ) cap ON cap.commitment_id = pv.commitment_id
+        WHERE pv.po_id = ?
+          AND pv.status IN ('PENDING','APPROVED')
+        ORDER BY pv.approved_at ASC
+    ");
+} else {
+    $adjStmt = $pdo->prepare("
+        SELECT
+            pv.variation_id,
+            pv.variation_amount,
+            pv.reason,
+            pv.approved_at,
+            pv.status,
+            NULL AS commitment_id,
+            0 AS supp_commitment_fully_approved
+        FROM po_variations pv
+        WHERE pv.po_id = ?
+          AND pv.status IN ('PENDING','APPROVED')
+        ORDER BY pv.approved_at ASC
+    ");
+}
 $adjStmt->execute([$po['po_id']]);
 $variations = $adjStmt->fetchAll(PDO::FETCH_ASSOC);
 
