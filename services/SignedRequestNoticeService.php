@@ -15,6 +15,20 @@ class SignedRequestNoticeService
 
     public static function seedDefaultSettings(PDO $pdo): void
     {
+        $submitToProcurementDefault = '1';
+
+        try {
+            $legacyStmt = $pdo->prepare('SELECT config_value FROM system_config WHERE config_key = ? LIMIT 1');
+            $legacyStmt->execute([self::UPLOAD_NOTICE_KEY]);
+            $legacyValue = $legacyStmt->fetchColumn();
+
+            if ($legacyValue !== false && $legacyValue !== null && $legacyValue !== '') {
+                $submitToProcurementDefault = (string)$legacyValue;
+            }
+        } catch (Throwable $e) {
+            error_log('SignedRequestNoticeService::seedDefaultSettings failed to read legacy upload notice config: ' . $e->getMessage());
+        }
+
         $stmt = $pdo->prepare(
             "INSERT INTO system_config (config_key, config_value, description, created_at)
              VALUES (?, ?, ?, NOW())
@@ -35,7 +49,7 @@ class SignedRequestNoticeService
 
         $stmt->execute([
             self::SUBMIT_TO_PROCUREMENT_CONFIRMATION_KEY,
-            '1',
+            $submitToProcurementDefault,
             'Enable/disable original signed document confirmation before submission (1=enabled, 0=disabled)'
         ]);
     }

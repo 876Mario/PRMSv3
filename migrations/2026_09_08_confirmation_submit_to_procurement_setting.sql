@@ -10,4 +10,4 @@ VALUES (
     'Enable/disable original signed document confirmation before submission (1=enabled, 0=disabled)',
     NOW()
 )
-ON DUPLICATE KEY UPDATE config_value = config_value;
+ON DUPLICATE KEY UPDATE config_value = VALUES(config_value);
