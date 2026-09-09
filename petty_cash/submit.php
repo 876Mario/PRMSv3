@@ -154,18 +154,46 @@ try {
         'Petty cash approval chain created: ' . implode(' → ', $approvalRoles)
     );
 
+    $pdo->commit();
+
     /* ================================
        Send Notifications
     ================================ */
     require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
+    try {
+        notifyFinanceForDirectApproval($request_id, 'PETTY_CASH');
+        notifyRequestorSubmissionConfirmed($request_id);
 
-    // Notify all Finance Officers about this petty cash request
-    notifyFinanceForDirectApproval($request_id, 'PETTY_CASH');
+        $highValueThreshold = 500000.00;
+        try {
+            $cfgStmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'high_value_petty_cash_threshold' LIMIT 1");
+            $cfgStmt->execute();
+            $cfg = $cfgStmt->fetchColumn();
+            if ($cfg !== false && is_numeric($cfg)) {
+                $highValueThreshold = (float)$cfg;
+            }
+        } catch (Throwable $cfgEx) {
+            error_log('petty_cash/submit threshold config lookup failed: ' . $cfgEx->getMessage());
+        }
 
-    // Confirm submission to the requestor
-    notifyRequestorSubmissionConfirmed($request_id);
-
-    $pdo->commit();
+        if ((float)($request['estimated_value'] ?? 0) >= $highValueThreshold) {
+            notifyDirectorFinanceActionRequired(
+                $request_id,
+                'High-Value Petty Cash Request Submitted',
+                'A high-value petty cash request requires finance supervisory visibility.',
+                'urgent'
+            );
+        } else {
+            notifyDirectorFinanceActionRequired(
+                $request_id,
+                'Finance Verification Required',
+                'A petty cash request is awaiting finance fund verification.',
+                'high'
+            );
+        }
+    } catch (Throwable $notifyEx) {
+        error_log('petty_cash/submit notification failed for request_id=' . $request_id . ': ' . $notifyEx->getMessage());
+    }
 
     /* ================================
        Redirect

@@ -67,6 +67,7 @@ $userId = $_SESSION['user_id'];
                         'EVALUATION_STAGE' => '#fee140',
                         'RFQ_LETTER_AVAILABLE' => '#fa8231',
                         'QUOTE_REVIEW_PENDING' => '#ff9ff3',
+                        'ADDITIONAL_QUOTATIONS_REQUIRED' => '#f39c12',
                         'QUOTE_REQUESTOR_REVIEW_PENDING' => '#f6b93b',
                         'QUOTE_REQUESTOR_REVIEW_APPROVED' => '#9b59b6',
                         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => '#8e44ad',

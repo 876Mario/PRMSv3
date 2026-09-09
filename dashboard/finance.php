@@ -4,6 +4,21 @@ $REQUIRE_PERMISSION = 'view_finance_dashboard';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
 require_once $_SERVER['DOCUMENT_ROOT']."/config/helper.php";
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
+
+$financeStats = $pdo->query("
+    SELECT
+      SUM(CASE WHEN request_type = 'PETTY_CASH' AND status = 'SUBMITTED' THEN 1 ELSE 0 END) AS pending_fund_verifications,
+      SUM(CASE WHEN request_type = 'PETTY_CASH' AND status IN ('FUNDS_VERIFIED','FINANCE_AUTHORIZED') THEN 1 ELSE 0 END) AS pending_disbursements,
+      SUM(CASE WHEN request_type = 'PETTY_CASH' AND status IN ('SUBMITTED','FUNDS_VERIFIED','FINANCE_AUTHORIZED','DISBURSED') THEN 1 ELSE 0 END) AS pending_petty_cash,
+      SUM(CASE WHEN status IN ('COMMITMENTS_PENDING','INVOICE_RECEIVED') THEN 1 ELSE 0 END) AS outstanding_finance_tasks,
+      SUM(CASE WHEN DATEDIFF(NOW(), updated_at) >= 7 AND status NOT IN ('COMPLETED','DECLINED','CANCELLED','PAUSED') THEN 1 ELSE 0 END) AS urgent_items
+    FROM procurement_requests
+")->fetch(PDO::FETCH_ASSOC) ?: [];
+
+$unreadNotifications = class_exists('NotificationService')
+    ? NotificationService::countUnread((int)($_SESSION['user_id'] ?? 0))
+    : 0;
 
 
 /* 🧱 ONLY AFTER AUTH IS PASSED */
@@ -65,6 +80,19 @@ require_once $_SERVER['DOCUMENT_ROOT']."/includes/header.php";
         <i class="bi bi-arrow-clockwise" style="margin-right: 0.5rem;"></i> Refresh
       </button>
     </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem;">
+      <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Pending Fund Verifications</div><div class="fs-4 fw-bold"><?= (int)($financeStats['pending_fund_verifications'] ?? 0) ?></div></div></div>
+      <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Pending Petty Cash Requests</div><div class="fs-4 fw-bold"><?= (int)($financeStats['pending_petty_cash'] ?? 0) ?></div></div></div>
+      <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Pending Disbursements</div><div class="fs-4 fw-bold"><?= (int)($financeStats['pending_disbursements'] ?? 0) ?></div></div></div>
+      <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Outstanding Finance Tasks</div><div class="fs-4 fw-bold"><?= (int)($financeStats['outstanding_finance_tasks'] ?? 0) ?></div></div></div>
+      <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Items Requiring Immediate Action</div><div class="fs-4 fw-bold text-danger"><?= (int)($financeStats['urgent_items'] ?? 0) ?></div></div></div>
+      <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Unread Notifications</div><div class="fs-4 fw-bold"><?= (int)$unreadNotifications ?></div></div></div>
+    </div>
+
+    <div class="alert alert-danger"><strong>URGENT:</strong> Overdue and escalated finance workflows.</div>
+    <div class="alert alert-warning"><strong>HIGH PRIORITY:</strong> Pending verifications and disbursements.</div>
+    <div class="alert alert-info mb-4"><strong>NORMAL:</strong> Open assigned finance activities.</div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
       <?php include __DIR__."/widgets/kpis.php"; ?>

@@ -177,6 +177,7 @@ class WorkflowResponsibilityService
             // 2. Quote Review — the requestor and the applicable branch head
             //    are jointly responsible for reviewing quotations.
             case 'QUOTE_REVIEW_PENDING':
+            case 'ADDITIONAL_QUOTATIONS_REQUIRED':
             case 'QUOTE_APPROVED':
                 return $this->requestorAndBranchHeadOfficers($request);
 

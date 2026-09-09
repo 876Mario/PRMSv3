@@ -16,7 +16,7 @@ $pipeline = $pdo->query("
     FROM procurement_requests
     {$pipelineVisibilityWhere}
     GROUP BY UPPER(status)
-    ORDER BY FIELD(UPPER(status), 'DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'EVALUATION_STAGE', 'COMMITTEE_RECOMMENDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'PO_APPROVED', 'INVOICE_RECEIVED', 'AWARDED', 'COMPLETED', 'DECLINED')
+    ORDER BY FIELD(UPPER(status), 'DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'EVALUATION_STAGE', 'COMMITTEE_RECOMMENDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'PO_APPROVED', 'INVOICE_RECEIVED', 'AWARDED', 'COMPLETED', 'DECLINED')
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 $totalCount = array_sum(array_column($pipeline, 'cnt'));
@@ -33,6 +33,7 @@ $stageMeta = [
     'GC_APPROVED'           => ['icon' => '🏛', 'color' => '#198754', 'label' => 'GC Approved'],
     'RFQ_LETTER_AVAILABLE'  => ['icon' => '✉️', 'color' => '#6f42c1', 'label' => 'RFQ Letters'],
     'QUOTE_REVIEW_PENDING'  => ['icon' => '💬', 'color' => '#fd7e14', 'label' => 'Quote Review'],
+    'ADDITIONAL_QUOTATIONS_REQUIRED' => ['icon' => '🔁', 'color' => '#f39c12', 'label' => 'Additional Quotations Required'],
     'QUOTE_REQUESTOR_REVIEW_PENDING' => ['icon' => '👤', 'color' => '#e67e22', 'label' => 'Requestor Review'],
     'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['icon' => '✅', 'color' => '#20c997', 'label' => 'Requestor Approved'],
     'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['icon' => '🛡️', 'color' => '#8e44ad', 'label' => 'Branch Head Approval'],

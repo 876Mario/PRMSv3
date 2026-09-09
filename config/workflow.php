@@ -43,25 +43,26 @@ function allowedTransitions(): array {
         'QUOTE_REVIEW_PENDING'   => ['QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED',
                                      // ← backward
                                      'RFQ_LETTER_AVAILABLE'],
-        'QUOTE_REQUESTOR_REVIEW_PENDING' => ['QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+        'ADDITIONAL_QUOTATIONS_REQUIRED' => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE'],
+        'QUOTE_REQUESTOR_REVIEW_PENDING' => ['QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'PROCUREMENT_STAGE', 'AWARDED',
                                         // ← backward (return for correction)
                                         'RFQ_LETTER_AVAILABLE'],
-        'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+        'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'PROCUREMENT_STAGE', 'AWARDED',
                                          // ← backward (return to spec review)
                                          'QUOTE_REQUESTOR_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
-        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['QUOTE_APPROVED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+        'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['QUOTE_APPROVED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'PROCUREMENT_STAGE', 'AWARDED',
                                                  // ← backward (return to spec review)
                                                  'RFQ_LETTER_AVAILABLE'],
         'QUOTE_APPROVED'         => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PROCUREMENT_STAGE',
                                      // ← backward
-                                     'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
+                                     'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'RFQ_LETTER_AVAILABLE'],
         'COMMITMENTS_PENDING'    => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'PROCUREMENT_STAGE',
                                      // ← backward
                                      'QUOTE_APPROVED', 'FUNDS_VERIFIED'],
         'COMMITMENT_APPROVED'    => ['PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED',
                                      // ← backward (Finance can revert to re-check funds)
                                      'COMMITMENTS_PENDING', 'FUNDS_VERIFIED'],
-        'COMMITMENT_DECLINED'    => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'SUBMITTED'],
+        'COMMITMENT_DECLINED'    => ['QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'PROCUREMENT_STAGE', 'SUBMITTED'],
         'PO_PENDING'             => ['INVOICE_RECEIVED', 'AWARDED',
                                      // ← backward
                                      'COMMITMENT_APPROVED'],
@@ -105,7 +106,7 @@ function isBackwardTransition(string $from, string $to): bool {
     $order = [
         'DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED',
         'FUNDS_VERIFIED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE',
-        'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED',
+        'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED',
         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'EVALUATION_STAGE',
         'COMMITTEE_RECOMMENDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED',
         'PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED', 'COMPLETED',
@@ -235,8 +236,9 @@ function stageOwner(string $stage): array {
         'GC_APPROVED'            => ['Deputy Government Chemist'],
         'AWARDED'                => ['Deputy Government Chemist'],
         // RFQ Workflow Stages (reachable through HOD approval)
-        'RFQ_LETTER_AVAILABLE'   => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer', 'Director HRM&A', 'Deputy Government Chemist'],
+        'RFQ_LETTER_AVAILABLE'   => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer', 'Director HRM&A', 'Director Accounts & Finance', 'Deputy Government Chemist'],
         'QUOTE_REVIEW_PENDING'   => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer'], // For quote review & quote selection
+        'ADDITIONAL_QUOTATIONS_REQUIRED' => ['Procurement Officer', 'Director Procurement'],
         'QUOTE_REQUESTOR_REVIEW_PENDING' => ['Requestor'], // Original requestor confirms the selected quotation meets specifications
         'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['Branch Head', 'HOD', 'Director HRM&A'], // Auto-routes to Branch Head approval
         'PROCUREMENT_STAGE'      => ['Procurement Officer', 'HOD'], // HOD can approve and transition to this
@@ -869,7 +871,7 @@ function canGenerateRFQLetterAtStage(string $status, bool $isDirectProcurement):
     }
     
     // RFQ letter can be generated once approval is received
-    $approvingStages = ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED'];
+    $approvingStages = ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED'];
     return in_array(strtoupper($status), $approvingStages);
 }
 
@@ -891,6 +893,7 @@ function getRFQWorkflowStep(string $status, bool $rfqExists = false): array {
         'RFQ_LETTER_AVAILABLE' => ['number' => 3, 'name' => 'RFQ Letter Available', 'description' => 'Send RFQ to vendors'],
         'PROCUREMENT_STAGE' => ['number' => 3, 'name' => 'Procurement Stage', 'description' => 'RFQ process initiated'],
         'QUOTE_REVIEW_PENDING' => ['number' => 4, 'name' => 'Quotes Submitted', 'description' => 'Review vendor quotes and select the preferred offer'],
+        'ADDITIONAL_QUOTATIONS_REQUIRED' => ['number' => 4, 'name' => 'Additional Quotations Required', 'description' => 'Requestor rejected all submitted quotations; procurement must collect additional quotations'],
         'QUOTE_REQUESTOR_REVIEW_PENDING' => ['number' => 5, 'name' => 'Pending Requestor Review', 'description' => 'Original requestor must confirm the selected quotation meets specifications'],
         'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['number' => 6, 'name' => 'Requestor Review Approved', 'description' => 'Selected quotation confirmed by the original requestor'],
         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['number' => 7, 'name' => 'Pending Branch Head Approval', 'description' => 'Branch Head must record the final award decision'],
@@ -933,6 +936,7 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
         'GC_APPROVED' => 'RFQ_LETTER_AVAILABLE',
         'RFQ_LETTER_AVAILABLE' => 'QUOTE_REVIEW_PENDING',
         'QUOTE_REVIEW_PENDING' => 'QUOTE_REQUESTOR_REVIEW_PENDING',
+        'ADDITIONAL_QUOTATIONS_REQUIRED' => 'QUOTE_REVIEW_PENDING',
         'QUOTE_REQUESTOR_REVIEW_PENDING' => 'QUOTE_REQUESTOR_REVIEW_APPROVED',
         'QUOTE_REQUESTOR_REVIEW_APPROVED' => 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING',
         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => 'QUOTE_APPROVED',
@@ -954,6 +958,7 @@ function getNextRFQStep(string $status, bool $isDirectProcurement = false): arra
         'HOD_APPROVED' => 'Get HOD approval',
         'RFQ_LETTER_AVAILABLE' => 'Generate RFQ letters and send to vendors',
         'QUOTE_REVIEW_PENDING' => 'Review vendor quotes and select the preferred quotation',
+        'ADDITIONAL_QUOTATIONS_REQUIRED' => 'Add additional vendors and quotations, then resubmit for quote review',
         'QUOTE_REQUESTOR_REVIEW_PENDING' => 'Requestor confirms the selected quotation meets specifications',
         'QUOTE_REQUESTOR_REVIEW_APPROVED' => 'Route the confirmed quotation to the Branch Head',
         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => 'Branch Head records the final approval decision',
@@ -1003,6 +1008,11 @@ function getAdminWorkflowStatusOptions(): array {
             'label' => 'Quote Review',
             'description' => 'Quotes available for evaluation.',
             'icon' => 'bi-chat-dots',
+        ],
+        'ADDITIONAL_QUOTATIONS_REQUIRED' => [
+            'label' => 'Additional Quotations Required',
+            'description' => 'Requestor rejected submitted quotations; procurement must add more quotations.',
+            'icon' => 'bi-arrow-repeat',
         ],
         'QUOTE_REQUESTOR_REVIEW_PENDING' => [
             'label' => 'Requestor Review',
@@ -1068,19 +1078,36 @@ function canProceedToQuoteReview(PDO $pdo, int $rfqId): array {
             SUM(CASE WHEN response_status IN ('SUBMITTED', 'SELECTED') THEN 1 ELSE 0 END) as submitted_count
         FROM rfq_vendors
         WHERE rfq_id = ?
+          AND COALESCE(is_deleted, 0) = 0
     ");
     $stmt->execute([$rfqId]);
     $vendors = $stmt->fetch(PDO::FETCH_ASSOC);
-    
+
+    $quoteStmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM rfq_quotes q
+        JOIN rfq_vendors rv ON rv.rfq_vendor_id = q.rfq_vendor_id
+        WHERE rv.rfq_id = ?
+          AND COALESCE(rv.is_deleted, 0) = 0
+          AND COALESCE(q.is_deleted, 0) = 0
+    ");
+    $quoteStmt->execute([$rfqId]);
+    $quoteCount = (int)$quoteStmt->fetchColumn();
+
     $totalVendors = (int)$vendors['total_vendors'];
     $submittedCount = (int)$vendors['submitted_count'];
-    
+
+    $canReview = $totalVendors > 0 && $quoteCount > 0;
+
     return [
-        'can_review' => $submittedCount > 0,
+        'can_review' => $canReview,
         'total_vendors' => $totalVendors,
         'submitted_vendors' => $submittedCount,
+        'quote_count' => $quoteCount,
         'pending_vendors' => $totalVendors - $submittedCount,
-        'message' => $submittedCount . ' of ' . $totalVendors . ' vendors submitted quotes'
+        'message' => $canReview
+            ? ($submittedCount . ' of ' . $totalVendors . ' vendors submitted quotes')
+            : 'Cannot Submit for Quote Review. Please add at least one vendor and one quotation before submitting this RFQ for review.'
     ];
 }
 
@@ -1113,6 +1140,7 @@ function getStatusLabel(string $status): array {
         'GC_APPROVED' => ['label' => 'Government Chemist Approved', 'description' => 'Deputy Government Chemist has approved', 'color' => 'success'],
         'RFQ_LETTER_AVAILABLE' => ['label' => 'RFQ Letter Available', 'description' => 'RFQ letter can be generated for vendors', 'color' => 'info'],
         'QUOTE_REVIEW_PENDING' => ['label' => 'Quote Review Pending', 'description' => 'Waiting for quote review and preferred-quote selection', 'color' => 'warning'],
+        'ADDITIONAL_QUOTATIONS_REQUIRED' => ['label' => 'Additional Quotations Required', 'description' => 'Requestor rejected all quotations; procurement must add more vendors and quotations before resubmission', 'color' => 'warning'],
         'QUOTE_REQUESTOR_REVIEW_PENDING' => ['label' => 'Pending Requestor Review', 'description' => 'Original requestor must confirm the selected quotation meets specifications', 'color' => 'warning'],
         'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['label' => 'Requestor Review Approved', 'description' => 'Selected quotation confirmed by the original requestor', 'color' => 'success'],
         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['label' => 'Pending Branch Head Approval', 'description' => 'Awaiting auto-routed Branch Head final approval', 'color' => 'info'],

@@ -118,6 +118,7 @@ if (!function_exists('isMonitoringRole') ||
     $allWorkflowStatuses = [
         'PROCUREMENT_STAGE', 'EVALUATION_STAGE',
         'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING',
+        'ADDITIONAL_QUOTATIONS_REQUIRED',
         'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED',
         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING',
         'QUOTE_APPROVED',
@@ -222,6 +223,7 @@ $statusActionMap = [
     'EVALUATION_STAGE'                   => ['label' => 'Evaluate RFQ',            'color' => '#fd7e14', 'icon' => 'bi-clipboard-check',     'href_tpl' => '/rfq/list.php?request_id={id}'],
     'RFQ_LETTER_AVAILABLE'               => ['label' => 'Generate RFQ Letters',    'color' => '#4facfe', 'icon' => 'bi-envelope-open',       'href_tpl' => '/rfq/view.php?request_id={id}'],
     'QUOTE_REVIEW_PENDING'               => ['label' => 'Review Quotes',           'color' => '#fa709a', 'icon' => 'bi-search',              'href_tpl' => '/rfq/view.php?id={id}'],
+    'ADDITIONAL_QUOTATIONS_REQUIRED'     => ['label' => 'Collect Additional Quotations', 'color' => '#f39c12', 'icon' => 'bi-arrow-repeat', 'href_tpl' => '/rfq/view.php?id={id}'],
     'QUOTE_REQUESTOR_REVIEW_PENDING'    => ['label' => 'Pending Requestor Review','color' => '#e67e22', 'icon' => 'bi-file-earmark-check',  'href_tpl' => '/rfq/requestor_spec_review.php?id={id}'],
     'QUOTE_REQUESTOR_REVIEW_APPROVED'    => ['label' => 'Branch Head Review',      'color' => '#9b59b6', 'icon' => 'bi-person-check',        'href_tpl' => '/rfq/branch_head_approve.php?id={id}'],
     'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['label' => 'Pending Branch Head Approval', 'color' => '#8e44ad', 'icon' => 'bi-shield-check',   'href_tpl' => '/rfq/branch_head_approve.php?id={id}'],
@@ -243,7 +245,7 @@ function actionHref(string $status, int $requestId, array $actionMap, ?int $rfqI
 {
     $tpl = $actionMap[$status]['href_tpl'] ?? '/procurement/view.php?id={id}';
     $targetId = $requestId;
-    if (in_array($status, ['QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING'], true) && $rfqId) {
+    if (in_array($status, ['QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING'], true) && $rfqId) {
         $targetId = $rfqId;
     }
     return str_replace('{id}', (string)$targetId, $tpl);

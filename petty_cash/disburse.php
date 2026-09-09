@@ -19,6 +19,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
    ============================================================ */
 $request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 $disbursal_notes = isset($_POST['disbursal_notes']) ? trim($_POST['disbursal_notes']) : '';
+requireCsrfToken('/petty_cash/view.php?request_id=' . $request_id);
 
 if ($request_id <= 0) {
     pop("Invalid petty cash request reference.", "/petty_cash/list.php");
@@ -160,8 +161,20 @@ try {
 
     $pdo->commit();
 
+    try {
+        notifyPettyCashDisbursed($request_id);
+        notifyDirectorFinanceActionRequired(
+            $request_id,
+            'Cash Disbursed',
+            'A petty cash request has been marked as Cash Disbursed by Accounts & Finance.',
+            'high'
+        );
+    } catch (Throwable $notifyEx) {
+        error_log('Petty cash disbursement notification failed for request_id=' . $request_id . ': ' . $notifyEx->getMessage());
+    }
+
     pop(
-        "Petty cash successfully disbursed. Requestor notified to submit reconciliation.",
+        "Petty cash successfully disbursed. Requestor notification has been queued.",
         "/petty_cash/view.php?request_id={$request_id}",
         1500,
         "success"

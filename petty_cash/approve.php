@@ -226,21 +226,30 @@ try {
         $comments ?: null
     );
 
-    /* ================================
-       Notify Requestor
-    ================================ */
-    if ($newStatus === 'DECLINED') {
-        // Request declined
-        notifyRequestDeclined($request_id, (int)$request['created_by'], $comments ?: 'Your petty cash request was declined.');
-    } elseif ($newStatus === 'RETURNED_FOR_CORRECTION') {
-        // Request returned for correction
-        notifyRequestReturned($request_id, (int)$request['created_by'], $comments ?: 'Please review the feedback and correct your request.');
-    } else {
-        // Approved (HOD_APPROVED or FUNDS_VERIFIED)
-        notifyRequestFinalized($request_id, $newStatus);
-    }
-
     $pdo->commit();
+
+    /* ================================
+       Notify Requestor / Supervisors
+    ================================ */
+    try {
+        if ($newStatus === 'DECLINED') {
+            notifyRequestDeclined($request_id, (int)$request['created_by'], $comments ?: 'Your petty cash request was declined.');
+        } elseif ($newStatus === 'RETURNED_FOR_CORRECTION') {
+            notifyRequestReturned($request_id, (int)$request['created_by'], $comments ?: 'Please review the feedback and correct your request.');
+        } elseif ($newStatus === 'FUNDS_VERIFIED') {
+            notifyPettyCashFundsVerified($request_id);
+            notifyDirectorFinanceActionRequired(
+                $request_id,
+                'Finance Verification Completed',
+                'A petty cash request has been marked as Funds Verified and is ready for cash disbursement.',
+                'high'
+            );
+        } else {
+            notifyRequestFinalized($request_id, $newStatus);
+        }
+    } catch (Throwable $notifyEx) {
+        error_log('Petty cash approval notification failed for request_id=' . $request_id . ': ' . $notifyEx->getMessage());
+    }
 
     /* ================================
        Redirect
