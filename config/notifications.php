@@ -4864,6 +4864,72 @@ function notifyDirectorFinanceActionRequired(int $requestId, string $title, stri
     }
 }
 
+function notifyExecutiveOversightActionRequired(int $requestId, string $title, string $message, string $priority = 'urgent'): bool
+{
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT request_number, status
+            FROM procurement_requests
+            WHERE request_id = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request) {
+            return false;
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT u.user_id, u.email, u.full_name
+            FROM users u
+            JOIN roles r ON r.id = u.role_id
+            WHERE r.name IN ('Deputy Government Chemist', 'Government Chemist', 'Admin', 'SuperAdmin')
+              AND u.is_active = 1
+            ORDER BY u.user_id ASC
+        ");
+        $stmt->execute();
+        $recipients = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($recipients)) {
+            return false;
+        }
+
+        $subject = preg_replace('/[\r\n\x00-\x1F\x7F]+/', ' ', $title . ': ' . ($request['request_number'] ?? ('Request #' . $requestId)));
+        $url = '/procurement/view.php?id=' . urlencode((string)$requestId);
+        $html = '<p>' . he($message) . '</p>'
+              . '<p><strong>Request Number:</strong> ' . he($request['request_number'] ?? ('Request #' . $requestId)) . '</p>'
+              . '<p><strong>Current Status:</strong> ' . he($request['status'] ?? 'UNKNOWN') . '</p>'
+              . '<p><a href="' . he(getAppUrl() . $url) . '" class="button">Open Request</a></p>';
+
+        foreach ($recipients as $recipient) {
+            $uid = (int)($recipient['user_id'] ?? 0);
+            if ($uid <= 0) {
+                continue;
+            }
+
+            NotificationService::createNotification($uid, NotificationService::TYPE_APPROVAL_NEEDED, [
+                'title' => $title,
+                'body' => $message,
+                'request_id' => $requestId,
+                'request_ref' => $request['request_number'] ?? null,
+                'action_url' => $url,
+                'stage' => 'EXECUTIVE_OVERSIGHT',
+                'priority' => $priority,
+            ]);
+
+            if (notificationsEnabled() && !empty($recipient['email']) && filter_var($recipient['email'], FILTER_VALIDATE_EMAIL)) {
+                sendMail($recipient['email'], $subject, $html);
+            }
+        }
+
+        logAudit($pdo, 'procurement_requests', $requestId, 'EXECUTIVE_OVERSIGHT_NOTIFICATION', $title . ' | ' . $message);
+        return true;
+    } catch (Throwable $e) {
+        error_log('notifyExecutiveOversightActionRequired failed: ' . $e->getMessage());
+        return false;
+    }
+}
+
 function notifyPettyCashRequestorLifecycle(int $requestId, string $event): bool
 {
     global $pdo;

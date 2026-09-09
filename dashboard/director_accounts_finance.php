@@ -3,7 +3,13 @@ $REQUIRE_PERMISSION = 'view_director_dashboard';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/WorkflowConfigurationService.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
+
+$financeThreshold = WorkflowConfigurationService::getHighValueThreshold($pdo, 'finance');
+$requestThreshold = WorkflowConfigurationService::getHighValueThreshold($pdo, 'request');
+$slaSnapshot = WorkflowConfigurationService::getEscalationSnapshot($pdo, 'PETTY_CASH', 'SUBMITTED', 0);
+$overdueDays = $slaSnapshot['overdue_days'];
 
 $statsStmt = $pdo->query("
     SELECT
@@ -11,7 +17,9 @@ $statsStmt = $pdo->query("
         SUM(CASE WHEN status = 'FUNDS_VERIFIED' AND request_type = 'PETTY_CASH' THEN 1 ELSE 0 END) AS pending_disbursements,
         SUM(CASE WHEN status IN ('FUNDS_VERIFIED','FINANCE_AUTHORIZED','DISBURSED') AND request_type = 'PETTY_CASH' THEN 1 ELSE 0 END) AS petty_cash_processing,
         SUM(CASE WHEN status IN ('COMMITMENTS_PENDING','INVOICE_RECEIVED') THEN 1 ELSE 0 END) AS outstanding_finance_actions,
-        SUM(CASE WHEN DATEDIFF(NOW(), updated_at) >= 7 AND status NOT IN ('COMPLETED','DECLINED','CANCELLED','PAUSED') THEN 1 ELSE 0 END) AS aging_items
+        SUM(CASE WHEN DATEDIFF(NOW(), updated_at) >= {$overdueDays} AND status NOT IN ('COMPLETED','DECLINED','CANCELLED','PAUSED') THEN 1 ELSE 0 END) AS aging_items,
+        SUM(CASE WHEN estimated_value >= {$requestThreshold} AND status NOT IN ('COMPLETED','DECLINED','CANCELLED','PAUSED') THEN 1 ELSE 0 END) AS high_value_transactions,
+        SUM(CASE WHEN estimated_value >= {$financeThreshold} AND status NOT IN ('COMPLETED','DECLINED','CANCELLED','PAUSED') THEN 1 ELSE 0 END) AS escalated_transactions
     FROM procurement_requests
 ")->fetch(PDO::FETCH_ASSOC) ?: [];
 
@@ -48,14 +56,16 @@ $workload = $workloadStmt ? $workloadStmt->fetchAll(PDO::FETCH_ASSOC) : [];
             <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Pending Disbursements</div><div class="fs-4 fw-bold"><?= (int)($statsStmt['pending_disbursements'] ?? 0) ?></div></div></div>
             <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Finance Backlog</div><div class="fs-4 fw-bold"><?= (int)($statsStmt['outstanding_finance_actions'] ?? 0) ?></div></div></div>
             <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Aging Finance Items</div><div class="fs-4 fw-bold text-danger"><?= (int)($statsStmt['aging_items'] ?? 0) ?></div></div></div>
+            <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">High-Value Transactions</div><div class="fs-4 fw-bold text-warning"><?= (int)($statsStmt['high_value_transactions'] ?? 0) ?></div></div></div>
+            <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Escalated Oversight Items</div><div class="fs-4 fw-bold text-danger"><?= (int)($statsStmt['escalated_transactions'] ?? 0) ?></div></div></div>
             <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Unread Notifications</div><div class="fs-4 fw-bold"><?= (int)$unreadNotifications ?></div></div></div>
         </div>
 
         <div class="alert alert-danger">
-            <strong>URGENT:</strong> Overdue items, escalations, and blocked finance workflows require immediate intervention.
+            <strong>URGENT:</strong> Overdue items, escalations, and blocked finance workflows require immediate intervention once they cross <?= (int)$overdueDays ?> day(s).
         </div>
         <div class="alert alert-warning">
-            <strong>HIGH PRIORITY:</strong> Pending verifications, disbursements, and approval bottlenecks.
+            <strong>HIGH PRIORITY:</strong> Pending verifications, disbursements, approval bottlenecks, and transactions at or above JMD <?= number_format($requestThreshold, 2) ?>.
         </div>
         <div class="alert alert-info mb-4">
             <strong>NORMAL:</strong> Open and recently assigned finance activities.

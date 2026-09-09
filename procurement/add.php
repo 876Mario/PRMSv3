@@ -12,14 +12,8 @@ $roleName = $_SESSION['role_name'] ?? '';
 $isAdmin = in_array($roleName, ['Admin', 'SuperAdmin'], true);
 $adminWorkflowOptions = getAdminWorkflowStatusOptions();
 
-/* ---------- Fetch direct procurement threshold from system_config ---------- */
-$directThreshold = 500000.00; // default
-$cfgStmt2 = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'direct_procurement_threshold'");
-$cfgStmt2->execute();
-$cfgVal2 = $cfgStmt2->fetchColumn();
-if ($cfgVal2 !== false) {
-    $directThreshold = (float)$cfgVal2;
-}
+/* ---------- Fetch direct procurement threshold from centralized config ---------- */
+$directThreshold = getDirectProcurementThreshold($pdo);
 
 /* ---------- Handle POST before any output ---------- */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

@@ -4,6 +4,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/WorkflowConfigurationService.php';
 
 $request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 requireCsrfToken('/petty_cash/list.php');
@@ -164,19 +165,8 @@ try {
         notifyFinanceForDirectApproval($request_id, 'PETTY_CASH');
         notifyRequestorSubmissionConfirmed($request_id);
 
-        $highValueThreshold = 500000.00;
-        try {
-            $cfgStmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'high_value_petty_cash_threshold' LIMIT 1");
-            $cfgStmt->execute();
-            $cfg = $cfgStmt->fetchColumn();
-            if ($cfg !== false && is_numeric($cfg)) {
-                $highValueThreshold = (float)$cfg;
-            }
-        } catch (Throwable $cfgEx) {
-            error_log('petty_cash/submit threshold config lookup failed: ' . $cfgEx->getMessage());
-        }
-
-        if ((float)($request['estimated_value'] ?? 0) >= $highValueThreshold) {
+        $requestValue = (float)($request['estimated_value'] ?? 0);
+        if (WorkflowConfigurationService::isHighValueRequest($pdo, 'PETTY_CASH', $requestValue)) {
             notifyDirectorFinanceActionRequired(
                 $request_id,
                 'High-Value Petty Cash Request Submitted',

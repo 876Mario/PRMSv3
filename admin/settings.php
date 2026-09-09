@@ -5,6 +5,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/services/SignedRequestNoticeService.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/WorkflowConfigurationService.php';
 
 if (!function_exists('settingsEnabledLabel')) {
     function settingsEnabledLabel(bool $enabled): string
@@ -33,10 +34,12 @@ if (!function_exists('readSystemConfigFlag')) {
 // Handle form submission BEFORE any output
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
+        WorkflowConfigurationService::seedDefaults($pdo);
         $enable_notifications = isset($_POST['enable_notifications']) ? 1 : 0;
         $enable_rfq_auto_email = isset($_POST['enable_rfq_auto_email']) ? 1 : 0;
         $signedRequestPrintNoticeEnabled = isset($_POST['signed_request_print_notice_enabled']) ? 1 : 0;
         $confirmationSubmitToProcurementEnabled = isset($_POST['confirmation_submit_to_procurement_enabled']) ? 1 : 0;
+        $workflowConfigChanges = [];
         $oldSubmitToProcurementSetting = readSystemConfigFlag(
             $pdo,
             SignedRequestNoticeService::SUBMIT_TO_PROCUREMENT_CONFIRMATION_KEY,
@@ -138,6 +141,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $stmt->execute([$newCommitteeThreshold]);
         }
+
+        $workflowConfigChanges = WorkflowConfigurationService::savePostedSettings($pdo, $_POST);
         
         // ── Asset Register Field Requirement Toggles ──────────────────────────
         $arFieldKeys = [
@@ -202,6 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 . (isset($newUsdRate)  ? ', usd_to_jmd_rate=' . number_format($newUsdRate, 4) : '')
                 . (isset($newHODThreshold) ? ', hod_approval_threshold=' . number_format($newHODThreshold, 2) : '')
                 . (isset($newCommitteeThreshold) ? ', committee_review_threshold=' . number_format($newCommitteeThreshold, 2) : '')
+                . (!empty($workflowConfigChanges) ? ', workflow_config_keys=' . implode('|', array_keys($workflowConfigChanges)) : '')
         );
 
         if ($oldSubmitToProcurementSetting !== ((bool)$confirmationSubmitToProcurementEnabled)) {
@@ -217,7 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         $_SESSION['toast'] = [
-            'message' => 'Notification settings updated successfully!',
+            'message' => 'System settings updated successfully!',
             'type' => 'success'
         ];
         
@@ -252,6 +258,7 @@ try {
 }
 
 SignedRequestNoticeService::seedDefaultSettings($pdo);
+WorkflowConfigurationService::seedDefaults($pdo);
 $signedRequestPrintNoticeEnabled = SignedRequestNoticeService::isPrintNoticeEnabled($pdo);
 $confirmationSubmitToProcurementEnabled = SignedRequestNoticeService::isSubmitToProcurementConfirmationEnabled($pdo);
 
@@ -260,6 +267,8 @@ $currentThreshold = getDirectProcurementThreshold($pdo);
 $currentPettyCashLimit = getPettyCashLimit($pdo);
 $currentHODThreshold = getHODApprovalThreshold($pdo);
 $currentCommitteeThreshold = getCommitteeReviewThreshold($pdo);
+$workflowConfigDefinitions = WorkflowConfigurationService::definitions();
+$workflowConfigValues = WorkflowConfigurationService::readSettings($pdo);
 
 // Get current USD exchange rate
 try {
@@ -421,6 +430,56 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                                             When enabled, users must acknowledge that the original signed document will be submitted to Procurement before proceeding.
                                         </p>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <h5 class="fw-bold mb-3"><i class="bi bi-diagram-3 me-2"></i> Workflow Oversight &amp; SLA Settings</h5>
+                            <div class="card border-0 bg-light">
+                                <div class="card-body">
+                                    <?php
+                                    $workflowSectionMeta = [
+                                        'high_value_thresholds' => ['title' => 'High-Value Thresholds', 'icon' => 'bi-cash-stack', 'currency' => true],
+                                        'workflow_slas' => ['title' => 'Workflow-Specific SLAs', 'icon' => 'bi-hourglass-split', 'currency' => false],
+                                        'escalation_rules' => ['title' => 'Escalation Framework', 'icon' => 'bi-exclamation-diamond', 'currency' => false],
+                                    ];
+                                    ?>
+                                    <?php foreach ($workflowConfigDefinitions as $sectionKey => $definitions): ?>
+                                        <?php $sectionMeta = $workflowSectionMeta[$sectionKey] ?? ['title' => ucwords(str_replace('_', ' ', $sectionKey)), 'icon' => 'bi-sliders', 'currency' => false]; ?>
+                                        <h6 class="fw-bold mb-3<?= $sectionKey !== 'high_value_thresholds' ? ' mt-4' : '' ?>">
+                                            <i class="bi <?= htmlspecialchars($sectionMeta['icon']) ?> me-1"></i><?= htmlspecialchars($sectionMeta['title']) ?>
+                                        </h6>
+                                        <div class="row g-3">
+                                            <?php foreach ($definitions as $definition): ?>
+                                            <div class="col-md-6">
+                                                <label class="form-label fw-bold" for="<?= htmlspecialchars($definition['key']) ?>">
+                                                    <?= htmlspecialchars($definition['label']) ?>
+                                                </label>
+                                                <div class="input-group">
+                                                    <?php if (!empty($sectionMeta['currency'])): ?>
+                                                        <span class="input-group-text">JMD</span>
+                                                    <?php endif; ?>
+                                                    <input
+                                                        type="number"
+                                                        class="form-control"
+                                                        id="<?= htmlspecialchars($definition['key']) ?>"
+                                                        name="<?= htmlspecialchars($definition['key']) ?>"
+                                                        value="<?= htmlspecialchars($workflowConfigValues[$definition['key']] ?? $definition['default']) ?>"
+                                                        step="<?= ($definition['type'] ?? '') === 'money' ? '0.01' : '1' ?>"
+                                                        min="<?= htmlspecialchars((string)($definition['min'] ?? '0')) ?>"
+                                                    >
+                                                    <?php if (str_contains((string)$definition['label'], '(%)')): ?>
+                                                        <span class="input-group-text">%</span>
+                                                    <?php elseif (!$sectionMeta['currency'] && str_contains((string)$definition['label'], '(days)')): ?>
+                                                        <span class="input-group-text">days</span>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <small class="text-muted"><?= htmlspecialchars($definition['description']) ?></small>
+                                            </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endforeach; ?>
                                 </div>
                             </div>
                         </div>

@@ -4,6 +4,9 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/includes/pagination.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/column_modules.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/ColumnPreferenceService.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/includes/ColumnManagerWidget.php';
 
 /* ─── Only Admin / SuperAdmin may manage permissions ────────────────── */
 $canManage = in_array($_SESSION['role_name'] ?? '', ['Admin', 'SuperAdmin'], true);
@@ -156,7 +159,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 /* ─── Pagination & search ────────────────────────────────────────────── */
 $search = trim($_GET['search'] ?? '');
-['perPage' => $perPage, 'page' => $page, 'offset' => $offset] = getPaginationParams(25);
 
 $searchWhere  = '';
 $searchParams = [];
@@ -171,6 +173,33 @@ $roles         = [];
 $rpMap         = [];
 $overrideStats = [];
 $pageError     = null;
+$columnState   = [];
+$visibleColumns = [];
+$visibleKeys = [];
+$columnOrder = [];
+
+try {
+    $roles = $pdo->query("
+        SELECT id, name
+        FROM roles
+        ORDER BY name
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $columnState = (new ColumnPreferenceService($pdo))->resolveState(
+        (int) ($_SESSION['user_id'] ?? 0),
+        getColumnPreferenceModuleConfig('admin_permissions', $pdo)
+    );
+    $visibleColumns = $columnState['visible_columns'];
+    $visibleKeys = $columnState['visible_keys'];
+    $columnOrder = $columnState['column_order'];
+} catch (Throwable $e) {
+    $pageError = 'Permission data is temporarily unavailable. Please try again or contact your administrator.';
+    error_log('admin/permissions.php setup error: ' . $e->getMessage());
+}
+
+['perPage' => $perPage, 'page' => $page, 'offset' => $offset] = getPaginationParams(
+    (int)($columnState['page_size'] ?? 25)
+);
 
 try {
     /* ─── Total permission count ─────────────────────────────────────────── */
@@ -191,13 +220,6 @@ try {
     $permissions = $permStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $permIds = array_column($permissions, 'id');
-
-    /* ─── Fetch all roles ───────────────────────────────────────────────── */
-    $roles = $pdo->query("
-        SELECT id, name
-        FROM roles
-        ORDER BY name
-    ")->fetchAll(PDO::FETCH_ASSOC);
 
     /* ─── Build role_permissions map for current-page permissions ────────── */
     if (!empty($permIds)) {
@@ -228,6 +250,11 @@ try {
 } catch (Throwable $e) {
     $pageError = 'Permission data is temporarily unavailable. Please try again or contact your administrator.';
     error_log('admin/permissions.php load error: ' . $e->getMessage());
+}
+
+$roleColumns = [];
+foreach ($roles as $role) {
+    $roleColumns['role_' . (int)$role['id']] = $role;
 }
 
 require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
@@ -268,24 +295,51 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
         </div>
     </div>
 
-    <!-- Search -->
-    <form method="get" class="row g-2 mb-3 align-items-end">
-        <div class="col-auto flex-grow-1">
-            <input type="text" name="search" class="form-control"
-                   placeholder="&#128269; Search permissions…"
-                   value="<?= htmlspecialchars($search) ?>">
-        </div>
-        <div class="col-auto">
-            <button class="btn btn-outline-secondary" type="submit">
-                <i class="bi bi-search me-1"></i>Search
-            </button>
-            <?php if ($search !== ''): ?>
-            <a href="?" class="btn btn-outline-danger ms-1">
-                <i class="bi bi-x-lg me-1"></i>Clear
-            </a>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <form method="get" class="row g-2 flex-grow-1 align-items-end mb-0">
+            <input type="hidden" name="per_page" value="<?= (int)$perPage ?>">
+            <div class="col-auto flex-grow-1">
+                <input type="text" name="search" class="form-control"
+                       placeholder="&#128269; Search permissions…"
+                       value="<?= htmlspecialchars($search) ?>">
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-outline-secondary" type="submit">
+                    <i class="bi bi-search me-1"></i>Search
+                </button>
+                <?php if ($search !== ''): ?>
+                <a href="?" class="btn btn-outline-danger ms-1">
+                    <i class="bi bi-x-lg me-1"></i>Clear
+                </a>
+                <?php endif; ?>
+            </div>
+        </form>
+        <div class="d-flex align-items-center gap-2">
+            <label class="form-label mb-0 text-muted small">Rows:</label>
+            <select id="perPageSelect" class="form-select form-select-sm" style="width:auto">
+                <?php foreach (($columnState['page_size_options'] ?? [10, 25, 50, 100]) as $size): ?>
+                <option value="<?= (int)$size ?>" <?= $perPage === (int)$size ? 'selected' : '' ?>><?= (int)$size ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php if ($pageError === null): ?>
+                <?php ColumnManagerWidget::render([
+                    'module' => $columnState['module'] ?? 'admin_permissions',
+                    'title' => $columnState['title'] ?? 'Manage Permission Columns',
+                    'description' => $columnState['description'] ?? '',
+                    'button_label' => $columnState['button_label'] ?? 'Manage Columns',
+                    'button_class' => 'btn btn-sm btn-outline-secondary',
+                    'columns_by_key' => $columnState['columns_by_key'] ?? [],
+                    'column_order' => $columnOrder,
+                    'visible_keys' => $visibleKeys,
+                    'save_endpoint' => $columnState['save_endpoint'] ?? '/api/column_preferences.php',
+                    'current_sort_column' => $columnState['sort_column'] ?? '',
+                    'current_sort_direction' => $columnState['sort_direction'] ?? 'ASC',
+                    'current_page_size' => $perPage,
+                    'per_page_selector_id' => 'perPageSelect',
+                ]); ?>
             <?php endif; ?>
         </div>
-    </form>
+    </div>
 
     <?php if ($pageError === null && $totalPerms === 0 && $search === ''): ?>
     <div class="alert alert-warning">No permissions found. Create one to get started.</div>
@@ -304,65 +358,84 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
                 <table class="table table-bordered table-sm mb-0 align-middle permissions-matrix" id="matrixTable">
                     <thead  class="table-dark">
                         <tr>
-                            <th style="min-width:220px;">Permission</th>
-                            <?php foreach ($roles as $role): ?>
-                            <th class="text-center" style="min-width:110px; font-size:0.8rem;">
-                                <?= htmlspecialchars($role['name']) ?>
-                            </th>
+                            <?php foreach ($visibleColumns as $column): ?>
+                                <?php
+                                $style = 'min-width:110px;';
+                                if ($column['key'] === 'permission') {
+                                    $style = 'min-width:220px;';
+                                } elseif ($column['key'] === 'description') {
+                                    $style = 'min-width:260px;';
+                                } elseif (in_array($column['key'], ['user_overrides', 'actions'], true)) {
+                                    $style = 'min-width:80px;';
+                                }
+                                ?>
+                                <th class="<?= ($column['align'] ?? '') === 'center' ? 'text-center' : '' ?>" style="<?= $style ?> font-size:0.8rem;">
+                                    <?= htmlspecialchars($column['label']) ?>
+                                </th>
                             <?php endforeach; ?>
-                            <th class="text-center" style="min-width:80px;">Users</th>
-                            <?php if ($canManage): ?>
-                            <th class="text-center" style="min-width:70px;">Actions</th>
-                            <?php endif; ?>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($permissions as $perm): ?>
                         <tr data-perm-id="<?= $perm['id'] ?>">
-                            <td>
-                                <code class="text-primary fw-semibold"><?= htmlspecialchars($perm['name']) ?></code>
-                                <?php if ($perm['description']): ?>
-                                <br><small class="text-muted"><?= htmlspecialchars($perm['description']) ?></small>
+                            <?php foreach ($visibleColumns as $column): ?>
+                                <?php
+                                $columnKey = $column['key'];
+                                if ($columnKey === 'permission'):
+                                ?>
+                                    <td><code class="text-primary fw-semibold"><?= htmlspecialchars($perm['name']) ?></code></td>
+                                <?php elseif ($columnKey === 'description'): ?>
+                                    <td>
+                                        <?php if (!empty($perm['description'])): ?>
+                                            <small class="text-muted"><?= htmlspecialchars($perm['description']) ?></small>
+                                        <?php else: ?>
+                                            <span class="text-muted">—</span>
+                                        <?php endif; ?>
+                                    </td>
+                                <?php elseif (isset($roleColumns[$columnKey])): ?>
+                                    <?php $role = $roleColumns[$columnKey]; ?>
+                                    <?php $checked = !empty($rpMap[$perm['id']][$role['id']]); ?>
+                                    <td class="text-center">
+                                        <?php if ($canManage): ?>
+                                            <div class="form-check form-switch d-flex justify-content-center m-0">
+                                                <input class="form-check-input role-toggle" type="checkbox"
+                                                       style="cursor:pointer;"
+                                                       data-perm-id="<?= $perm['id'] ?>"
+                                                       data-role-id="<?= $role['id'] ?>"
+                                                       <?= $checked ? 'checked' : '' ?>>
+                                            </div>
+                                        <?php else: ?>
+                                            <?php if ($checked): ?>
+                                                <i class="bi bi-check-circle-fill text-success"></i>
+                                            <?php else: ?>
+                                                <i class="bi bi-dash text-muted"></i>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </td>
+                                <?php elseif ($columnKey === 'user_overrides'): ?>
+                                    <td class="text-center">
+                                        <?php $uc = $overrideStats[$perm['id']] ?? 0; ?>
+                                        <?php if ($uc > 0): ?>
+                                            <span class="badge bg-info text-dark"><?= $uc ?></span>
+                                        <?php else: ?>
+                                            <span class="text-muted">—</span>
+                                        <?php endif; ?>
+                                    </td>
+                                <?php elseif ($columnKey === 'actions'): ?>
+                                    <td class="text-center">
+                                        <?php if ($canManage): ?>
+                                            <button class="btn btn-sm btn-outline-danger delete-perm"
+                                                    data-perm-id="<?= $perm['id'] ?>"
+                                                    data-perm-name="<?= htmlspecialchars($perm['name']) ?>"
+                                                    title="Delete permission">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        <?php else: ?>
+                                            <span class="text-muted">—</span>
+                                        <?php endif; ?>
+                                    </td>
                                 <?php endif; ?>
-                            </td>
-                            <?php foreach ($roles as $role): ?>
-                            <?php $checked = !empty($rpMap[$perm['id']][$role['id']]); ?>
-                            <td class="text-center">
-                                <?php if ($canManage): ?>
-                                <div class="form-check form-switch d-flex justify-content-center m-0">
-                                    <input class="form-check-input role-toggle" type="checkbox"
-                                           style="cursor:pointer;"
-                                           data-perm-id="<?= $perm['id'] ?>"
-                                           data-role-id="<?= $role['id'] ?>"
-                                           <?= $checked ? 'checked' : '' ?>>
-                                </div>
-                                <?php else: ?>
-                                    <?php if ($checked): ?>
-                                    <i class="bi bi-check-circle-fill text-success"></i>
-                                    <?php else: ?>
-                                    <i class="bi bi-dash text-muted"></i>
-                                    <?php endif; ?>
-                                <?php endif; ?>
-                            </td>
                             <?php endforeach; ?>
-                            <td class="text-center">
-                                <?php $uc = $overrideStats[$perm['id']] ?? 0; ?>
-                                <?php if ($uc > 0): ?>
-                                <span class="badge bg-info text-dark"><?= $uc ?></span>
-                                <?php else: ?>
-                                <span class="text-muted">—</span>
-                                <?php endif; ?>
-                            </td>
-                            <?php if ($canManage): ?>
-                            <td class="text-center">
-                                <button class="btn btn-sm btn-outline-danger delete-perm"
-                                        data-perm-id="<?= $perm['id'] ?>"
-                                        data-perm-name="<?= htmlspecialchars($perm['name']) ?>"
-                                        title="Delete permission">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </td>
-                            <?php endif; ?>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -373,7 +446,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
 
     <div class="mt-3">
         <?php renderShowingInfo($page, $perPage, $totalPerms); ?>
-        <?php renderPagination($totalPerms, $perPage, $page, array_filter(['search' => $search])); ?>
+        <?php renderPagination($totalPerms, $perPage, $page, array_filter(['search' => $search, 'per_page' => $perPage])); ?>
     </div>
 
     <?php endif; ?>

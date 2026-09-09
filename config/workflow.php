@@ -1,4 +1,5 @@
 <?php
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SystemConfigService.php';
 
 /**
  * Workflow Transitions
@@ -284,32 +285,8 @@ function getApprovalChain(string $requestType, float $estimatedValue, ?int $bran
     }
 
     // Get thresholds from database (if PDO provided)
-    $hodThreshold = 500000.00;
-    $committeeThreshold = 3000000.00;
-    
-    if ($pdo) {
-        try {
-            $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'hod_approval_threshold'");
-            $stmt->execute();
-            $val = $stmt->fetchColumn();
-            if ($val !== false) {
-                $hodThreshold = (float)$val;
-            }
-        } catch (Exception $e) {
-            // Use default if query fails
-        }
-        
-        try {
-            $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'committee_review_threshold'");
-            $stmt->execute();
-            $val = $stmt->fetchColumn();
-            if ($val !== false) {
-                $committeeThreshold = (float)$val;
-            }
-        } catch (Exception $e) {
-            // Use default if query fails
-        }
-    }
+    $hodThreshold = $pdo ? getHODApprovalThreshold($pdo) : 500000.00;
+    $committeeThreshold = $pdo ? getCommitteeReviewThreshold($pdo) : 3000000.00;
 
     // Build approval chain based on amount thresholds
     $chain = [];
@@ -380,9 +357,7 @@ function resolveWorkflow(PDO $pdo, string $requestType, float $estimatedValue, ?
     if (!$currency) $currency = 'JMD';
     if (!$usdRate) {
         // fallback to system rate
-        $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'usd_to_jmd_rate'");
-        $stmt->execute();
-        $usdRate = (float)($stmt->fetchColumn() ?: 155.00);
+        $usdRate = SystemConfigService::getFloat($pdo, 'usd_to_jmd_rate', 155.00);
     }
     $jmdValue = ($currency === 'USD') ? $estimatedValue * (float)$usdRate : $estimatedValue;
     $isUnderThreshold = $jmdValue <= $threshold;
@@ -522,20 +497,14 @@ function isDirectProcurement(string $requestType, float $estimatedValue): bool {
  * Get the petty cash limit from system config or return default
  */
 function getPettyCashLimit(PDO $pdo): float {
-    $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'petty_cash_limit'");
-    $stmt->execute();
-    $val = $stmt->fetchColumn();
-    return $val !== false ? (float)$val : 5000.00;
+    return SystemConfigService::getFloat($pdo, 'petty_cash_limit', 5000.00);
 }
 
 /**
  * Get the direct procurement threshold from system config
  */
 function getDirectProcurementThreshold(PDO $pdo): float {
-    $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'direct_procurement_threshold'");
-    $stmt->execute();
-    $val = $stmt->fetchColumn();
-    return $val !== false ? (float)$val : 500000.00;
+    return SystemConfigService::getFloat($pdo, 'direct_procurement_threshold', 500000.00);
 }
 
 /**
@@ -543,10 +512,7 @@ function getDirectProcurementThreshold(PDO $pdo): float {
  * Requests above this amount require HOD approval
  */
 function getHODApprovalThreshold(PDO $pdo): float {
-    $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'hod_approval_threshold'");
-    $stmt->execute();
-    $val = $stmt->fetchColumn();
-    return $val !== false ? (float)$val : 500000.00;
+    return SystemConfigService::getFloat($pdo, 'hod_approval_threshold', 500000.00);
 }
 
 /**
@@ -554,10 +520,7 @@ function getHODApprovalThreshold(PDO $pdo): float {
  * Requests above this amount require committee review
  */
 function getCommitteeReviewThreshold(PDO $pdo): float {
-    $stmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'committee_review_threshold'");
-    $stmt->execute();
-    $val = $stmt->fetchColumn();
-    return $val !== false ? (float)$val : 3000000.00;
+    return SystemConfigService::getFloat($pdo, 'committee_review_threshold', 3000000.00);
 }
 
 function enforceTransition(array $request, string $nextStage) {
