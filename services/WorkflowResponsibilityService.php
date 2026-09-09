@@ -177,9 +177,14 @@ class WorkflowResponsibilityService
             // 2. Quote Review — the requestor and the applicable branch head
             //    are jointly responsible for reviewing quotations.
             case 'QUOTE_REVIEW_PENDING':
-            case 'ADDITIONAL_QUOTATIONS_REQUIRED':
             case 'QUOTE_APPROVED':
                 return $this->requestorAndBranchHeadOfficers($request);
+
+            case 'ADDITIONAL_QUOTATIONS_REQUIRED':
+                return [
+                    $this->buildOfficer('Procurement Officer', 0),
+                    $this->buildOfficer('Director Procurement', 0),
+                ];
 
             // 3. Requestor specification confirmation — route to the original
             //    request creator, not just any user with the Requestor role.
@@ -487,6 +492,10 @@ class WorkflowResponsibilityService
                 'QUOTE_REVIEW_PENDING' => [
                     'role'   => 'Requestor / Branch Head',
                     'action' => 'Review submitted quotations and select the preferred vendor.',
+                ],
+                'ADDITIONAL_QUOTATIONS_REQUIRED' => [
+                    'role'   => 'Procurement Officer / Director Procurement',
+                    'action' => 'Collect additional quotations and resubmit for requestor and branch head review.',
                 ],
                 'QUOTE_REQUESTOR_REVIEW_PENDING' => [
                     'role'   => 'Requestor',

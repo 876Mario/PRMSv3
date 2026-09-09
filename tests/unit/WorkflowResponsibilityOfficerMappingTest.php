@@ -221,6 +221,25 @@ class WorkflowResponsibilityOfficerMappingTest extends PHPUnit\Framework\TestCas
         $this->assertContains('Branch Head', $roles);
     }
 
+    public function testAdditionalQuotationsRequiredListsProcurementAndDirectorProcurement(): void
+    {
+        $svc  = new WorkflowResponsibilityService($this->makePdo());
+        $resp = $svc->getStageResponsibility(
+            $this->makeRequest(),
+            'ADDITIONAL_QUOTATIONS_REQUIRED',
+            [],
+            'Admin'
+        );
+
+        $roles = array_column($resp['responsible_officers'], 'role');
+        $names = array_column($resp['responsible_officers'], 'name');
+
+        $this->assertContains('Procurement Officer', $roles);
+        $this->assertContains('Director Procurement', $roles);
+        $this->assertContains('Pete Procurement', $names);
+        $this->assertContains('Debra DirProc', $names);
+    }
+
     public function testRequestorReviewStageRoutesToOriginalRequestor(): void
     {
         $svc  = new WorkflowResponsibilityService($this->makePdo());

@@ -3658,26 +3658,26 @@ function getRfqProcurementRecipients(): array {
         error_log("Notification[ProcurementRecipients]: {$e->getMessage()}");
         return [];
     }
+}
 
-    function getRfqDirectorProcurementRecipients(): array {
-        global $pdo;
+function getRfqDirectorProcurementRecipients(): array {
+    global $pdo;
 
-        try {
-            $stmt = $pdo->prepare(
-                "SELECT u.user_id, u.email, u.full_name AS full_name
-                   FROM users u
-                   JOIN roles r ON r.id = u.role_id
-                  WHERE r.name = 'Director Procurement'
-                    AND u.is_active = 1"
-            );
-            $stmt->execute();
-            return array_map(static function (array $row): array {
-                return ['user_id' => (int)$row['user_id'], 'email' => $row['email'], 'name' => $row['full_name'] ?? 'Director Procurement'];
-            }, $stmt->fetchAll(PDO::FETCH_ASSOC));
-        } catch (Exception $e) {
-            error_log("Notification[DirectorProcurementRecipients]: {$e->getMessage()}");
-            return [];
-        }
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT u.user_id, u.email, u.full_name AS full_name
+               FROM users u
+               JOIN roles r ON r.id = u.role_id
+              WHERE r.name = 'Director Procurement'
+                AND u.is_active = 1"
+        );
+        $stmt->execute();
+        return array_map(static function (array $row): array {
+            return ['user_id' => (int)$row['user_id'], 'email' => $row['email'], 'name' => $row['full_name'] ?? 'Director Procurement'];
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    } catch (Exception $e) {
+        error_log("Notification[DirectorProcurementRecipients]: {$e->getMessage()}");
+        return [];
     }
 }
 

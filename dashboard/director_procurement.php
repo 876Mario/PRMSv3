@@ -19,7 +19,9 @@ $workloadStmt = $pdo->query("
     FROM users u
     JOIN roles r ON r.id = u.role_id
     LEFT JOIN procurement_requests pr
-      ON pr.status IN ('PROCUREMENT_STAGE','RFQ_LETTER_AVAILABLE','QUOTE_REVIEW_PENDING','ADDITIONAL_QUOTATIONS_REQUIRED','PO_PENDING')
+      ON pr.branch_id = u.branch_id
+     AND u.branch_id IS NOT NULL
+     AND pr.status IN ('PROCUREMENT_STAGE','RFQ_LETTER_AVAILABLE','QUOTE_REVIEW_PENDING','ADDITIONAL_QUOTATIONS_REQUIRED','PO_PENDING')
     WHERE r.name = 'Procurement Officer'
       AND u.is_active = 1
     GROUP BY u.user_id, u.full_name
