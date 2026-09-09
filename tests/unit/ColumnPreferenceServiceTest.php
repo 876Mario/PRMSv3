@@ -99,4 +99,64 @@ final class ColumnPreferenceServiceTest extends PHPUnit\Framework\TestCase
         $this->assertContains('role_2', $keys);
         $this->assertContains('permission', $keys);
     }
+
+    public function testSavePreferencesRethrowsColumnPreferenceWriteErrors(): void
+    {
+        $pdo = new ColumnPreferenceServiceTestPdo();
+        $pdo->exec("
+            CREATE TRIGGER fail_column_preference_insert
+            BEFORE INSERT ON user_column_preferences
+            BEGIN
+                SELECT RAISE(FAIL, 'forced column preference write error');
+            END;
+        ");
+        $service = new ColumnPreferenceService($pdo);
+        $config = getColumnPreferenceModuleConfig('inventory_items', $pdo);
+
+        try {
+            $service->savePreferences(12, $config, [
+                'column_order' => ['item_name', 'item_code', 'actions'],
+                'visible_columns' => ['item_name'],
+                'default_sort_column' => 'item_code',
+                'default_sort_direction' => 'DESC',
+                'page_size' => 50,
+            ]);
+            $this->fail('Expected savePreferences to throw when column preference write fails.');
+        } catch (Throwable $e) {
+            $this->assertStringContainsString('forced column preference write error', $e->getMessage());
+        }
+
+        $count = (int)$pdo->query('SELECT COUNT(*) FROM user_table_preferences')->fetchColumn();
+        $this->assertSame(0, $count);
+    }
+
+    public function testSavePreferencesRethrowsTablePreferenceWriteErrors(): void
+    {
+        $pdo = new ColumnPreferenceServiceTestPdo();
+        $pdo->exec("
+            CREATE TRIGGER fail_table_preference_insert
+            BEFORE INSERT ON user_table_preferences
+            BEGIN
+                SELECT RAISE(FAIL, 'forced table preference write error');
+            END;
+        ");
+        $service = new ColumnPreferenceService($pdo);
+        $config = getColumnPreferenceModuleConfig('inventory_items', $pdo);
+
+        try {
+            $service->savePreferences(12, $config, [
+                'column_order' => ['item_name', 'item_code', 'actions'],
+                'visible_columns' => ['item_name'],
+                'default_sort_column' => 'item_code',
+                'default_sort_direction' => 'DESC',
+                'page_size' => 50,
+            ]);
+            $this->fail('Expected savePreferences to throw when table preference write fails.');
+        } catch (Throwable $e) {
+            $this->assertStringContainsString('forced table preference write error', $e->getMessage());
+        }
+
+        $count = (int)$pdo->query('SELECT COUNT(*) FROM user_column_preferences')->fetchColumn();
+        $this->assertSame(0, $count);
+    }
 }

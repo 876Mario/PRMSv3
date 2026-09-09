@@ -36,7 +36,14 @@ if (!is_array($body)) {
 }
 
 try {
-    if (($body['action'] ?? '') === 'reset') {
+    $action = $body['action'] ?? '';
+    if (!in_array($action, ['save', 'reset'], true)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid action']);
+        exit;
+    }
+
+    if ($action === 'reset') {
         $service->resetPreferences($userId, $config);
         echo json_encode(['success' => true]);
         exit;
