@@ -176,7 +176,7 @@ class DashboardActionService
             self::requestDefinition('move_to_quote_review', ['REGULAR', 'SERVICE_CONTRACT'], ['QUOTE_REVIEW_PENDING'], 'Move to Quote Review', '/rfq/view.php?id={rfq_id}', '/procurement/view.php?id={request_id}', 'Pending Quotes'),
             self::requestDefinition('request_additional_quotes', ['REGULAR', 'SERVICE_CONTRACT'], ['ADDITIONAL_QUOTATIONS_REQUIRED'], 'Request Additional Quotations', '/rfq/view.php?id={rfq_id}', '/procurement/view.php?id={request_id}', 'Additional Quotations Required'),
             self::requestDefinition('create_purchase_order', ['REGULAR', 'SERVICE_CONTRACT'], ['COMMITMENT_APPROVED'], 'Create Purchase Order', '/po/add.php?request_id={request_id}', '/procurement/view.php?id={request_id}', 'Pending Purchase Orders'),
-            self::requestDefinition('generate_purchase_order', ['REGULAR', 'SERVICE_CONTRACT'], ['PO_PENDING'], 'Generate Purchase Order', '/po/view.php?request_id={request_id}', '/procurement/view.php?id={request_id}', 'Pending Purchase Orders'),
+            self::requestDefinition('generate_purchase_order', ['REGULAR', 'SERVICE_CONTRACT'], ['PO_PENDING'], 'Generate Purchase Order', '/po/add.php?request_id={request_id}', '/procurement/view.php?id={request_id}', 'Pending Purchase Orders'),
         ];
     }
 
@@ -188,7 +188,7 @@ class DashboardActionService
             self::requestDefinition('returned_quotes', ['REGULAR', 'SERVICE_CONTRACT'], ['ADDITIONAL_QUOTATIONS_REQUIRED'], 'Returned Quotations', '/rfq/view.php?id={rfq_id}', '/procurement/view.php?id={request_id}', 'Returned Quotations'),
             self::requestDefinition('overdue_procurement', ['REGULAR', 'SERVICE_CONTRACT'], ['PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'COMMITMENT_APPROVED', 'PO_PENDING'], 'Overdue Procurement Workflow', '/procurement/view.php?id={request_id}', '/procurement/view.php?id={request_id}', 'Overdue Procurement Workflows'),
             self::requestDefinition('high_value_procurement', ['REGULAR', 'SERVICE_CONTRACT'], ['PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'COMMITMENT_APPROVED', 'PO_PENDING'], 'High Value Procurement Activity', '/procurement/view.php?id={request_id}', '/procurement/view.php?id={request_id}', 'High Value Procurement Activities', 'pr.estimated_value >= {director_threshold}'),
-            self::requestDefinition('high_value_po', ['REGULAR', 'SERVICE_CONTRACT'], ['COMMITMENT_APPROVED', 'PO_PENDING'], 'High Value Purchase Order', '/po/view.php?request_id={request_id}', '/procurement/view.php?id={request_id}', 'High Value Purchase Orders', 'pr.estimated_value >= {purchase_order_threshold}'),
+            self::requestDefinition('high_value_po', ['REGULAR', 'SERVICE_CONTRACT'], ['COMMITMENT_APPROVED', 'PO_PENDING'], 'High Value Purchase Order', '/po/add.php?request_id={request_id}', '/procurement/view.php?id={request_id}', 'High Value Purchase Orders', 'pr.estimated_value >= {purchase_order_threshold}'),
         ];
     }
 
@@ -201,7 +201,7 @@ class DashboardActionService
             self::requestDefinition('approve_disbursement', ['PETTY_CASH'], ['FUNDS_VERIFIED'], 'Approve Disbursement', '/petty_cash/view.php?id={request_id}', '/petty_cash/view.php?id={request_id}', 'Pending Disbursements'),
             self::requestDefinition('record_disbursement', ['PETTY_CASH'], ['FINANCE_AUTHORIZED'], 'Record Disbursement', '/petty_cash/view.php?id={request_id}', '/petty_cash/view.php?id={request_id}', 'Pending Disbursements'),
             self::requestDefinition('create_commitment', ['REGULAR', 'SERVICE_CONTRACT'], ['COMMITMENTS_PENDING'], 'Process Finance Verification', '/commitments/add.php?request_id={request_id}', '/procurement/view.php?id={request_id}', 'Actions Required'),
-            self::requestDefinition('record_payment', ['REGULAR', 'SERVICE_CONTRACT'], ['INVOICE_RECEIVED'], 'Record Disbursement', '/invoice/view.php?request_id={request_id}', '/procurement/view.php?id={request_id}', 'Pending Disbursements'),
+            self::requestDefinition('record_payment', ['REGULAR', 'SERVICE_CONTRACT'], ['INVOICE_RECEIVED'], 'Record Disbursement', '/procurement/view.php?id={request_id}', '/procurement/view.php?id={request_id}', 'Pending Disbursements'),
             self::requestDefinition('review_returned_finance', ['PETTY_CASH'], ['RECONCILIATION_DISCREPANCY'], 'Review Returned Finance Request', '/petty_cash/view.php?id={request_id}', '/petty_cash/view.php?id={request_id}', 'Returned Requests'),
             self::requestDefinition('review_reimbursement_invoice', ['REIMBURSEMENT'], ['INVOICE_SUBMITTED', 'INVOICE_VERIFIED', 'APPROVED'], 'Approve Disbursement', '/reimbursement/view.php?id={request_id}', '/reimbursement/view.php?id={request_id}', 'Pending Disbursements'),
             self::requestDefinition('resolve_finance_escalation', ['REIMBURSEMENT'], ['RETURNED_FOR_CORRECTION'], 'Resolve Finance Escalation', '/reimbursement/view.php?id={request_id}', '/reimbursement/view.php?id={request_id}', 'Returned Requests'),
@@ -227,7 +227,7 @@ class DashboardActionService
             self::requestDefinition('review_quotes', ['REGULAR', 'SERVICE_CONTRACT'], ['QUOTE_REVIEW_PENDING'], 'Review Quotes', '/rfq/view.php?id={rfq_id}', '/procurement/view.php?id={request_id}', 'My Pending Actions', null, true),
             self::requestDefinition('confirm_quote_specs', ['REGULAR', 'SERVICE_CONTRACT'], ['QUOTE_REQUESTOR_REVIEW_PENDING'], 'Review Quotes', '/rfq/requestor_spec_review.php?id={rfq_id}', '/procurement/view.php?id={request_id}', 'My Pending Actions', null, true),
             self::requestDefinition('collect_funds', ['PETTY_CASH'], ['DISBURSED'], 'Collect Funds', '/petty_cash/view.php?id={request_id}', '/petty_cash/view.php?id={request_id}', 'My Pending Actions', null, true),
-            self::requestDefinition('ack_receipt', ['REIMBURSEMENT'], ['REIMBURSED'], 'Acknowledgement Required', '/reimbursement/confirm_receipt.php?id={request_id}', '/reimbursement/view.php?id={request_id}', 'My Pending Actions', null, true),
+            self::requestDefinition('ack_receipt', ['REIMBURSEMENT'], ['REIMBURSED'], 'Acknowledgement Required', '/reimbursement/view.php?id={request_id}', '/reimbursement/view.php?id={request_id}', 'My Pending Actions', null, true),
         ];
     }
 
