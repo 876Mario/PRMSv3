@@ -43,9 +43,7 @@ function enrichNotificationRow(array $row): array
     $row['view_url'] = $actionUrl !== '' ? $actionUrl : $fallbackViewUrl;
     $row['action_label'] = 'Take Action';
     $row['view_label'] = 'View Record';
-    if ($actionUrl === '') {
-        $row['action_url'] = $row['view_url'];
-    }
+    $row['action_url'] = $row['view_url'];
     return $row;
 }
 
