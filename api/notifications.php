@@ -38,10 +38,12 @@ header('Content-Type: application/json; charset=utf-8');
 function enrichNotificationRow(array $row): array
 {
     $requestId = (int)($row['request_id'] ?? 0);
-    $row['view_url'] = $requestId > 0 ? '/procurement/view.php?id=' . $requestId : null;
+    $actionUrl = trim((string)($row['action_url'] ?? ''));
+    $fallbackViewUrl = $requestId > 0 ? '/procurement/view.php?id=' . $requestId : null;
+    $row['view_url'] = $actionUrl !== '' ? $actionUrl : $fallbackViewUrl;
     $row['action_label'] = 'Take Action';
     $row['view_label'] = 'View Record';
-    if (empty($row['action_url'])) {
+    if ($actionUrl === '') {
         $row['action_url'] = $row['view_url'];
     }
     return $row;
