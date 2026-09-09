@@ -23,10 +23,57 @@ final class NumberSequenceHelperTest extends PHPUnit\Framework\TestCase
 
     public function testPreviewRequestNumberDoesNotAdvanceSequence(): void
     {
+        $this->pdo->exec("
+            CREATE TABLE procurement_requests (
+                request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_number TEXT
+            )
+        ");
+
         $this->assertSame('PR001', previewRequestNumber($this->pdo));
         $this->assertSame('PR001', previewRequestNumber($this->pdo));
         $this->assertSame('PR001', generateRequestNumber($this->pdo));
         $this->assertSame('PR002', previewRequestNumber($this->pdo));
+    }
+
+    public function testRequestNumberSequenceSkipsPastLegacyRequestsWhenSequenceRowIsMissing(): void
+    {
+        $this->pdo->exec("
+            CREATE TABLE procurement_requests (
+                request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_number TEXT
+            )
+        ");
+        $this->pdo->exec("
+            INSERT INTO procurement_requests (request_number)
+            VALUES ('PR001'), ('PR007')
+        ");
+
+        $this->assertSame('PR008', previewRequestNumber($this->pdo));
+        $this->assertSame('PR008', generateRequestNumber($this->pdo));
+        $this->assertSame('PR009', previewRequestNumber($this->pdo));
+    }
+
+    public function testRequestNumberSequenceRecoversFromStaleStoredSequence(): void
+    {
+        $this->pdo->exec("
+            CREATE TABLE procurement_requests (
+                request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_number TEXT
+            )
+        ");
+        $this->pdo->exec("
+            INSERT INTO procurement_requests (request_number)
+            VALUES ('PR001'), ('PR007')
+        ");
+        $this->pdo->exec("
+            INSERT INTO number_sequences (sequence_key, next_value, created_at, updated_at)
+            VALUES ('procurement_request_number', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ");
+
+        $this->assertSame('PR008', previewRequestNumber($this->pdo));
+        $this->assertSame('PR008', generateRequestNumber($this->pdo));
+        $this->assertSame('PR009', generateRequestNumber($this->pdo));
     }
 
     public function testServiceContractSequenceAdvancesOnlyOnGeneration(): void
