@@ -216,7 +216,9 @@ final class ColumnPreferenceService
                 ]);
             }
         } catch (Throwable $e) {
-            // tolerate missing migration so legacy storage still works
+            if (!$this->isMissingPreferencesTableError($e)) {
+                throw $e;
+            }
         }
     }
 
@@ -252,8 +254,21 @@ final class ColumnPreferenceService
                 $pageSize,
             ]);
         } catch (Throwable $e) {
-            // tolerate missing legacy preferences table
+            if (!$this->isMissingPreferencesTableError($e)) {
+                throw $e;
+            }
         }
+    }
+
+    private function isMissingPreferencesTableError(Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+        $code = (string)$e->getCode();
+
+        return strpos($code, '42S02') !== false
+            || strpos($code, '1146') !== false
+            || str_contains($message, 'no such table')
+            || str_contains($message, 'doesn\'t exist');
     }
 
     private function decodeJsonArray(mixed $value): array
