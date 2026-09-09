@@ -255,7 +255,7 @@ function prefixedSequenceFloor(PDO $pdo, string $tableName, string $columnName, 
     }
 
     $stmt = $pdo->prepare(sprintf(
-        "SELECT MAX(CAST(SUBSTR(`%s`, ?) AS INTEGER))
+        "SELECT MAX(CAST(SUBSTR(`%s`, ?) AS SIGNED))
          FROM `%s`
          WHERE `%s` LIKE ?",
         $columnName,
