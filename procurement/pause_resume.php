@@ -20,6 +20,8 @@ if ($id <= 0 || !in_array($action, ['pause', 'resume'], true)) {
     exit;
 }
 
+requireCsrfToken('/procurement/view.php?id=' . $id);
+
 if ($reason === '') {
     pop('A reason is required.', '/procurement/view.php?id='.$id, POP_DEFAULT_DELAY_MS, 'warning');
     exit;

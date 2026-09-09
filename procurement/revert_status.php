@@ -24,6 +24,9 @@ if ($id <= 0) {
     modalPop('Invalid Request', 'Invalid request ID.', '/procurement/list.php', 'error');
     exit;
 }
+
+requireCsrfToken('/procurement/view.php?id=' . $id);
+
 if ($targetStatus === '') {
     modalPop('Missing Status', 'Target status is required.', '/procurement/view.php?id=' . $id, 'error');
     exit;
