@@ -175,17 +175,22 @@ if ($__prmsExportEnabled && empty($_SESSION['piams_export_csrf_token'])) {
               var icon = prmsNotifIcon(n.type);
               var unreadStyle = n.is_read == '0' ? 'background:#f0f4ff;' : '';
               var age = prmsAge(n.created_at);
-              return '<a href="' + (n.action_url || '#') + '" onclick="prmsMarkRead(' + n.id + ', this)" ' +
-                'style="display:block; padding:0.75rem 1rem; border-bottom:1px solid #f0f0f0; text-decoration:none; color:inherit; ' + unreadStyle + '">' +
+              var viewUrl = n.view_url || (n.request_id ? '/procurement/view.php?id=' + n.request_id : '');
+              var actionUrl = n.action_url || viewUrl || '#';
+              return '<div style="padding:0.75rem 1rem; border-bottom:1px solid #f0f0f0; color:inherit; ' + unreadStyle + '">' +
                 '<div style="display:flex; align-items:flex-start; gap:0.6rem;">' +
                 '<span style="font-size:1.1rem; flex-shrink:0;">' + icon + '</span>' +
                 '<div style="flex:1; min-width:0;">' +
                 '<div style="font-size:0.82rem; font-weight:' + (n.is_read == '0' ? '700' : '400') + '; color:#333; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + prmsEsc(n.title) + '</div>' +
                 (n.body ? '<div style="font-size:0.75rem; color:#666; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + prmsEsc(n.body) + '</div>' : '') +
                 '<div style="font-size:0.7rem; color:#aaa; margin-top:3px;">' + age + '</div>' +
+                '<div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.55rem;">' +
+                (viewUrl ? '<a href="' + viewUrl + '" onclick="prmsMarkRead(' + n.id + ')" style="display:inline-flex; padding:0.35rem 0.65rem; border-radius:999px; background:#eff6ff; color:#1d4ed8; text-decoration:none; font-size:0.72rem; font-weight:700;">View Record</a>' : '') +
+                (actionUrl ? '<a href="' + actionUrl + '" onclick="prmsMarkRead(' + n.id + ')" style="display:inline-flex; padding:0.35rem 0.65rem; border-radius:999px; background:#2563eb; color:#fff; text-decoration:none; font-size:0.72rem; font-weight:700;">Take Action</a>' : '') +
+                '</div>' +
                 '</div>' +
                 (n.is_read == '0' ? '<span style="width:8px; height:8px; background:#667eea; border-radius:50%; flex-shrink:0; margin-top:4px;"></span>' : '') +
-                '</div></a>';
+                '</div></div>';
             }).join('');
           })
           .catch(function () {});
@@ -199,7 +204,8 @@ if ($__prmsExportEnabled && empty($_SESSION['piams_export_csrf_token'])) {
           rejection:         '❌',
           cancellation:      '🚫',
           draft_ready:       '📝',
-          submission:        '✅'
+          submission:        '✅',
+          finance_action_required: '💰'
         };
         return icons[type] || '🔔';
       }
