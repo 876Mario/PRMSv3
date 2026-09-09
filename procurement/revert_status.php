@@ -4,7 +4,7 @@
  * POST-only. Authorized roles only. Full audit trail.
  * Uses WorkflowService for dynamic, request-type-aware revert logic.
  */
-$REQUIRE_PERMISSION = 'approve_request';
+$REQUIRE_PERMISSION = 'revert_stage';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
