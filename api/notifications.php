@@ -35,6 +35,18 @@ if (!class_exists('NotificationService')) {
 
 header('Content-Type: application/json; charset=utf-8');
 
+function enrichNotificationRow(array $row): array
+{
+    $requestId = (int)($row['request_id'] ?? 0);
+    $row['view_url'] = $requestId > 0 ? '/procurement/view.php?id=' . $requestId : null;
+    $row['action_label'] = 'Take Action';
+    $row['view_label'] = 'View Record';
+    if (empty($row['action_url'])) {
+        $row['action_url'] = $row['view_url'];
+    }
+    return $row;
+}
+
 $userId = (int)($_SESSION['user_id'] ?? 0);
 if ($userId <= 0) {
     http_response_code(401);
@@ -53,6 +65,7 @@ switch ($action) {
         $rows = $unreadOnly
             ? NotificationService::getUnread($userId)
             : NotificationService::getAll($userId, $limit);
+        $rows = array_map('enrichNotificationRow', $rows);
         echo json_encode(['notifications' => $rows]);
         break;
 
