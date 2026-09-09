@@ -9,6 +9,7 @@ class DashboardActionService
 {
     private const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
     private const TERMINAL_STATUSES = ['CANCELLED', 'COMPLETED', 'DECLINED', 'PAUSED'];
+    private const TRACKED_REQUEST_TYPES = ['REGULAR', 'SERVICE_CONTRACT', 'PETTY_CASH', 'REIMBURSEMENT'];
 
     public static function buildDashboard(PDO $pdo, array $session, string $dashboardKey): array
     {
@@ -378,7 +379,6 @@ class DashboardActionService
     private static function buildActionUnionSql(PDO $pdo, array $context, array $definitions): string
     {
         $parts = [];
-        $percentages = WorkflowConfigurationService::getEscalationPercentages($pdo);
         $directorThreshold = (float)WorkflowConfigurationService::getHighValueThreshold($pdo, 'director');
         $executiveThreshold = (float)WorkflowConfigurationService::getHighValueThreshold($pdo, 'executive');
         $poThreshold = (float)WorkflowConfigurationService::getHighValueThreshold($pdo, 'purchase_order');
@@ -386,34 +386,32 @@ class DashboardActionService
         foreach ($definitions as $definition) {
             $typesSql = implode(', ', array_map([$pdo, 'quote'], array_map('strtoupper', $definition['request_types'])));
             $statusesSql = implode(', ', array_map([$pdo, 'quote'], array_map('strtoupper', $definition['statuses'])));
-            $typeForSla = strtoupper((string)($definition['request_types'][0] ?? 'REGULAR'));
-            $statusForSla = strtoupper((string)($definition['statuses'][0] ?? 'SUBMITTED'));
-            $slaDays = WorkflowConfigurationService::getStageSlaDays($pdo, $typeForSla, $statusForSla);
-            $warningDays = max(1, (int)ceil($slaDays * ((int)$percentages['warning'] / 100)));
-            $overdueDays = max($warningDays, (int)ceil($slaDays * ((int)$percentages['overdue'] / 100)));
-            $criticalDays = max($overdueDays, (int)ceil($slaDays * ((int)$percentages['critical'] / 100)));
+            $thresholdExpressions = self::escalationThresholdExpressions($pdo, $definition['request_types'], $definition['statuses']);
+            $warningDaysExpr = $thresholdExpressions['warning'];
+            $overdueDaysExpr = $thresholdExpressions['overdue'];
+            $criticalDaysExpr = $thresholdExpressions['critical'];
 
             $ageExpr = 'DATEDIFF(CURDATE(), DATE(pr.created_at))';
             $riskRankExpr = "CASE
-                WHEN {$ageExpr} >= {$criticalDays} THEN 4
-                WHEN {$ageExpr} >= {$overdueDays} THEN 3
-                WHEN {$ageExpr} >= {$warningDays} THEN 2
+                WHEN {$ageExpr} >= {$criticalDaysExpr} THEN 4
+                WHEN {$ageExpr} >= {$overdueDaysExpr} THEN 3
+                WHEN {$ageExpr} >= {$warningDaysExpr} THEN 2
                 ELSE 1
             END";
             $priorityRankExpr = "CASE
-                WHEN pr.estimated_value >= {$executiveThreshold} OR {$ageExpr} >= {$criticalDays} THEN 3
-                WHEN pr.estimated_value >= {$directorThreshold} OR {$ageExpr} >= {$warningDays} THEN 2
+                WHEN pr.estimated_value >= {$executiveThreshold} OR {$ageExpr} >= {$criticalDaysExpr} THEN 3
+                WHEN pr.estimated_value >= {$directorThreshold} OR {$ageExpr} >= {$warningDaysExpr} THEN 2
                 ELSE 1
             END";
             $riskLevelExpr = "CASE
-                WHEN {$ageExpr} >= {$criticalDays} THEN 'critical'
-                WHEN {$ageExpr} >= {$overdueDays} THEN 'overdue'
-                WHEN {$ageExpr} >= {$warningDays} THEN 'warning'
+                WHEN {$ageExpr} >= {$criticalDaysExpr} THEN 'critical'
+                WHEN {$ageExpr} >= {$overdueDaysExpr} THEN 'overdue'
+                WHEN {$ageExpr} >= {$warningDaysExpr} THEN 'warning'
                 ELSE 'normal'
             END";
             $priorityExpr = "CASE
-                WHEN pr.estimated_value >= {$executiveThreshold} OR {$ageExpr} >= {$criticalDays} THEN 'urgent'
-                WHEN pr.estimated_value >= {$directorThreshold} OR {$ageExpr} >= {$warningDays} THEN 'high'
+                WHEN pr.estimated_value >= {$executiveThreshold} OR {$ageExpr} >= {$criticalDaysExpr} THEN 'urgent'
+                WHEN pr.estimated_value >= {$directorThreshold} OR {$ageExpr} >= {$warningDaysExpr} THEN 'high'
                 ELSE 'normal'
             END";
 
@@ -472,7 +470,8 @@ class DashboardActionService
                     {$riskRankExpr} AS risk_rank,
                     {$priorityRankExpr} AS priority_rank,
                     {$riskLevelExpr} AS risk_level,
-                    {$priorityExpr} AS priority_label
+                    {$priorityExpr} AS priority_label,
+                    CASE WHEN pr.estimated_value >= {$directorThreshold} THEN 1 ELSE 0 END AS is_high_value
                 FROM {$from}
                 LEFT JOIN branches b ON b.branch_id = pr.branch_id
                 LEFT JOIN users u ON u.user_id = pr.created_by
@@ -551,7 +550,7 @@ class DashboardActionService
         $risk = (string)($row['risk_level'] ?? 'normal');
         $priority = (string)($row['priority'] ?? 'normal');
         $status = strtoupper((string)($row['status_code'] ?? ''));
-        $amount = (float)($row['estimated_value'] ?? 0);
+        $isHighValue = (int)($row['is_high_value'] ?? 0) === 1;
 
         if ($priority === 'urgent') {
             $badges[] = ['label' => 'URGENT', 'variant' => 'red'];
@@ -564,7 +563,7 @@ class DashboardActionService
         } elseif ($risk === 'warning') {
             $badges[] = ['label' => 'NEAR SLA', 'variant' => 'amber'];
         }
-        if ($amount >= 3000000) {
+        if ($isHighValue) {
             $badges[] = ['label' => 'HIGH VALUE', 'variant' => 'amber'];
         }
         if (in_array($status, ['ADDITIONAL_QUOTATIONS_REQUIRED', 'RETURNED_FOR_CORRECTION', 'RECONCILIATION_DISCREPANCY', 'COMMITMENT_DECLINED'], true)) {
@@ -601,13 +600,7 @@ class DashboardActionService
             ? NotificationService::countUnread($userId)
             : 0;
 
-        $rows = array_map(static function (array $row): array {
-            $row['view_url'] = !empty($row['request_id']) ? '/procurement/view.php?id=' . (int)$row['request_id'] : null;
-            $row['action_url'] = $row['action_url'] ?? $row['view_url'];
-            $row['action_label'] = 'Take Action';
-            $row['view_label'] = 'View Record';
-            return $row;
-        }, $notifications);
+        $rows = array_map(static fn(array $row): array => self::normalizeNotificationLinks($row), $notifications);
 
         return ['rows' => $rows, 'unread_count' => $unreadCount];
     }
@@ -634,20 +627,21 @@ class DashboardActionService
         }
 
         $ageExpr = 'DATEDIFF(CURDATE(), DATE(pr.created_at))';
-        $warningDays = 2;
-        $overdueDays = 3;
-        $criticalDays = 5;
+        $thresholdExpressions = self::escalationThresholdExpressions($pdo, self::TRACKED_REQUEST_TYPES, $monitoring['statuses']);
+        $warningDaysExpr = $thresholdExpressions['warning'];
+        $overdueDaysExpr = $thresholdExpressions['overdue'];
+        $criticalDaysExpr = $thresholdExpressions['critical'];
 
         $baseSql = "
             SELECT
                 u.full_name AS officer,
                 COUNT(pr.request_id) AS pending_items,
-                SUM(CASE WHEN {$ageExpr} >= {$overdueDays} THEN 1 ELSE 0 END) AS overdue_count,
-                SUM(CASE WHEN {$ageExpr} >= {$warningDays} AND {$ageExpr} < {$overdueDays} THEN 1 ELSE 0 END) AS near_sla,
-                SUM(CASE WHEN {$ageExpr} >= {$criticalDays} THEN 1 ELSE 0 END) AS escalations,
+                SUM(CASE WHEN {$ageExpr} >= {$overdueDaysExpr} THEN 1 ELSE 0 END) AS overdue_count,
+                SUM(CASE WHEN {$ageExpr} >= {$warningDaysExpr} AND {$ageExpr} < {$overdueDaysExpr} THEN 1 ELSE 0 END) AS near_sla,
+                SUM(CASE WHEN {$ageExpr} >= {$criticalDaysExpr} THEN 1 ELSE 0 END) AS escalations,
                 CASE
-                    WHEN SUM(CASE WHEN {$ageExpr} >= {$criticalDays} THEN 1 ELSE 0 END) > 0
-                        OR SUM(CASE WHEN {$ageExpr} >= {$overdueDays} THEN 1 ELSE 0 END) > 0
+                    WHEN SUM(CASE WHEN {$ageExpr} >= {$criticalDaysExpr} THEN 1 ELSE 0 END) > 0
+                        OR SUM(CASE WHEN {$ageExpr} >= {$overdueDaysExpr} THEN 1 ELSE 0 END) > 0
                     THEN 'Yes'
                     ELSE 'No'
                 END AS requires_intervention
@@ -837,7 +831,64 @@ class DashboardActionService
                 'priority' => ((int)$row['days_open'] >= 5 ? 'urgent' : (((int)$row['days_open'] >= 2) ? 'high' : 'normal')),
                 'status_code' => $status,
                 'estimated_value' => 0,
+                'is_high_value' => 0,
             ]),
+        ];
+    }
+
+    private static function normalizeNotificationLinks(array $row): array
+    {
+        $requestId = (int)($row['request_id'] ?? 0);
+        $actionUrl = trim((string)($row['action_url'] ?? ''));
+        $fallbackViewUrl = $requestId > 0 ? '/procurement/view.php?id=' . $requestId : null;
+
+        $row['view_url'] = $actionUrl !== '' ? $actionUrl : $fallbackViewUrl;
+        if ($actionUrl === '') {
+            $row['action_url'] = $row['view_url'];
+        }
+        $row['action_label'] = 'Take Action';
+        $row['view_label'] = 'View Record';
+
+        return $row;
+    }
+
+    private static function escalationThresholdExpressions(PDO $pdo, array $requestTypes, array $statuses): array
+    {
+        $normalizedTypes = array_values(array_unique(array_filter(array_map(static fn($type): string => strtoupper(trim((string)$type)), $requestTypes))));
+        $normalizedStatuses = array_values(array_unique(array_filter(array_map(static fn($status): string => strtoupper(trim((string)$status)), $statuses))));
+        if ($normalizedTypes === []) {
+            $normalizedTypes = ['REGULAR'];
+        }
+        if ($normalizedStatuses === []) {
+            $normalizedStatuses = ['SUBMITTED'];
+        }
+
+        $percentages = WorkflowConfigurationService::getEscalationPercentages($pdo);
+        $warningCases = [];
+        $overdueCases = [];
+        $criticalCases = [];
+        foreach ($normalizedTypes as $requestType) {
+            foreach ($normalizedStatuses as $status) {
+                $slaDays = WorkflowConfigurationService::getStageSlaDays($pdo, $requestType, $status);
+                $warningDays = max(1, (int)ceil($slaDays * ((int)$percentages['warning'] / 100)));
+                $overdueDays = max($warningDays, (int)ceil($slaDays * ((int)$percentages['overdue'] / 100)));
+                $criticalDays = max($overdueDays, (int)ceil($slaDays * ((int)$percentages['critical'] / 100)));
+                $condition = "UPPER(pr.request_type) = " . self::quoteSqlLiteral($requestType) . " AND UPPER(pr.status) = " . self::quoteSqlLiteral($status);
+                $warningCases[] = "WHEN {$condition} THEN {$warningDays}";
+                $overdueCases[] = "WHEN {$condition} THEN {$overdueDays}";
+                $criticalCases[] = "WHEN {$condition} THEN {$criticalDays}";
+            }
+        }
+
+        $defaultSlaDays = WorkflowConfigurationService::getStageSlaDays($pdo, $normalizedTypes[0], $normalizedStatuses[0]);
+        $defaultWarningDays = max(1, (int)ceil($defaultSlaDays * ((int)$percentages['warning'] / 100)));
+        $defaultOverdueDays = max($defaultWarningDays, (int)ceil($defaultSlaDays * ((int)$percentages['overdue'] / 100)));
+        $defaultCriticalDays = max($defaultOverdueDays, (int)ceil($defaultSlaDays * ((int)$percentages['critical'] / 100)));
+
+        return [
+            'warning' => "(CASE " . implode(' ', $warningCases) . " ELSE {$defaultWarningDays} END)",
+            'overdue' => "(CASE " . implode(' ', $overdueCases) . " ELSE {$defaultOverdueDays} END)",
+            'critical' => "(CASE " . implode(' ', $criticalCases) . " ELSE {$defaultCriticalDays} END)",
         ];
     }
 
