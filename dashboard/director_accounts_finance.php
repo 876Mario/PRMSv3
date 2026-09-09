@@ -25,7 +25,9 @@ $workloadStmt = $pdo->query("
     FROM users u
     JOIN roles r ON r.id = u.role_id
     LEFT JOIN procurement_requests pr
-      ON pr.request_type IN ('PETTY_CASH','REIMBURSEMENT','REGULAR')
+      ON pr.branch_id = u.branch_id
+     AND u.branch_id IS NOT NULL
+     AND pr.request_type IN ('PETTY_CASH','REIMBURSEMENT','REGULAR')
      AND pr.status IN ('SUBMITTED','FUNDS_VERIFIED','COMMITMENTS_PENDING','INVOICE_RECEIVED')
      AND pr.updated_at IS NOT NULL
     WHERE r.name = 'Finance Officer'

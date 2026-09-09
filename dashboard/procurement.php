@@ -59,7 +59,7 @@ $unreadNotifications = class_exists('NotificationService')
   </div>
 
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem;">
-    <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">My Pending RFQs</div><div class="fs-4 fw-bold"><?= (int)($procStats['pending_rfqs'] ?? 0) ?></div></div></div>
+    <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Pending RFQs</div><div class="fs-4 fw-bold"><?= (int)($procStats['pending_rfqs'] ?? 0) ?></div></div></div>
     <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">RFQs Awaiting Vendor Addition</div><div class="fs-4 fw-bold"><?= (int)($procStats['awaiting_vendor_addition'] ?? 0) ?></div></div></div>
     <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">RFQs Returned By Requestors</div><div class="fs-4 fw-bold text-warning"><?= (int)($procStats['returned_by_requestor'] ?? 0) ?></div></div></div>
     <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Pending Quote Reviews</div><div class="fs-4 fw-bold"><?= (int)($procStats['pending_quote_reviews'] ?? 0) ?></div></div></div>

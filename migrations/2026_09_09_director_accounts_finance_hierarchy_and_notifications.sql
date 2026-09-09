@@ -62,6 +62,7 @@ SET u.supervisor_id = (
 )
 WHERE r.name = 'Finance Officer'
   AND u.is_active = 1
+  AND u.supervisor_id IS NULL
   AND EXISTS (
       SELECT 1
       FROM users d
@@ -84,6 +85,7 @@ SET u.supervisor_id = (
 )
 WHERE r.name = 'Procurement Officer'
   AND u.is_active = 1
+  AND u.supervisor_id IS NULL
   AND EXISTS (
       SELECT 1
       FROM users d
