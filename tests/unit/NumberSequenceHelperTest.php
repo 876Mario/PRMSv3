@@ -76,6 +76,33 @@ final class NumberSequenceHelperTest extends PHPUnit\Framework\TestCase
         $this->assertSame('PR009', generateRequestNumber($this->pdo));
     }
 
+    public function testPrefixedSequenceFloorUsesMySqlCompatibleSignedCast(): void
+    {
+        $pdo = new class('sqlite::memory:') extends PDO {
+            public string $lastPreparedSql = '';
+
+            public function prepare($query, $options = []): PDOStatement|false
+            {
+                $this->lastPreparedSql = (string) $query;
+                return parent::prepare($query, $options);
+            }
+        };
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec("
+            CREATE TABLE procurement_requests (
+                request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_number TEXT
+            )
+        ");
+        $pdo->exec("
+            INSERT INTO procurement_requests (request_number)
+            VALUES ('PR001'), ('PR007')
+        ");
+
+        $this->assertSame(8, prefixedSequenceFloor($pdo, 'procurement_requests', 'request_number', 'PR'));
+        $this->assertStringContainsString('AS SIGNED', $pdo->lastPreparedSql);
+    }
+
     public function testServiceContractSequenceAdvancesOnlyOnGeneration(): void
     {
         $this->assertSame('SC0001', previewServiceContractNumber($this->pdo));
