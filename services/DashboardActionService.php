@@ -843,9 +843,7 @@ class DashboardActionService
         $fallbackViewUrl = $requestId > 0 ? '/procurement/view.php?id=' . $requestId : null;
 
         $row['view_url'] = $actionUrl !== '' ? $actionUrl : $fallbackViewUrl;
-        if ($actionUrl === '') {
-            $row['action_url'] = $row['view_url'];
-        }
+        $row['action_url'] = $row['view_url'];
         $row['action_label'] = 'Take Action';
         $row['view_label'] = 'View Record';
 

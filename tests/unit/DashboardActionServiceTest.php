@@ -53,7 +53,7 @@ final class DashboardActionServiceTest extends PHPUnit\Framework\TestCase
     {
         $row = self::invokePrivate('normalizeNotificationLinks', [[
             'request_id' => 42,
-            'action_url' => '/reimbursement/view.php?id=42',
+            'action_url' => ' /reimbursement/view.php?id=42 ',
         ]]);
 
         $this->assertSame('/reimbursement/view.php?id=42', $row['view_url']);
