@@ -246,10 +246,36 @@ function peekSequenceValue(PDO $pdo, string $sequenceKey, int $seed = 1): int
     return $value !== false ? (int) $value : $seed;
 }
 
+function prefixedSequenceFloor(PDO $pdo, string $tableName, string $columnName, string $prefix, int $seed = 1): int
+{
+    foreach ([$tableName, $columnName] as $identifier) {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier)) {
+            throw new InvalidArgumentException('Invalid identifier supplied for sequence floor lookup.');
+        }
+    }
+
+    $stmt = $pdo->prepare(sprintf(
+        "SELECT MAX(CAST(SUBSTR(`%s`, ?) AS INTEGER))
+         FROM `%s`
+         WHERE `%s` LIKE ?",
+        $columnName,
+        $tableName,
+        $columnName
+    ));
+    $stmt->execute([strlen($prefix) + 1, $prefix . '%']);
+    $maxValue = $stmt->fetchColumn();
+
+    return max($seed, ((int) $maxValue) + 1);
+}
+
 function previewRequestNumber(PDO $pdo): string
 {
     if (numberSequencesTableExists($pdo)) {
-        return 'PR' . str_pad((string) peekSequenceValue($pdo, 'procurement_request_number', 1), 3, '0', STR_PAD_LEFT);
+        $nextValue = max(
+            peekSequenceValue($pdo, 'procurement_request_number', 1),
+            prefixedSequenceFloor($pdo, 'procurement_requests', 'request_number', 'PR')
+        );
+        return 'PR' . str_pad((string) $nextValue, 3, '0', STR_PAD_LEFT);
     }
 
     $last = $pdo->query("
@@ -268,7 +294,19 @@ function previewRequestNumber(PDO $pdo): string
 function generateRequestNumber(PDO $pdo): string
 {
     if (numberSequencesTableExists($pdo)) {
-        return 'PR' . str_pad((string) nextSequenceValue($pdo, 'procurement_request_number', 1), 3, '0', STR_PAD_LEFT);
+        $nextValue = nextSequenceValue($pdo, 'procurement_request_number', 1);
+        $floorValue = prefixedSequenceFloor($pdo, 'procurement_requests', 'request_number', 'PR');
+
+        if ($nextValue < $floorValue) {
+            $nextValue = $floorValue;
+            $pdo->prepare("
+                UPDATE number_sequences
+                SET next_value = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE sequence_key = ?
+            ")->execute([$nextValue + 1, 'procurement_request_number']);
+        }
+
+        return 'PR' . str_pad((string) $nextValue, 3, '0', STR_PAD_LEFT);
     }
 
     $query = "
