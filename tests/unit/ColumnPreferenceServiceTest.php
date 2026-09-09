@@ -4,7 +4,7 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__, 2) . '/config/column_modules.php';
 require_once dirname(__DIR__, 2) . '/services/ColumnPreferenceService.php';
 
-final class ColumnPreferenceServiceTestPdo extends PDO
+class ColumnPreferenceServiceTestPdo extends PDO
 {
     public function __construct()
     {
@@ -55,6 +55,26 @@ final class ColumnPreferenceServiceTestPdo extends PDO
     }
 }
 
+final class FaultInjectingColumnPreferenceServiceTestPdo extends ColumnPreferenceServiceTestPdo
+{
+    /** @param array<string, string> $prepareFailures */
+    public function __construct(private array $prepareFailures = [])
+    {
+        parent::__construct();
+    }
+
+    public function prepare(string $query, array $options = []): PDOStatement|false
+    {
+        foreach ($this->prepareFailures as $needle => $message) {
+            if (str_contains($query, $needle)) {
+                throw new PDOException($message);
+            }
+        }
+
+        return parent::prepare($query, $options);
+    }
+}
+
 final class ColumnPreferenceServiceTest extends PHPUnit\Framework\TestCase
 {
     public function testSaveResolveAndResetInventoryPreferences(): void
@@ -98,5 +118,61 @@ final class ColumnPreferenceServiceTest extends PHPUnit\Framework\TestCase
         $this->assertContains('role_1', $keys);
         $this->assertContains('role_2', $keys);
         $this->assertContains('permission', $keys);
+    }
+
+    public function testSavePreferencesToleratesMissingPreferenceTables(): void
+    {
+        $pdo = new FaultInjectingColumnPreferenceServiceTestPdo([
+            'user_column_preferences' => "SQLSTATE[42S02]: Base table or view not found: 1146 Table 'user_column_preferences' doesn't exist",
+            'user_table_preferences' => "SQLSTATE[42S02]: Base table or view not found: 1146 Table 'user_table_preferences' doesn't exist",
+        ]);
+        $service = new ColumnPreferenceService($pdo);
+        $config = getColumnPreferenceModuleConfig('inventory_items', $pdo);
+
+        $state = $service->savePreferences(12, $config, [
+            'action' => 'save',
+            'column_order' => ['item_name', 'item_code', 'actions'],
+            'visible_columns' => ['item_name'],
+            'default_sort_column' => 'item_code',
+            'default_sort_direction' => 'DESC',
+            'page_size' => 50,
+        ]);
+
+        $this->assertSame($state['default_order'], $state['column_order']);
+        $this->assertSame($state['default_visible_keys'], $state['visible_keys']);
+    }
+
+    public function testSavePreferencesRethrowsUnexpectedColumnPreferenceErrors(): void
+    {
+        $pdo = new FaultInjectingColumnPreferenceServiceTestPdo([
+            'DELETE FROM user_column_preferences' => 'SQLSTATE[40001]: Serialization failure: deadlock found',
+        ]);
+        $service = new ColumnPreferenceService($pdo);
+        $config = getColumnPreferenceModuleConfig('inventory_items', $pdo);
+
+        $this->expectException(PDOException::class);
+        $this->expectExceptionMessage('deadlock found');
+
+        $service->savePreferences(12, $config, [
+            'column_order' => ['item_name', 'item_code', 'actions'],
+            'visible_columns' => ['item_name'],
+        ]);
+    }
+
+    public function testSavePreferencesRethrowsUnexpectedTablePreferenceErrors(): void
+    {
+        $pdo = new FaultInjectingColumnPreferenceServiceTestPdo([
+            'INSERT INTO user_table_preferences' => 'SQLSTATE[23000]: Integrity constraint violation: duplicate key',
+        ]);
+        $service = new ColumnPreferenceService($pdo);
+        $config = getColumnPreferenceModuleConfig('inventory_items', $pdo);
+
+        $this->expectException(PDOException::class);
+        $this->expectExceptionMessage('duplicate key');
+
+        $service->savePreferences(12, $config, [
+            'column_order' => ['item_name', 'item_code', 'actions'],
+            'visible_columns' => ['item_name'],
+        ]);
     }
 }

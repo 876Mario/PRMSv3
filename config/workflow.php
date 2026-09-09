@@ -1,5 +1,5 @@
 <?php
-require_once $_SERVER['DOCUMENT_ROOT'] . '/services/SystemConfigService.php';
+require_once __DIR__ . '/../services/SystemConfigService.php';
 
 /**
  * Workflow Transitions

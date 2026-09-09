@@ -216,7 +216,16 @@ final class ColumnPreferenceService
                 ]);
             }
         } catch (Throwable $e) {
-            // tolerate missing migration so legacy storage still works
+            if ($e instanceof PDOException) {
+                $code = (string)$e->getCode();
+                $message = strtolower($e->getMessage());
+                if ($code === '42S02'
+                    || (str_contains($message, 'user_column_preferences')
+                        && (str_contains($message, 'no such table') || str_contains($message, "doesn't exist")))) {
+                    return;
+                }
+            }
+            throw $e;
         }
     }
 
@@ -252,7 +261,16 @@ final class ColumnPreferenceService
                 $pageSize,
             ]);
         } catch (Throwable $e) {
-            // tolerate missing legacy preferences table
+            if ($e instanceof PDOException) {
+                $code = (string)$e->getCode();
+                $message = strtolower($e->getMessage());
+                if ($code === '42S02'
+                    || (str_contains($message, 'user_table_preferences')
+                        && (str_contains($message, 'no such table') || str_contains($message, "doesn't exist")))) {
+                    return;
+                }
+            }
+            throw $e;
         }
     }
 
