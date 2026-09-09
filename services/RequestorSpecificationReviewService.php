@@ -84,7 +84,7 @@ class RequestorSpecificationReviewService
             $requestorStatus = $outcome === 'MEETS_SPECIFICATIONS' ? 'APPROVED' : 'REJECTED';
             $nextStatus = $outcome === 'MEETS_SPECIFICATIONS'
                 ? 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING'
-                : 'QUOTE_REVIEW_PENDING';
+                : 'ADDITIONAL_QUOTATIONS_REQUIRED';
 
             $rfqUpdate = $this->pdo->prepare(
                 "UPDATE rfqs
@@ -104,6 +104,15 @@ class RequestorSpecificationReviewService
                 ':comments' => $comments !== '' ? $comments : null,
                 ':rfq_id' => $rfqId,
             ]);
+
+            if ($outcome === 'DOES_NOT_MEET_SPECIFICATIONS') {
+                $this->pdo->prepare("
+                    UPDATE rfq_quotes q
+                    JOIN rfq_vendors rv ON rv.rfq_vendor_id = q.rfq_vendor_id
+                    SET q.is_selected = 0
+                    WHERE rv.rfq_id = ?
+                ")->execute([$rfqId]);
+            }
 
             $historyStmt = $this->pdo->prepare(
                 "INSERT INTO rfq_requestor_reviews
@@ -133,10 +142,10 @@ class RequestorSpecificationReviewService
                 logRequestTimeline(
                     $this->pdo,
                     (int) $context['request_id'],
-                    $outcome === 'MEETS_SPECIFICATIONS' ? 'QUOTE_REQUESTOR_REVIEW_APPROVED' : 'QUOTE_REVIEW_PENDING',
+                    $outcome === 'MEETS_SPECIFICATIONS' ? 'QUOTE_REQUESTOR_REVIEW_APPROVED' : 'ADDITIONAL_QUOTATIONS_REQUIRED',
                     $outcome === 'MEETS_SPECIFICATIONS'
                         ? 'Requestor specification confirmation approved for RFQ ' . ($context['rfq_number'] ?? $rfqId)
-                        : 'Requestor returned selected quotation to procurement review: ' . $comments
+                        : 'Requestor rejected all submitted quotations; additional quotations required: ' . $comments
                 );
             }
 

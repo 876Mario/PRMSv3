@@ -57,28 +57,29 @@ class WorkflowService
             'RFQ_LETTER_AVAILABLE'   => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
                                          // ← backward
                                          'GC_APPROVED', 'DIRECTOR_APPROVED', 'HOD_APPROVED', 'SUBMITTED'],
+            'ADDITIONAL_QUOTATIONS_REQUIRED' => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'RFQ_LETTER_AVAILABLE'],
             'QUOTE_REVIEW_PENDING'   => ['QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_APPROVED', 'PROCUREMENT_STAGE', 'AWARDED',
                                          // ← backward
                                          'RFQ_LETTER_AVAILABLE'],
-            'QUOTE_REQUESTOR_REVIEW_PENDING' => ['QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+            'QUOTE_REQUESTOR_REVIEW_PENDING' => ['QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'PROCUREMENT_STAGE', 'AWARDED',
                                                 // ← backward
                                                 'RFQ_LETTER_AVAILABLE'],
-            'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+            'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'PROCUREMENT_STAGE', 'AWARDED',
                                                  // ← backward
                                                  'QUOTE_REQUESTOR_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
-            'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['QUOTE_APPROVED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'AWARDED',
+            'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['QUOTE_APPROVED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'PROCUREMENT_STAGE', 'AWARDED',
                                                      // ← backward
                                                      'RFQ_LETTER_AVAILABLE'],
             'QUOTE_APPROVED'         => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'COMMITMENTS_PENDING', 'FUNDS_VERIFIED', 'PROCUREMENT_STAGE',
                                          // ← backward
-                                         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'RFQ_LETTER_AVAILABLE'],
+                                         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'RFQ_LETTER_AVAILABLE'],
             'COMMITMENTS_PENDING'    => ['COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'PROCUREMENT_STAGE',
                                          // ← backward
                                          'QUOTE_APPROVED', 'FUNDS_VERIFIED'],
             'COMMITMENT_APPROVED'    => ['PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED',
                                          // ← backward
                                          'COMMITMENTS_PENDING', 'FUNDS_VERIFIED'],
-            'COMMITMENT_DECLINED'    => ['QUOTE_REVIEW_PENDING', 'PROCUREMENT_STAGE', 'SUBMITTED'],
+            'COMMITMENT_DECLINED'    => ['QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'PROCUREMENT_STAGE', 'SUBMITTED'],
             'PO_PENDING'             => ['INVOICE_RECEIVED', 'AWARDED',
                                          // ← backward
                                          'COMMITMENT_APPROVED'],
@@ -186,7 +187,7 @@ class WorkflowService
             'REGULAR', 'SERVICE_CONTRACT' => [
                 'DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED',
                 'FUNDS_VERIFIED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE',
-                'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED',
+                'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED',
                 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'EVALUATION_STAGE',
                 'COMMITTEE_RECOMMENDED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED',
                 'PO_PENDING', 'INVOICE_RECEIVED', 'AWARDED', 'COMPLETED'
@@ -333,8 +334,9 @@ class WorkflowService
             'DIRECTOR_APPROVED' => ['Director HRM&A'],
             'GC_APPROVED' => ['Deputy Government Chemist'],
             'AWARDED' => ['Deputy Government Chemist'],
-            'RFQ_LETTER_AVAILABLE' => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer', 'Director HRM&A', 'Deputy Government Chemist'],
+            'RFQ_LETTER_AVAILABLE' => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer', 'Director HRM&A', 'Director Accounts & Finance', 'Deputy Government Chemist'],
             'QUOTE_REVIEW_PENDING' => ['Requestor', 'HOD', 'Branch Head', 'Procurement Officer'],
+            'ADDITIONAL_QUOTATIONS_REQUIRED' => ['Procurement Officer', 'Director Procurement'],
             'QUOTE_REQUESTOR_REVIEW_PENDING' => ['Requestor'],
             'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['Branch Head', 'HOD', 'Director HRM&A'],
             'PROCUREMENT_STAGE' => ['Procurement Officer', 'HOD'],

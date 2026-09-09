@@ -3,6 +3,7 @@ $REQUIRE_PERMISSION = 'create_rfq';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
 
 $request_id = (int)($_GET['request_id'] ?? 0);
 
@@ -115,6 +116,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* Audit */
         logAudit($pdo, 'rfqs', $rfq_id, 'CREATE', 
             "RFQ created for request ID $request_id. Date: $rfqDate, Deadline: $submissionDeadline");
+
+        notifyDirectorProcurementActionRequired(
+            $request_id,
+            'New RFQ Entered Procurement Workflow',
+            'A new RFQ has been created and entered the procurement workflow.',
+            'high'
+        );
 
         /* Redirect to view */
         header("Location: view.php?id=" . $rfq_id);

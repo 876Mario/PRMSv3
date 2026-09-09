@@ -2,7 +2,23 @@
 $REQUIRE_PERMISSION = 'view_procurement_dashboard';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
+
+$procStats = $pdo->query("
+  SELECT
+    SUM(CASE WHEN status IN ('PROCUREMENT_STAGE','RFQ_LETTER_AVAILABLE') THEN 1 ELSE 0 END) AS pending_rfqs,
+    SUM(CASE WHEN status = 'RFQ_LETTER_AVAILABLE' THEN 1 ELSE 0 END) AS awaiting_vendor_addition,
+    SUM(CASE WHEN status = 'ADDITIONAL_QUOTATIONS_REQUIRED' THEN 1 ELSE 0 END) AS returned_by_requestor,
+    SUM(CASE WHEN status = 'QUOTE_REVIEW_PENDING' THEN 1 ELSE 0 END) AS pending_quote_reviews,
+    SUM(CASE WHEN status = 'PO_PENDING' THEN 1 ELSE 0 END) AS pending_purchase_orders,
+    SUM(CASE WHEN status NOT IN ('DRAFT','COMPLETED','DECLINED','CANCELLED','PAUSED') THEN 1 ELSE 0 END) AS outstanding_tasks
+  FROM procurement_requests
+")->fetch(PDO::FETCH_ASSOC) ?: [];
+
+$unreadNotifications = class_exists('NotificationService')
+    ? NotificationService::countUnread((int)($_SESSION['user_id'] ?? 0))
+    : 0;
 ?>
 
 <div style="max-width: 1400px; margin: 2rem auto; padding: 0 1rem;">
@@ -41,6 +57,20 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
     <a href="/rfq/list.php" style="background: white; border: 1px solid #4facfe; color: #4facfe; padding: 0.625rem 1.25rem; border-radius: 8px; text-decoration: none; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">📄 RFQs</a>
     <a href="/dashboard/approval_queue.php" style="background: linear-gradient(135deg, #f5576c 0%, #ff6f91 100%); color: white; padding: 0.625rem 1.25rem; border-radius: 8px; text-decoration: none; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(245, 87, 108, 0.3);">⏳ Approval Queue</a>
   </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem;">
+    <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">My Pending RFQs</div><div class="fs-4 fw-bold"><?= (int)($procStats['pending_rfqs'] ?? 0) ?></div></div></div>
+    <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">RFQs Awaiting Vendor Addition</div><div class="fs-4 fw-bold"><?= (int)($procStats['awaiting_vendor_addition'] ?? 0) ?></div></div></div>
+    <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">RFQs Returned By Requestors</div><div class="fs-4 fw-bold text-warning"><?= (int)($procStats['returned_by_requestor'] ?? 0) ?></div></div></div>
+    <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Pending Quote Reviews</div><div class="fs-4 fw-bold"><?= (int)($procStats['pending_quote_reviews'] ?? 0) ?></div></div></div>
+    <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Pending Purchase Orders</div><div class="fs-4 fw-bold"><?= (int)($procStats['pending_purchase_orders'] ?? 0) ?></div></div></div>
+    <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Outstanding Procurement Tasks</div><div class="fs-4 fw-bold"><?= (int)($procStats['outstanding_tasks'] ?? 0) ?></div></div></div>
+    <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Unread Notifications</div><div class="fs-4 fw-bold"><?= (int)$unreadNotifications ?></div></div></div>
+  </div>
+
+  <div class="alert alert-danger"><strong>URGENT:</strong> Overdue, escalated, and returned workflows.</div>
+  <div class="alert alert-warning"><strong>HIGH PRIORITY:</strong> Pending reviews and approvals.</div>
+  <div class="alert alert-info mb-4"><strong>NORMAL:</strong> Open and recently assigned procurement work.</div>
 
   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
     <?php include $_SERVER['DOCUMENT_ROOT'].'/dashboard/widgets/kpis.php'; ?>

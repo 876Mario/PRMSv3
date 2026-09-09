@@ -76,6 +76,9 @@ $quoteStmt = $pdo->prepare("
 
 $quoteStmt->execute([$rfq_id]);
 $quotes = $quoteStmt->fetchAll(PDO::FETCH_ASSOC);
+$vendorCount = count($vendors);
+$quoteCount = count($quotes);
+$canSubmitForQuoteReview = ($vendorCount > 0 && $quoteCount > 0);
 
 
 
@@ -183,21 +186,33 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
             <i class="bi bi-send me-1"></i>Send RFQ Emails
         </a>
         <?php endif; ?>
-        <?php if (in_array($rfq['request_status'], ['RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE']) && ($isRequestCreator || in_array($userRoleName, ['HOD', 'Branch Head', 'Procurement Officer']))): ?>
+        <?php if (in_array($rfq['request_status'], ['RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'ADDITIONAL_QUOTATIONS_REQUIRED']) && ($isRequestCreator || in_array($userRoleName, ['HOD', 'Branch Head', 'Procurement Officer']))): ?>
             <?php if ($isUnderThreshold): ?>
                 <!-- Under-threshold: Move to quote review (skip committee) -->
-                <a href="/rfq/start_evaluation.php?id=<?= $rfq['rfq_id'] ?>"
-                   class="btn text-white rounded-pill btn-sm" style="background:#28a745;"
-                   onclick="return confirm('Move this RFQ to quote review stage?')">
-                    <i class="bi bi-chat-dots me-1"></i>Move to Quote Review
-                </a>
+                <?php if ($canSubmitForQuoteReview): ?>
+                    <a href="/rfq/start_evaluation.php?id=<?= $rfq['rfq_id'] ?>"
+                       class="btn text-white rounded-pill btn-sm" style="background:#28a745;"
+                       onclick="return confirm('Move this RFQ to quote review stage?')">
+                        <i class="bi bi-chat-dots me-1"></i>Move to Quote Review
+                    </a>
+                <?php else: ?>
+                    <button type="button" class="btn btn-secondary rounded-pill btn-sm" disabled title="Add at least one vendor and one quotation before submitting for quote review.">
+                        <i class="bi bi-lock me-1"></i>Move to Quote Review
+                    </button>
+                <?php endif; ?>
             <?php else: ?>
                 <!-- Over-threshold: Start committee evaluation -->
-                <a href="/rfq/start_evaluation.php?id=<?= $rfq['rfq_id'] ?>"
-                   class="btn text-white rounded-pill btn-sm" style="background:#1a1a2e;"
-                   onclick="return confirm('Start committee evaluation for this RFQ?')">
-                    <i class="bi bi-bar-chart me-1"></i>Start Evaluation
-                </a>
+                <?php if ($canSubmitForQuoteReview): ?>
+                    <a href="/rfq/start_evaluation.php?id=<?= $rfq['rfq_id'] ?>"
+                       class="btn text-white rounded-pill btn-sm" style="background:#1a1a2e;"
+                       onclick="return confirm('Start committee evaluation for this RFQ?')">
+                        <i class="bi bi-bar-chart me-1"></i>Start Evaluation
+                    </a>
+                <?php else: ?>
+                    <button type="button" class="btn btn-secondary rounded-pill btn-sm" disabled title="Add at least one vendor and one quotation before submitting for review.">
+                        <i class="bi bi-lock me-1"></i>Start Evaluation
+                    </button>
+                <?php endif; ?>
             <?php endif; ?>
         <?php endif; ?>
         <?php
@@ -228,6 +243,16 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
         <?php endif; ?>
     </div>
 </div>
+
+<?php if (
+    in_array($rfq['request_status'], ['RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'ADDITIONAL_QUOTATIONS_REQUIRED'], true)
+    && !$canSubmitForQuoteReview
+): ?>
+<div class="alert alert-warning border-0 rounded-3 mb-4">
+    <strong>Cannot Submit for Quote Review</strong><br>
+    Please add at least one vendor and one quotation before submitting this RFQ for review.
+</div>
+<?php endif; ?>
 
 <!-- KPI Cards -->
 <?php
@@ -660,6 +685,7 @@ $canAward = ($committeeCount >= 3 && $reportCount > 0 && $majorityMet);
             'PROCUREMENT_STAGE'      => ['icon' => 'bi-cart-check',       'color' => '#6f42c1', 'label' => 'Procurement'],
             'RFQ_LETTER_AVAILABLE'   => ['icon' => 'bi-envelope-paper',   'color' => '#0d6efd', 'label' => 'RFQ Letter Available'],
             'QUOTE_REVIEW_PENDING'   => ['icon' => 'bi-chat-dots',        'color' => '#fd7e14', 'label' => 'Quote Review'],
+            'ADDITIONAL_QUOTATIONS_REQUIRED' => ['icon' => 'bi-arrow-repeat', 'color' => '#f39c12', 'label' => 'Additional Quotations Required'],
             'QUOTE_REQUESTOR_REVIEW_PENDING' => ['icon' => 'bi-person-check', 'color' => '#e67e22', 'label' => 'Pending Requestor Review'],
             'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['icon' => 'bi-check2-circle', 'color' => '#20c997', 'label' => 'Requestor Review Approved'],
             'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['icon' => 'bi-shield-check', 'color' => '#0dcaf0', 'label' => 'Pending Branch Head Approval'],

@@ -4,6 +4,7 @@ $REQUIRE_PERMISSION = 'start_rfq_evaluation';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/config/helper.php';
 
 $rfq_id = (int)($_GET['id'] ?? 0);
 if (!$rfq_id) {
@@ -12,7 +13,7 @@ if (!$rfq_id) {
 }
 
 $stmt = $pdo->prepare("
-    SELECT r.request_id, pr.status, pr.estimated_value
+    SELECT r.request_id, r.requestor_reviewed_at, pr.status, pr.estimated_value
     FROM rfqs r
     JOIN procurement_requests pr ON r.request_id = pr.request_id
     WHERE r.rfq_id = ?
@@ -27,6 +28,72 @@ if (!$data) {
 
 $request = ['status' => $data['status']];
 $estimatedValue = (float)($data['estimated_value'] ?? 0);
+
+$countsStmt = $pdo->prepare("
+    SELECT
+        (SELECT COUNT(*)
+           FROM rfq_vendors rv
+          WHERE rv.rfq_id = :rfq_id
+            AND COALESCE(rv.is_deleted, 0) = 0) AS vendor_count,
+        (SELECT COUNT(*)
+           FROM rfq_quotes q
+           JOIN rfq_vendors rv2 ON rv2.rfq_vendor_id = q.rfq_vendor_id
+          WHERE rv2.rfq_id = :rfq_id
+            AND COALESCE(rv2.is_deleted, 0) = 0
+            AND COALESCE(q.is_deleted, 0) = 0) AS quote_count
+");
+$countsStmt->execute([':rfq_id' => $rfq_id]);
+$counts = $countsStmt->fetch(PDO::FETCH_ASSOC) ?: ['vendor_count' => 0, 'quote_count' => 0];
+$vendorCount = (int)($counts['vendor_count'] ?? 0);
+$quoteCount = (int)($counts['quote_count'] ?? 0);
+
+if ($vendorCount <= 0 || $quoteCount <= 0) {
+    logAudit(
+        $pdo,
+        'rfqs',
+        $rfq_id,
+        'QUOTE_REVIEW_SUBMISSION_BLOCKED',
+        "Blocked quote review submission: vendors={$vendorCount}, quotes={$quoteCount}"
+    );
+    pop(
+        "Cannot Submit for Quote Review\n\nPlease add at least one vendor and one quotation before submitting this RFQ for review.",
+        '/rfq/view.php?id=' . $rfq_id,
+        POP_DEFAULT_DELAY_MS,
+        'error'
+    );
+    exit;
+}
+
+if (strtoupper((string)($data['status'] ?? '')) === 'ADDITIONAL_QUOTATIONS_REQUIRED') {
+    $newQuoteStmt = $pdo->prepare("
+        SELECT COUNT(*) 
+        FROM rfq_quotes q
+        JOIN rfq_vendors rv ON rv.rfq_vendor_id = q.rfq_vendor_id
+        WHERE rv.rfq_id = ?
+          AND COALESCE(rv.is_deleted, 0) = 0
+          AND COALESCE(q.is_deleted, 0) = 0
+          AND q.submitted_at > COALESCE(?, '1970-01-01 00:00:00')
+    ");
+    $newQuoteStmt->execute([$rfq_id, $data['requestor_reviewed_at'] ?? null]);
+    $newQuoteCount = (int)$newQuoteStmt->fetchColumn();
+
+    if ($newQuoteCount <= 0) {
+        logAudit(
+            $pdo,
+            'rfqs',
+            $rfq_id,
+            'QUOTE_REVIEW_SUBMISSION_BLOCKED',
+            'Blocked quote review resubmission: no new quotations submitted after requestor rejection'
+        );
+        pop(
+            "Cannot Submit for Quote Review\n\nPlease add at least one vendor and one quotation before submitting this RFQ for review.",
+            '/rfq/view.php?id=' . $rfq_id,
+            POP_DEFAULT_DELAY_MS,
+            'error'
+        );
+        exit;
+    }
+}
 
 // UPDATED: Check if this is under-threshold RFQ (skip committee evaluation)
 $directThreshold = getDirectProcurementThreshold($pdo);
@@ -53,6 +120,12 @@ if ($estimatedValue <= $directThreshold) {
     // Notify quote reviewers (Requestor, HOD, Procurement)
     require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
     notifyQuoteReviewReady($data['request_id'], $rfq_id);
+    notifyDirectorProcurementActionRequired(
+        (int)$data['request_id'],
+        'RFQ Submitted for Quote Review',
+        'A procurement officer moved an RFQ to quote review.',
+        'high'
+    );
     
     pop('Under-threshold RFQ moved to quote review (no committee evaluation required).', '/rfq/view.php?id='.$rfq_id, POP_DEFAULT_DELAY_MS, 'success');
     exit;
@@ -91,4 +164,3 @@ notifyEvaluationStarted($rfq_id);
 
 header("Location: /rfq/view.php?id=".$rfq_id);
 exit;
-

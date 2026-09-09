@@ -42,7 +42,7 @@ $adminWorkflowOptions = getAdminWorkflowStatusOptions();
 // Procurement can edit at most stages; others can only edit DRAFT
 $procurementEditableStatuses = ['DRAFT', 'SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 
     'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'EVALUATION_STAGE', 
-    'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENT_DECLINED'];
+    'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENT_DECLINED'];
 if ($isAdmin) {
     $procurementEditableStatuses = array_unique(array_merge($procurementEditableStatuses, array_keys($adminWorkflowOptions)));
 }

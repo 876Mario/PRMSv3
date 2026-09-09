@@ -3424,7 +3424,7 @@ function sendRequestorRejectionNotification(int $rfqId, string $reason): bool {
         return false;
     }
 
-    $recipients = getRfqProcurementRecipients();
+    $recipients = array_merge(getRfqProcurementRecipients(), getRfqDirectorProcurementRecipients());
     if (!empty($context['requestor_email']) && filter_var($context['requestor_email'], FILTER_VALIDATE_EMAIL)) {
         $recipients[] = [
             'user_id' => (int)($context['created_by'] ?? 0),
@@ -3435,13 +3435,13 @@ function sendRequestorRejectionNotification(int $rfqId, string $reason): bool {
 
     $appUrl = getAppUrl();
     $rfqUrl = "{$appUrl}/rfq/view.php?id={$rfqId}";
-    $subject = 'RFQ ' . he($context['rfq_number']) . ' - Requestor Returned Selected Quote';
+    $subject = 'Additional Quotations Required - RFQ ' . he($context['rfq_number']);
     $html = "
         <p>The requestor marked the selected quotation for RFQ <strong>" . he($context['rfq_number']) . "</strong> as not meeting specifications.</p>
         <p><strong>Request Number:</strong> " . he($context['request_number']) . "</p>
         <p><strong>Selected Vendor:</strong> " . he($context['selected_vendor_name'] ?? 'Pending selection') . "</p>
         <p><strong>Reason:</strong><br>" . nl2br(he($reason)) . "</p>
-        <p>The RFQ has been routed back to procurement quote review.</p>
+        <p>The RFQ has been returned to Procurement and now requires additional vendor quotations before quote review can resume.</p>
         <a href='" . he($rfqUrl) . "' class='btn btn-info'>View RFQ</a>
     ";
 
@@ -3451,7 +3451,7 @@ function sendRequestorRejectionNotification(int $rfqId, string $reason): bool {
         'requestor_name' => $context['requestor_name'] ?? null,
     ];
 
-    return dispatchRfqApprovalEmail('RequestorRejection', $rfqId, $subject, $html, $recipients, $rfqUrl, $meta + ['stage' => 'QUOTE_REVIEW']);
+    return dispatchRfqApprovalEmail('RequestorRejection', $rfqId, $subject, $html, $recipients, $rfqUrl, $meta + ['stage' => 'ADDITIONAL_QUOTATIONS_REQUIRED', 'priority' => 'high']);
 }
 
 /**
@@ -3657,6 +3657,27 @@ function getRfqProcurementRecipients(): array {
     } catch (Exception $e) {
         error_log("Notification[ProcurementRecipients]: {$e->getMessage()}");
         return [];
+    }
+
+    function getRfqDirectorProcurementRecipients(): array {
+        global $pdo;
+
+        try {
+            $stmt = $pdo->prepare(
+                "SELECT u.user_id, u.email, u.full_name AS full_name
+                   FROM users u
+                   JOIN roles r ON r.id = u.role_id
+                  WHERE r.name = 'Director Procurement'
+                    AND u.is_active = 1"
+            );
+            $stmt->execute();
+            return array_map(static function (array $row): array {
+                return ['user_id' => (int)$row['user_id'], 'email' => $row['email'], 'name' => $row['full_name'] ?? 'Director Procurement'];
+            }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+        } catch (Exception $e) {
+            error_log("Notification[DirectorProcurementRecipients]: {$e->getMessage()}");
+            return [];
+        }
     }
 }
 
@@ -4697,6 +4718,218 @@ HTML;
 
     } catch (Exception $e) {
         error_log("notifyAdvancePaymentDecided error: {$e->getMessage()}");
+        return false;
+    }
+}
+
+/**
+ * Notify requestor when petty cash funds are verified by Finance.
+ */
+function notifyPettyCashFundsVerified(int $requestId): bool
+{
+    return notifyPettyCashRequestorLifecycle($requestId, 'FUNDS_VERIFIED');
+}
+
+/**
+ * Notify requestor when petty cash is disbursed by Finance.
+ */
+function notifyPettyCashDisbursed(int $requestId): bool
+{
+    return notifyPettyCashRequestorLifecycle($requestId, 'DISBURSED');
+}
+
+/**
+ * Notify Director Procurement for procurement-stage escalation events.
+ */
+function notifyDirectorProcurementActionRequired(int $requestId, string $title, string $message, string $priority = 'high'): bool
+{
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT request_number, created_by, status
+            FROM procurement_requests
+            WHERE request_id = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request) {
+            return false;
+        }
+
+        $recipients = getRfqDirectorProcurementRecipients();
+        if (empty($recipients)) {
+            return false;
+        }
+
+        $subject = preg_replace('/[\r\n\x00-\x1F\x7F]+/', ' ', $title . ': ' . ($request['request_number'] ?? ('Request #' . $requestId)));
+        $url = '/procurement/view.php?id=' . urlencode((string)$requestId);
+        $html = '<p>' . he($message) . '</p>'
+              . '<p><strong>Request Number:</strong> ' . he($request['request_number'] ?? ('Request #' . $requestId)) . '</p>'
+              . '<p><strong>Current Status:</strong> ' . he($request['status'] ?? 'UNKNOWN') . '</p>'
+              . '<p><a href="' . he(getAppUrl() . $url) . '" class="button">Open Request</a></p>';
+
+        $sent = false;
+        foreach ($recipients as $recipient) {
+            $uid = (int)($recipient['user_id'] ?? 0);
+            if ($uid <= 0) {
+                continue;
+            }
+            NotificationService::createNotification($uid, NotificationService::TYPE_APPROVAL_NEEDED, [
+                'title' => $title,
+                'body' => $message,
+                'request_id' => $requestId,
+                'request_ref' => $request['request_number'] ?? null,
+                'action_url' => $url,
+                'stage' => 'DIRECTOR_PROCUREMENT_OVERSIGHT',
+                'priority' => $priority,
+            ]);
+            if (notificationsEnabled() && !empty($recipient['email']) && filter_var($recipient['email'], FILTER_VALIDATE_EMAIL)) {
+                $sent = sendMail($recipient['email'], $subject, $html) || $sent;
+            }
+        }
+
+        logAudit($pdo, 'procurement_requests', $requestId, 'DIRECTOR_PROCUREMENT_NOTIFICATION', $title . ' | ' . $message);
+        return true;
+    } catch (Throwable $e) {
+        error_log('notifyDirectorProcurementActionRequired failed: ' . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Notify Director Accounts & Finance for finance-stage action or escalation events.
+ */
+function notifyDirectorFinanceActionRequired(int $requestId, string $title, string $message, string $priority = 'high'): bool
+{
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT request_number, status
+            FROM procurement_requests
+            WHERE request_id = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request) {
+            return false;
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT u.user_id, u.email, u.full_name
+            FROM users u
+            JOIN roles r ON r.id = u.role_id
+            WHERE r.name = 'Director Accounts & Finance'
+              AND u.is_active = 1
+        ");
+        $stmt->execute();
+        $recipients = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($recipients)) {
+            return false;
+        }
+
+        $subject = preg_replace('/[\r\n\x00-\x1F\x7F]+/', ' ', $title . ': ' . ($request['request_number'] ?? ('Request #' . $requestId)));
+        $url = '/procurement/view.php?id=' . urlencode((string)$requestId);
+        $html = '<p>' . he($message) . '</p>'
+              . '<p><strong>Request Number:</strong> ' . he($request['request_number'] ?? ('Request #' . $requestId)) . '</p>'
+              . '<p><strong>Current Status:</strong> ' . he($request['status'] ?? 'UNKNOWN') . '</p>'
+              . '<p><a href="' . he(getAppUrl() . $url) . '" class="button">Open Request</a></p>';
+
+        $sent = false;
+        foreach ($recipients as $recipient) {
+            $uid = (int)($recipient['user_id'] ?? 0);
+            if ($uid <= 0) {
+                continue;
+            }
+            NotificationService::createNotification($uid, NotificationService::TYPE_FINANCE_ACTION, [
+                'title' => $title,
+                'body' => $message,
+                'request_id' => $requestId,
+                'request_ref' => $request['request_number'] ?? null,
+                'action_url' => $url,
+                'stage' => 'DIRECTOR_FINANCE_OVERSIGHT',
+                'priority' => $priority,
+            ]);
+            if (notificationsEnabled() && !empty($recipient['email']) && filter_var($recipient['email'], FILTER_VALIDATE_EMAIL)) {
+                $sent = sendMail($recipient['email'], $subject, $html) || $sent;
+            }
+        }
+
+        logAudit($pdo, 'procurement_requests', $requestId, 'DIRECTOR_FINANCE_NOTIFICATION', $title . ' | ' . $message);
+        return true;
+    } catch (Throwable $e) {
+        error_log('notifyDirectorFinanceActionRequired failed: ' . $e->getMessage());
+        return false;
+    }
+}
+
+function notifyPettyCashRequestorLifecycle(int $requestId, string $event): bool
+{
+    global $pdo;
+    $event = strtoupper(trim($event));
+    $map = [
+        'FUNDS_VERIFIED' => [
+            'title' => 'Funds Available for Collection',
+            'body' => 'Your petty cash request has been verified by Finance. Please visit Accounts & Finance to collect the funds.',
+            'action' => 'PETTY_CASH_FUNDS_VERIFIED_NOTIFICATION',
+        ],
+        'DISBURSED' => [
+            'title' => 'Funds Disbursed',
+            'body' => 'Your petty cash funds have been disbursed and recorded by Accounts & Finance.',
+            'action' => 'PETTY_CASH_DISBURSED_NOTIFICATION',
+        ],
+    ];
+    if (!isset($map[$event])) {
+        return false;
+    }
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT pr.request_id, pr.request_number, pr.created_by, pr.status, pr.estimated_value,
+                   u.full_name AS requestor_name, u.email AS requestor_email
+            FROM procurement_requests pr
+            LEFT JOIN users u ON u.user_id = pr.created_by
+            WHERE pr.request_id = ? AND pr.request_type = 'PETTY_CASH'
+            LIMIT 1
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request || (int)($request['created_by'] ?? 0) <= 0) {
+            return false;
+        }
+
+        $notification = $map[$event];
+        NotificationService::createNotification((int)$request['created_by'], NotificationService::TYPE_FINANCE_ACTION, [
+            'title' => $notification['title'],
+            'body' => $notification['body'],
+            'request_id' => (int)$request['request_id'],
+            'request_ref' => $request['request_number'] ?? null,
+            'action_url' => '/petty_cash/view.php?request_id=' . urlencode((string)$requestId),
+            'stage' => $event,
+            'requestor_name' => $request['requestor_name'] ?? null,
+            'priority' => 'high',
+        ]);
+
+        $subject = preg_replace('/[\r\n\x00-\x1F\x7F]+/', ' ', $notification['title'] . ' - ' . ($request['request_number'] ?? ('Request #' . $requestId)));
+        if (notificationsEnabled() && !empty($request['requestor_email']) && filter_var($request['requestor_email'], FILTER_VALIDATE_EMAIL)) {
+            $html = '<p>Dear ' . he($request['requestor_name'] ?? 'Requestor') . ',</p>'
+                  . '<p>' . he($notification['body']) . '</p>'
+                  . '<p><strong>Request Number:</strong> ' . he($request['request_number'] ?? ('Request #' . $requestId)) . '</p>'
+                  . '<p><a href="' . he(getAppUrl() . '/petty_cash/view.php?request_id=' . urlencode((string)$requestId)) . '" class="button">View Petty Cash Request</a></p>';
+            sendMail($request['requestor_email'], $subject, $html);
+        }
+
+        logAudit(
+            $pdo,
+            'procurement_requests',
+            (int)$request['request_id'],
+            $notification['action'],
+            $notification['title'] . ' sent to requestor user_id=' . (int)$request['created_by']
+        );
+        return true;
+    } catch (Throwable $e) {
+        error_log('notifyPettyCashRequestorLifecycle failed: ' . $e->getMessage());
         return false;
     }
 }

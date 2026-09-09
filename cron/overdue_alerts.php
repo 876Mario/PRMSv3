@@ -148,7 +148,7 @@ function getSupervisorEmail(PDO $pdo, int $userId): ?string {
             FROM users u
             INNER JOIN branches b   ON b.branch_id = u.branch_id
             INNER JOIN users u2     ON u2.branch_id = b.branch_id
-            INNER JOIN roles r2     ON r2.id = u2.role_id AND r2.name IN ('HOD','Branch Head')
+            INNER JOIN roles r2     ON r2.id = u2.role_id AND r2.name IN ('HOD','Branch Head','Director Procurement','Director Accounts & Finance')
             WHERE u.user_id = ? AND u2.is_active = 1
             LIMIT 1
         ");
@@ -202,6 +202,7 @@ try {
         'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 'GC_APPROVED',
         'PROCUREMENT_STAGE', 'EVALUATION_STAGE',
         'RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING',
+        'ADDITIONAL_QUOTATIONS_REQUIRED',
         'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED',
         'QUOTE_BRANCH_HEAD_APPROVAL_PENDING',
         'QUOTE_APPROVED',

@@ -405,6 +405,7 @@ if ($requestType === 'PETTY_CASH') {
             $pipelineStages['GC_APPROVED'] = ['icon' => 'bi-building-check', 'label' => 'GC Approved'];
             $pipelineStages['RFQ_LETTER_AVAILABLE'] = ['icon' => 'bi-envelope-open', 'label' => 'RFQ Letters'];
             $pipelineStages['QUOTE_REVIEW_PENDING'] = ['icon' => 'bi-chat-dots', 'label' => 'Quote Review'];
+            $pipelineStages['ADDITIONAL_QUOTATIONS_REQUIRED'] = ['icon' => 'bi-arrow-repeat', 'label' => 'Additional Quotations Required'];
             $pipelineStages['QUOTE_REQUESTOR_REVIEW_PENDING'] = ['icon' => 'bi-person-check', 'label' => 'Requestor Review'];
             $pipelineStages['QUOTE_REQUESTOR_REVIEW_APPROVED'] = ['icon' => 'bi-person-check-fill', 'label' => 'Requestor Approved'];
             $pipelineStages['QUOTE_BRANCH_HEAD_APPROVAL_PENDING'] = ['icon' => 'bi-shield-check', 'label' => 'Branch Head Approval'];
@@ -420,6 +421,7 @@ if ($requestType === 'PETTY_CASH') {
             // Under-threshold: Quote review → Funds Verified → Commitment Form → Commitment Created → PO flow
             $pipelineStages['RFQ_LETTER_AVAILABLE'] = ['icon' => 'bi-envelope-open', 'label' => 'RFQ Letters'];
             $pipelineStages['QUOTE_REVIEW_PENDING'] = ['icon' => 'bi-chat-dots', 'label' => 'Quote Review'];
+            $pipelineStages['ADDITIONAL_QUOTATIONS_REQUIRED'] = ['icon' => 'bi-arrow-repeat', 'label' => 'Additional Quotations Required'];
             $pipelineStages['QUOTE_REQUESTOR_REVIEW_PENDING'] = ['icon' => 'bi-person-check', 'label' => 'Requestor Review'];
             $pipelineStages['QUOTE_REQUESTOR_REVIEW_APPROVED'] = ['icon' => 'bi-person-check-fill', 'label' => 'Requestor Approved'];
             $pipelineStages['QUOTE_BRANCH_HEAD_APPROVAL_PENDING'] = ['icon' => 'bi-shield-check', 'label' => 'Branch Head Approval'];
@@ -458,6 +460,7 @@ $badgeMap = [
     'COMMITTEE_RECOMMENDED' => ['info text-dark',     'bi-people-fill'],
     'RFQ_LETTER_AVAILABLE'  => ['info',               'bi-envelope-open'],
     'QUOTE_REVIEW_PENDING'  => ['warning text-dark',  'bi-chat-dots'],
+    'ADDITIONAL_QUOTATIONS_REQUIRED' => ['warning text-dark', 'bi-arrow-repeat'],
     'QUOTE_REQUESTOR_REVIEW_PENDING' => ['warning text-dark', 'bi-person-check'],
     'QUOTE_REQUESTOR_REVIEW_APPROVED' => ['info text-dark', 'bi-person-check-fill'],
     'QUOTE_BRANCH_HEAD_APPROVAL_PENDING' => ['info text-dark', 'bi-shield-check'],
@@ -561,7 +564,7 @@ if ($requestType === 'REGULAR') {
         if (in_array($status, ['HOD_APPROVED', 'DIRECTOR_APPROVED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE']) && !$rfqId) {
             $quickActions[] = ['label' => '📬 Create RFQ', 'href' => '/rfq/create.php?request_id=' . $request_id, 'style' => 'background:#cfe2ff;color:#084298;'];
         }
-        if ($rfqId && in_array($status, ['RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED'])) {
+        if ($rfqId && in_array($status, ['RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED'])) {
             $quickActions[] = ['label' => '👁️ View RFQ', 'href' => '/rfq/view.php?id=' . $rfqId, 'style' => 'background:#e2e3e5;color:#333;'];
         }
         if (in_array($status, ['FUNDS_VERIFIED', 'COMMITMENTS_PENDING', 'AWARDED'])) {
@@ -1235,7 +1238,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     $approvalIcon = null;
                     $procurementEditableStatuses = ['SUBMITTED', 'HOD_APPROVED', 'FUNDS_VERIFIED', 'DIRECTOR_APPROVED', 
                         'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'EVALUATION_STAGE', 
-                        'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENT_DECLINED'];
+                        'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENT_DECLINED'];
                     $canSendBackForEdit = false;
                     
                     // Check if there's a pending approval for this user (regardless of current status)
@@ -1398,7 +1401,7 @@ if ($current === 'AWARDED' && $requestType === 'REGULAR' && !$originalCommitment
                     <?php endif; ?>
 
                     <?php // --- Action buttons for RFQ / Quote workflow stages ---
-                    if (in_array($current, ['RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED']) && $rfqId): ?>
+                    if (in_array($current, ['RFQ_LETTER_AVAILABLE', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED']) && $rfqId): ?>
                         <a href="/rfq/view.php?id=<?= (int)$rfqId ?>" class="btn btn-info">
                             <i class="bi bi-eye me-1"></i><?= $current === 'QUOTE_REVIEW_PENDING' ? 'Review Quotes' : 'View RFQ Workflow' ?>
                         </a>
@@ -1851,10 +1854,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 <?php 
                 // Check if RFQ is needed based on threshold (show RFQ create for over-threshold)
                 $needsRfq = !isDirectProcurement($requestType, $estimatedValue);
-                if (in_array($current, ['SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'FUNDS_VERIFIED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'EVALUATION_STAGE', 'COMMITTEE_RECOMMENDED', 'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'AWARDED', 'COMPLETED']) || ($needsRfq && in_array($current, ['SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED']))): ?>
+                if (in_array($current, ['SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'FUNDS_VERIFIED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'EVALUATION_STAGE', 'COMMITTEE_RECOMMENDED', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'AWARDED', 'COMPLETED']) || ($needsRfq && in_array($current, ['SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED']))): ?>
                     
                     <!-- ✅ UPDATED: RFQ Letter Generation available after submission or approval (not just after RFQ creation) -->
-                    <?php if ($needsRfq && in_array($current, ['SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'FUNDS_VERIFIED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'QUOTE_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'AWARDED'])): ?>
+                    <?php if ($needsRfq && in_array($current, ['SUBMITTED', 'HOD_APPROVED', 'DIRECTOR_APPROVED', 'FUNDS_VERIFIED', 'GC_APPROVED', 'RFQ_LETTER_AVAILABLE', 'PROCUREMENT_STAGE', 'QUOTE_REVIEW_PENDING', 'ADDITIONAL_QUOTATIONS_REQUIRED', 'QUOTE_REQUESTOR_REVIEW_PENDING', 'QUOTE_REQUESTOR_REVIEW_APPROVED', 'QUOTE_BRANCH_HEAD_APPROVAL_PENDING', 'QUOTE_APPROVED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'AWARDED'])): ?>
                         <?php if ($rfqId): ?>
                             <a href="/rfq/view.php?id=<?= $rfqId ?>" class="btn btn-outline-success btn-sm">
                                 <i class="bi bi-file-earmark-text me-1"></i>View RFQ
