@@ -223,7 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         $_SESSION['toast'] = [
-            'message' => 'Notification settings updated successfully!',
+            'message' => 'System settings updated successfully!',
             'type' => 'success'
         ];
         

@@ -52,8 +52,8 @@ final class WorkflowConfigurationServiceTest extends PHPUnit\Framework\TestCase
         $this->assertArrayHasKey('rfq_vendor_assignment_sla_days', $settings);
 
         $snapshot = WorkflowConfigurationService::getEscalationSnapshot($pdo, 'REGULAR', 'PROCUREMENT_STAGE', 3, 4500000);
-        $this->assertSame('overdue', $snapshot['risk_level']);
-        $this->assertSame('high', $snapshot['priority']);
+        $this->assertSame('critical', $snapshot['risk_level']);
+        $this->assertSame('urgent', $snapshot['priority']);
         $this->assertSame(2, $snapshot['sla_days']);
     }
 

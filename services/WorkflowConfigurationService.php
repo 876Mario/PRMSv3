@@ -4,6 +4,9 @@ require_once __DIR__ . '/SystemConfigService.php';
 
 final class WorkflowConfigurationService
 {
+    private static array $seededConnections = [];
+    private static array $settingsCache = [];
+
     public static function definitions(): array
     {
         return [
@@ -47,16 +50,27 @@ final class WorkflowConfigurationService
 
     public static function seedDefaults(PDO $pdo): void
     {
+        $cacheKey = spl_object_id($pdo);
+        if (isset(self::$seededConnections[$cacheKey])) {
+            return;
+        }
         SystemConfigService::seedDefaults($pdo, self::flatDefinitions());
+        self::$seededConnections[$cacheKey] = true;
     }
 
     public static function readSettings(PDO $pdo): array
     {
+        $cacheKey = spl_object_id($pdo);
+        if (isset(self::$settingsCache[$cacheKey])) {
+            return self::$settingsCache[$cacheKey];
+        }
+
         self::seedDefaults($pdo);
         $settings = [];
         foreach (self::flatDefinitions() as $definition) {
             $settings[$definition['key']] = SystemConfigService::getString($pdo, $definition['key'], (string)$definition['default']);
         }
+        self::$settingsCache[$cacheKey] = $settings;
         return $settings;
     }
 
@@ -73,6 +87,10 @@ final class WorkflowConfigurationService
             SystemConfigService::upsert($pdo, $key, $value, (string)$definition['description']);
             $saved[$key] = $value;
         }
+        if ($saved !== []) {
+            $cacheKey = spl_object_id($pdo);
+            self::$settingsCache[$cacheKey] = array_merge(self::readSettings($pdo), $saved);
+        }
         return $saved;
     }
 
@@ -88,35 +106,35 @@ final class WorkflowConfigurationService
             'executive' => 'executive_oversight_threshold',
         ];
         $key = $map[$type] ?? $map['request'];
-        $defaults = self::readSettings($pdo);
-        return SystemConfigService::getFloat($pdo, $key, (float)$defaults[$key]);
+        $settings = self::readSettings($pdo);
+        return isset($settings[$key]) && is_numeric($settings[$key]) ? (float)$settings[$key] : 0.0;
     }
 
     public static function getInvoiceOverdueDays(PDO $pdo): int
     {
-        $defaults = self::readSettings($pdo);
-        return max(1, SystemConfigService::getInt($pdo, 'invoice_overdue_days', (int)$defaults['invoice_overdue_days']));
+        $settings = self::readSettings($pdo);
+        return max(1, (int)($settings['invoice_overdue_days'] ?? 30));
     }
 
     public static function getEscalationPercentages(PDO $pdo): array
     {
-        $defaults = self::readSettings($pdo);
-        $warning = max(1, SystemConfigService::getInt($pdo, 'escalation_warning_pct', (int)$defaults['escalation_warning_pct']));
-        $overdue = max($warning, SystemConfigService::getInt($pdo, 'escalation_overdue_pct', (int)$defaults['escalation_overdue_pct']));
-        $critical = max($overdue, SystemConfigService::getInt($pdo, 'escalation_critical_pct', (int)$defaults['escalation_critical_pct']));
+        $settings = self::readSettings($pdo);
+        $warning = max(1, (int)($settings['escalation_warning_pct'] ?? 75));
+        $overdue = max($warning, (int)($settings['escalation_overdue_pct'] ?? 100));
+        $critical = max($overdue, (int)($settings['escalation_critical_pct'] ?? 150));
         return compact('warning', 'overdue', 'critical');
     }
 
     public static function getStageSlaDays(PDO $pdo, string $requestType, string $status): int
     {
         $key = self::resolveSlaKey($requestType, $status);
+        $settings = self::readSettings($pdo);
         $definitions = [];
         foreach (self::flatDefinitions() as $definition) {
             $definitions[$definition['key']] = $definition;
         }
-
         $default = isset($definitions[$key]) ? (int)$definitions[$key]['default'] : 3;
-        return max(1, SystemConfigService::getInt($pdo, $key, $default));
+        return max(1, isset($settings[$key]) ? (int)$settings[$key] : $default);
     }
 
     public static function getEscalationSnapshot(PDO $pdo, string $requestType, string $status, int $ageDays, float $transactionValue = 0.0): array
