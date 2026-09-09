@@ -9,9 +9,13 @@
 $root = dirname(__DIR__);
 $viewPath = $root . '/procurement/view.php';
 $cancelPath = $root . '/procurement/cancel.php';
+$pauseResumePath = $root . '/procurement/pause_resume.php';
+$revertStatusPath = $root . '/procurement/revert_status.php';
 
 $view = file_get_contents($viewPath);
 $cancel = file_get_contents($cancelPath);
+$pauseResume = file_get_contents($pauseResumePath);
+$revertStatus = file_get_contents($revertStatusPath);
 
 $passed = 0;
 $failed = 0;
@@ -34,7 +38,7 @@ echo "\n=== ProcurementModalWorkflowTest ===\n";
 workflowAssert(
     'cancel modal posts with csrf token and modal cleanup hooks',
     preg_match(
-        '/<form method="POST" action="\/procurement\/cancel\.php" class="modal-content js-workflow-action-form" data-no-loader>.*?name="csrf_token"/s',
+        '/<form\b(?=[^>]*\bmethod="POST")(?=[^>]*\baction="\/procurement\/cancel\.php")(?=[^>]*\bclass="[^"]*\bjs-workflow-action-form\b[^"]*")(?=[^>]*\bdata-no-loader(?:=(?:""|\'\'))?)[^>]*>.*?\bname="csrf_token".*?<\/form>/s',
         $view
     ) === 1
 );
@@ -42,7 +46,7 @@ workflowAssert(
 workflowAssert(
     'send back modal posts with csrf token and modal cleanup hooks',
     preg_match(
-        '/<form method="POST" action="\/procurement\/send_back\.php" class="modal-content js-workflow-action-form" data-no-loader>.*?name="csrf_token"/s',
+        '/<form\b(?=[^>]*\bmethod="POST")(?=[^>]*\baction="\/procurement\/send_back\.php")(?=[^>]*\bclass="[^"]*\bjs-workflow-action-form\b[^"]*")(?=[^>]*\bdata-no-loader(?:=(?:""|\'\'))?)[^>]*>.*?\bname="csrf_token".*?<\/form>/s',
         $view
     ) === 1
 );
@@ -56,7 +60,26 @@ workflowAssert(
 
 workflowAssert(
     'cancel handler enforces csrf validation',
-    str_contains($cancel, "requireCsrfToken('/procurement/view.php?id=' . (int)\$id);")
+    preg_match(
+        '/requireCsrfToken\(\s*\'\/procurement\/view\.php\?id=\'\s*\.\s*(?:\(int\)\s*)?\$id\s*\)\s*;/',
+        $cancel
+    ) === 1
+);
+
+workflowAssert(
+    'pause/resume handler enforces csrf validation',
+    preg_match(
+        '/requireCsrfToken\(\s*\'\/procurement\/view\.php\?id=\'\s*\.\s*(?:\(int\)\s*)?\$id\s*\)\s*;/',
+        $pauseResume
+    ) === 1
+);
+
+workflowAssert(
+    'revert handler enforces csrf validation',
+    preg_match(
+        '/requireCsrfToken\(\s*\'\/procurement\/view\.php\?id=\'\s*\.\s*(?:\(int\)\s*)?\$id\s*\)\s*;/',
+        $revertStatus
+    ) === 1
 );
 
 echo "\n" . ($failed === 0 ? "All {$passed} tests passed.\n" : "{$failed} FAILED / {$passed} passed.\n");
