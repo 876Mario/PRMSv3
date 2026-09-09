@@ -4,118 +4,30 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once __DIR__ . '/../check_setup.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/pagination.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/column_modules.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/ColumnPreferenceService.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/ColumnManagerWidget.php';
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   COLUMN REGISTRY
-   All columns available on this page. 'locked' columns cannot be hidden.
-   'sortable' columns produce clickable sortable headers.
-   Update preferences_api.php and export.php if keys change.
+   COLUMN PREFERENCE FRAMEWORK
    ══════════════════════════════════════════════════════════════════════════════ */
-$allColumns = [
-    ['key' => 'item_code',        'label' => 'Code',                'locked' => false, 'sortable' => true,  'sort_col' => 'i.item_code',         'default_visible' => true,  'default_order' => 1],
-    ['key' => 'item_name',        'label' => 'Item Name',           'locked' => false, 'sortable' => true,  'sort_col' => 'i.item_name',          'default_visible' => true,  'default_order' => 2],
-    ['key' => 'item_domain',      'label' => 'Domain',              'locked' => false, 'sortable' => true,  'sort_col' => 'i.item_domain',        'default_visible' => true,  'default_order' => 3],
-    ['key' => 'category_name',    'label' => 'Category',            'locked' => false, 'sortable' => true,  'sort_col' => 'c.category_name',      'default_visible' => true,  'default_order' => 4],
-    ['key' => 'manufacturer',     'label' => 'Manufacturer / Model','locked' => false, 'sortable' => true,  'sort_col' => 'i.manufacturer',       'default_visible' => true,  'default_order' => 5],
-    ['key' => 'uom_code',         'label' => 'UOM',                 'locked' => false, 'sortable' => false, 'sort_col' => null,                   'default_visible' => true,  'default_order' => 6],
-    ['key' => 'total_stock',      'label' => 'On Hand',             'locked' => false, 'sortable' => true,  'sort_col' => 'total_stock',          'default_visible' => true,  'default_order' => 7],
-    ['key' => 'available_stock',  'label' => 'Available',           'locked' => false, 'sortable' => true,  'sort_col' => 'available_stock',      'default_visible' => true,  'default_order' => 8],
-    ['key' => 'average_cost',     'label' => 'Avg Cost',            'locked' => false, 'sortable' => true,  'sort_col' => 'i.average_cost',       'default_visible' => true,  'default_order' => 9],
-    ['key' => 'item_status',      'label' => 'Status',              'locked' => false, 'sortable' => true,  'sort_col' => 'i.item_status',        'default_visible' => true,  'default_order' => 10],
-    ['key' => 'criticality_name', 'label' => 'Criticality',         'locked' => false, 'sortable' => true,  'sort_col' => 'cr.criticality_name',  'default_visible' => true,  'default_order' => 11],
-    ['key' => 'actions',          'label' => 'Actions',             'locked' => true,  'sortable' => false, 'sort_col' => null,                   'default_visible' => true,  'default_order' => 12],
-];
-
-$columnsByKey  = array_column($allColumns, null, 'key');
-$allowedKeys   = array_column($allColumns, 'key');
-$defaultOrder  = array_column($allColumns, 'key');
-
-/* Sort-column whitelist: column key → SQL expression */
-$sortMap = [];
-foreach ($allColumns as $col) {
-    if ($col['sortable'] && $col['sort_col']) {
-        $sortMap[$col['key']] = $col['sort_col'];
-    }
-}
-
-/* ══════════════════════════════════════════════════════════════════════════════
-   LOAD USER PREFERENCES
-   ══════════════════════════════════════════════════════════════════════════════ */
-$userId = (int) $_SESSION['user_id'];
-$pageId = 'inventory_items_list';
-$prefs  = [];
-
-try {
-    $prefStmt = $pdo->prepare("
-        SELECT visible_columns, column_order, default_sort_column,
-               default_sort_direction, page_size
-        FROM user_table_preferences
-        WHERE user_id = ? AND page_identifier = ?
-        LIMIT 1
-    ");
-    $prefStmt->execute([$userId, $pageId]);
-    $prefsRow = $prefStmt->fetch(PDO::FETCH_ASSOC);
-    if ($prefsRow) {
-        $prefs = $prefsRow;
-    }
-} catch (Throwable $e) {
-    // Table may not exist yet (before migration is applied); fall through to defaults.
-    $prefs = [];
-}
-
-/* ── Resolve column order ─────────────────────────────────────────────────── */
-if (!empty($prefs['column_order'])) {
-    $savedOrder = json_decode($prefs['column_order'], true);
-    if (is_array($savedOrder)) {
-        $validSaved  = array_values(array_filter($savedOrder, fn($k) => isset($columnsByKey[$k])));
-        $missing     = array_values(array_diff($defaultOrder, $validSaved));
-        $columnOrder = array_merge($validSaved, $missing);
-    } else {
-        $columnOrder = $defaultOrder;
-    }
-} else {
-    $columnOrder = $defaultOrder;
-}
-
-/* ── Resolve visible keys ─────────────────────────────────────────────────── */
-$lockedKeys     = array_column(array_filter($allColumns, fn($c) => $c['locked']), 'key');
-$defaultVisible = $defaultOrder; // all visible by default
-
-if (!empty($prefs['visible_columns'])) {
-    $savedVisible = json_decode($prefs['visible_columns'], true);
-    if (is_array($savedVisible)) {
-        $filtered   = array_values(array_filter($savedVisible, fn($k) => isset($columnsByKey[$k])));
-        $visibleKeys = array_unique(array_merge($filtered, $lockedKeys));
-    } else {
-        $visibleKeys = $defaultVisible;
-    }
-} else {
-    $visibleKeys = $defaultVisible;
-}
-
-/* ── Build ordered, visible columns for rendering ─────────────────────────── */
-$visibleColumns = [];
-foreach ($columnOrder as $key) {
-    if (in_array($key, $visibleKeys, true) && isset($columnsByKey[$key])) {
-        $visibleColumns[] = $columnsByKey[$key];
-    }
-}
-if (empty($visibleColumns)) {
-    // Safety fallback: render all defaults
-    $visibleColumns = $allColumns;
-}
+$columnState = (new ColumnPreferenceService($pdo))->resolveState(
+    (int) $_SESSION['user_id'],
+    getColumnPreferenceModuleConfig('inventory_items', $pdo)
+);
+$allColumns      = $columnState['columns'];
+$columnsByKey    = $columnState['columns_by_key'];
+$columnOrder     = $columnState['column_order'];
+$visibleKeys     = $columnState['visible_keys'];
+$visibleColumns  = $columnState['visible_columns'];
+$sortMap         = $columnState['sort_map'];
 
 /* ══════════════════════════════════════════════════════════════════════════════
    SORT
    URL params override saved prefs; saved prefs override the built-in default.
    ══════════════════════════════════════════════════════════════════════════════ */
-$sortCol = 'item_name';
-$sortDir = 'ASC';
-
-if (!empty($prefs['default_sort_column']) && isset($sortMap[$prefs['default_sort_column']])) {
-    $sortCol = $prefs['default_sort_column'];
-    $sortDir = strtoupper($prefs['default_sort_direction'] ?? 'ASC') === 'DESC' ? 'DESC' : 'ASC';
-}
+$sortCol = $columnState['sort_column'];
+$sortDir = $columnState['sort_direction'];
 if (!empty($_GET['sort_col']) && isset($sortMap[$_GET['sort_col']])) {
     $sortCol = $_GET['sort_col'];
 }
@@ -154,7 +66,7 @@ if (!empty($_GET['domain'])) {
 $whereSQL = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 /* ── Per-page size: URL → saved pref → default (20) ─────────────────────── */
-$savedPageSize   = (int) ($prefs['page_size'] ?? 20);
+$savedPageSize   = $columnState['page_size'];
 extract(getPaginationParams($savedPageSize));
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -341,16 +253,28 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
     <div class="d-flex align-items-center gap-2">
         <label class="form-label mb-0 text-muted small">Rows:</label>
         <select id="perPageSelect" class="form-select form-select-sm" style="width:auto">
-            <?php foreach ([10, 20, 50, 100, 200] as $sz): ?>
+            <?php foreach ($columnState['page_size_options'] as $sz): ?>
             <option value="<?= $sz ?>" <?= $perPage == $sz ? 'selected' : '' ?>><?= $sz ?></option>
             <?php endforeach; ?>
         </select>
     </div>
     <!-- Right: action buttons -->
     <div class="d-flex gap-2 flex-wrap">
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#columnManagerModal">
-            <i class="bi bi-layout-three-columns"></i> Manage Columns
-        </button>
+        <?php ColumnManagerWidget::render([
+            'module' => $columnState['module'],
+            'title' => $columnState['title'],
+            'description' => $columnState['description'],
+            'button_label' => $columnState['button_label'],
+            'button_class' => 'btn btn-sm btn-outline-secondary',
+            'columns_by_key' => $columnsByKey,
+            'column_order' => $columnOrder,
+            'visible_keys' => $visibleKeys,
+            'save_endpoint' => $columnState['save_endpoint'],
+            'current_sort_column' => $sortCol,
+            'current_sort_direction' => $sortDir,
+            'current_page_size' => $perPage,
+            'per_page_selector_id' => 'perPageSelect',
+        ]); ?>
         <a href="<?= '/inventory/items/export.php?' . http_build_query(array_intersect_key($_GET, array_flip(['q','category','status','criticality','domain','sort_col','sort_dir']))) ?>"
            class="btn btn-sm btn-outline-success" title="Export visible columns to CSV">
             <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
@@ -516,267 +440,11 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php';
 <div class="mt-3">
     <?php renderShowingInfo($page, $perPage, $totalRows); ?>
     <?php
-    /* Include sort params in pagination links */
     $paginationParams = $_GET;
     unset($paginationParams['page']);
     renderPagination($totalRows, $perPage, $page, $paginationParams);
     ?>
 </div>
 <?php endif; ?>
-
-<!-- ══════════════════════════════════════════════════════════════════════════════
-     COLUMN MANAGER MODAL
-     ══════════════════════════════════════════════════════════════════════════ -->
-<div class="modal fade" id="columnManagerModal" tabindex="-1" aria-labelledby="columnManagerLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0">
-            <div class="modal-header bg-dark text-white">
-                <h5 class="modal-title" id="columnManagerLabel">
-                    <i class="bi bi-layout-three-columns me-2"></i>Manage Columns
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="text-muted small mb-3">
-                    <i class="bi bi-grip-vertical"></i> Drag to reorder &nbsp;·&nbsp;
-                    <i class="bi bi-check2-square"></i> Check to show &nbsp;·&nbsp;
-                    <i class="bi bi-lock"></i> Locked columns always visible
-                </p>
-                <ul id="colManagerList" class="list-group" style="max-height:420px;overflow-y:auto">
-                    <?php
-                    /* Render columns in current display order so the user
-                       sees their current layout in the modal. */
-                    foreach ($columnOrder as $key):
-                        if (!isset($columnsByKey[$key])) continue;
-                        $col      = $columnsByKey[$key];
-                        $isLocked = $col['locked'];
-                        $isVisible = in_array($key, $visibleKeys, true);
-                    ?>
-                    <li class="list-group-item d-flex align-items-center gap-2 py-2"
-                        <?= !$isLocked ? 'draggable="true"' : '' ?>
-                        data-col-key="<?= htmlspecialchars($key) ?>">
-                        <?php if (!$isLocked): ?>
-                        <i class="bi bi-grip-vertical col-drag-handle flex-shrink-0" title="Drag to reorder"></i>
-                        <input type="checkbox" class="form-check-input col-visible-check flex-shrink-0"
-                               id="col_<?= htmlspecialchars($key) ?>"
-                               <?= $isVisible ? 'checked' : '' ?>>
-                        <label class="form-check-label flex-grow-1" for="col_<?= htmlspecialchars($key) ?>">
-                            <?= htmlspecialchars($col['label']) ?>
-                        </label>
-                        <?php else: ?>
-                        <i class="bi bi-lock text-muted flex-shrink-0" title="Cannot be hidden"></i>
-                        <input type="checkbox" class="form-check-input flex-shrink-0" checked disabled>
-                        <label class="form-check-label flex-grow-1 text-muted">
-                            <?= htmlspecialchars($col['label']) ?>
-                            <span class="badge bg-secondary ms-1">Locked</span>
-                        </label>
-                        <?php endif; ?>
-                    </li>
-                    <?php endforeach; ?>
-                </ul>
-            </div>
-            <div class="modal-footer justify-content-between">
-                <button type="button" class="btn btn-outline-danger btn-sm" id="resetLayoutBtn">
-                    <i class="bi bi-arrow-counterclockwise"></i> Reset to Default
-                </button>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="saveLayoutBtn">
-                        <i class="bi bi-floppy"></i> Save Layout
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Toast notification -->
-<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:9999">
-    <div id="prefToast" class="toast align-items-center border-0" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="d-flex">
-            <div class="toast-body" id="prefToastMsg"></div>
-            <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
-    </div>
-</div>
-
-<script>
-(function () {
-    'use strict';
-
-    /* ── Current sort state (from server) ──────────────────────────────────── */
-    const currentSortCol = <?= json_encode($sortCol) ?>;
-    const currentSortDir = <?= json_encode($sortDir) ?>;
-    const currentPerPage = <?= json_encode($perPage) ?>;
-    const pageId         = <?= json_encode($pageId) ?>;
-
-    /* ── Toast helper ───────────────────────────────────────────────────────── */
-    function showToast(message, type) {
-        const toast    = document.getElementById('prefToast');
-        const toastMsg = document.getElementById('prefToastMsg');
-        if (!toast || !toastMsg) return;
-
-        // Reset classes
-        toast.className = 'toast align-items-center border-0 text-bg-' + (type || 'success');
-        toastMsg.textContent = message;
-
-        const bsToast = bootstrap.Toast.getOrCreateInstance(toast, { delay: 3000 });
-        bsToast.show();
-    }
-
-    /* ── Per-page selector ──────────────────────────────────────────────────── */
-    const perPageSelect = document.getElementById('perPageSelect');
-    if (perPageSelect) {
-        perPageSelect.addEventListener('change', function () {
-            const url = new URL(window.location.href);
-            url.searchParams.set('per_page', this.value);
-            url.searchParams.set('page', '1');
-            window.location.href = url.toString();
-        });
-    }
-
-    /* ── Drag-and-drop column reordering ────────────────────────────────────── */
-    const colList = document.getElementById('colManagerList');
-    let dragSrc   = null;
-
-    if (colList) {
-        colList.querySelectorAll('[draggable="true"]').forEach(function (item) {
-            item.addEventListener('dragstart', function (e) {
-                dragSrc = this;
-                this.style.opacity = '0.45';
-                e.dataTransfer.effectAllowed = 'move';
-            });
-
-            item.addEventListener('dragend', function () {
-                this.style.opacity = '';
-                colList.querySelectorAll('.drag-over').forEach(function (el) {
-                    el.classList.remove('drag-over');
-                });
-            });
-
-            item.addEventListener('dragover', function (e) {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                colList.querySelectorAll('.drag-over').forEach(function (el) {
-                    el.classList.remove('drag-over');
-                });
-                this.classList.add('drag-over');
-            });
-
-            item.addEventListener('dragleave', function () {
-                this.classList.remove('drag-over');
-            });
-
-            item.addEventListener('drop', function (e) {
-                e.stopPropagation();
-                if (dragSrc && dragSrc !== this) {
-                    const items  = Array.from(colList.children);
-                    const srcIdx = items.indexOf(dragSrc);
-                    const tgtIdx = items.indexOf(this);
-                    if (srcIdx < tgtIdx) {
-                        colList.insertBefore(dragSrc, this.nextSibling);
-                    } else {
-                        colList.insertBefore(dragSrc, this);
-                    }
-                }
-                this.classList.remove('drag-over');
-            });
-        });
-    }
-
-    /* ── Collect modal state ────────────────────────────────────────────────── */
-    function collectPreferences() {
-        const items         = Array.from(colList.querySelectorAll('[data-col-key]'));
-        const columnOrder   = items.map(function (el) { return el.dataset.colKey; });
-        const visibleColumns = items
-            .filter(function (el) {
-                const cb = el.querySelector('.col-visible-check');
-                // Locked columns have no .col-visible-check (or it is disabled), always visible
-                return !cb || cb.checked || cb.disabled;
-            })
-            .map(function (el) { return el.dataset.colKey; });
-
-        return {
-            action: 'save',
-            page_id: pageId,
-            column_order:           columnOrder,
-            visible_columns:        visibleColumns,
-            default_sort_column:    currentSortCol,
-            default_sort_direction: currentSortDir,
-            page_size:              currentPerPage
-        };
-    }
-
-    /* ── Save layout ────────────────────────────────────────────────────────── */
-    const saveBtn = document.getElementById('saveLayoutBtn');
-    if (saveBtn) {
-        saveBtn.addEventListener('click', function () {
-            saveBtn.disabled = true;
-            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
-
-            fetch('/inventory/items/preferences_api.php', {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify(collectPreferences())
-            })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (data.success) {
-                    showToast('Layout saved successfully.', 'success');
-                    setTimeout(function () { location.reload(); }, 900);
-                } else {
-                    showToast('Error: ' + (data.error || 'Could not save layout.'), 'danger');
-                    saveBtn.disabled = false;
-                    saveBtn.innerHTML = '<i class="bi bi-floppy"></i> Save Layout';
-                }
-            })
-            .catch(function () {
-                showToast('Network error — layout not saved.', 'danger');
-                saveBtn.disabled = false;
-                saveBtn.innerHTML = '<i class="bi bi-floppy"></i> Save Layout';
-            });
-        });
-    }
-
-    /* ── Reset layout ───────────────────────────────────────────────────────── */
-    const resetBtn = document.getElementById('resetLayoutBtn');
-    if (resetBtn) {
-        resetBtn.addEventListener('click', function () {
-            if (!confirm('Reset to default layout? All column customisations will be cleared.')) return;
-
-            resetBtn.disabled = true;
-
-            fetch('/inventory/items/preferences_api.php', {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ action: 'reset', page_id: pageId })
-            })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (data.success) {
-                    showToast('Layout reset to default.', 'info');
-                    setTimeout(function () {
-                        /* Remove sort params so the default sort is applied */
-                        const url = new URL(window.location.href);
-                        url.searchParams.delete('sort_col');
-                        url.searchParams.delete('sort_dir');
-                        url.searchParams.delete('per_page');
-                        url.searchParams.set('page', '1');
-                        window.location.href = url.toString();
-                    }, 900);
-                } else {
-                    showToast('Error: ' + (data.error || 'Could not reset layout.'), 'danger');
-                    resetBtn.disabled = false;
-                }
-            })
-            .catch(function () {
-                showToast('Network error — layout not reset.', 'danger');
-                resetBtn.disabled = false;
-            });
-        });
-    }
-
-}());
-</script>
 
 <?php require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/footer.php'; ?>

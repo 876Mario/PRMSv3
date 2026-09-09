@@ -27,6 +27,8 @@ require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/mailer.php';
 require_once __DIR__ . '/../config/app.php';
 require_once __DIR__ . '/../config/workflow.php';
+require_once __DIR__ . '/../config/notifications.php';
+require_once __DIR__ . '/../services/WorkflowConfigurationService.php';
 
 if (!class_exists('NotificationService')) {
     $notificationServicePath = __DIR__ . '/../services/NotificationService.php';
@@ -160,13 +162,43 @@ function getSupervisorEmail(PDO $pdo, int $userId): ?string {
     }
 }
 
+function workflowEscalationDomain(array $request): string
+{
+    $requestType = strtoupper((string)($request['request_type'] ?? ''));
+    $status = strtoupper((string)($request['status'] ?? ''));
+    if (in_array($requestType, ['PETTY_CASH', 'REIMBURSEMENT'], true)) {
+        return 'finance';
+    }
+    if (in_array($status, ['FUNDS_VERIFIED', 'FINANCE_AUTHORIZED', 'DISBURSED', 'COMMITMENTS_PENDING', 'COMMITMENT_APPROVED', 'COMMITMENT_DECLINED', 'PO_PENDING', 'INVOICE_RECEIVED'], true)) {
+        return 'finance';
+    }
+    return 'procurement';
+}
+
+function getAdminEscalationRecipients(PDO $pdo): array
+{
+    try {
+        $stmt = $pdo->query("
+            SELECT u.user_id, u.email, u.full_name
+            FROM users u
+            JOIN roles r ON r.id = u.role_id
+            WHERE r.name IN ('Admin', 'SuperAdmin')
+              AND u.is_active = 1
+            ORDER BY u.user_id ASC
+        ");
+        return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
 /* ─── Read config ─────────────────────────────────────────────────────── */
-$reminderDays    = max(1, (int)cronConfig($pdo, 'reminder_interval_days',    '3'));
-$escalationDays  = max(1, (int)cronConfig($pdo, 'escalation_threshold_days', '7'));
 $appUrl          = defined('APP_URL') ? APP_URL : 'http://localhost';
+$invoiceOverdueDays = WorkflowConfigurationService::getInvoiceOverdueDays($pdo);
+$escalationPercentages = WorkflowConfigurationService::getEscalationPercentages($pdo);
 
 echo "[" . date('Y-m-d H:i:s') . "] Overdue-alerts cron started. "
-   . "Reminder: {$reminderDays}d  Escalation: {$escalationDays}d\n";
+   . "SLA warnings at {$escalationPercentages['warning']}% / {$escalationPercentages['overdue']}% / {$escalationPercentages['critical']}%\n";
 
 /* ─── Acquire execution lock (prevent concurrent runs) ──────────────────── */
 $cronName = 'overdue_alerts';
@@ -230,10 +262,10 @@ try {
         LEFT JOIN branches b ON pr.branch_id = b.branch_id
         LEFT JOIN users    uc ON pr.created_by = uc.user_id
         WHERE UPPER(pr.status) IN ({$placeholders})
-          AND DATEDIFF(NOW(), pr.updated_at) >= ?
+          AND DATEDIFF(NOW(), pr.updated_at) >= 1
         ORDER BY days_idle DESC
     ");
-    $stuckStmt->execute(array_merge($actionableStatuses, [$reminderDays]));
+    $stuckStmt->execute($actionableStatuses);
     $stuckRequests = $stuckStmt->fetchAll(PDO::FETCH_ASSOC);
 
     echo "[" . date('H:i:s') . "] Found " . count($stuckRequests) . " stuck request(s).\n";
@@ -244,6 +276,17 @@ try {
         $daysIdle   = (int)$req['days_idle'];
         $statusUp   = strtoupper($req['status']);
         $requestsProcessed++;
+        $slaSnapshot = WorkflowConfigurationService::getEscalationSnapshot(
+            $pdo,
+            (string)($req['request_type'] ?? 'REGULAR'),
+            $statusUp,
+            $daysIdle,
+            (float)($req['estimated_value'] ?? 0)
+        );
+
+        if ($daysIdle < $slaSnapshot['warning_days']) {
+            continue;
+        }
 
         // ── Resolve only the current workflow action owner(s) ───────────────
         $recipients = CronAuditService::getOverdueActionRecipients($req);
@@ -269,7 +312,8 @@ try {
             if (!reminderAlreadySent($pdo, $requestId, (int)$userId, 'reminder')) {
                 $subject = "Reminder: Pending Action Required — {$req['request_number']}";
                 $body    = "Dear {$userName},\n\n"
-                         . "The following procurement request has been waiting for your action for {$daysIdle} day(s).\n\n"
+                         . "The following procurement request has been waiting for your action for {$daysIdle} day(s).\n"
+                         . "Its configured SLA is {$slaSnapshot['sla_days']} day(s), and warning begins at {$slaSnapshot['warning_days']} day(s).\n\n"
                          . "Request Ref  : {$req['request_number']}\n"
                          . "Requestor    : {$req['requestor_name']}\n"
                          . "Unit         : {$req['branch_name']}\n"
@@ -287,13 +331,13 @@ try {
                     // Create in-app notification
                     $notifCreated = NotificationService::createNotification((int)$userId, NotificationService::TYPE_APPROVAL_NEEDED, [
                         'title'          => "⏰ Reminder: Action Required — {$req['request_number']}",
-                        'body'           => "Idle for {$daysIdle} day(s) at stage {$req['status']}.",
+                        'body'           => "Idle for {$daysIdle} day(s) at stage {$req['status']} (SLA {$slaSnapshot['sla_days']} day(s)).",
                         'request_id'     => $requestId,
                         'request_ref'    => $req['request_number'],
                         'action_url'     => "/procurement/view.php?id={$requestId}",
                         'stage'          => $req['status'],
                         'requestor_name' => $req['requestor_name'],
-                        'priority'       => $daysIdle >= $escalationDays ? 'urgent' : 'high',
+                        'priority'       => $slaSnapshot['priority'],
                     ]);
 
                     // Audit log
@@ -313,12 +357,12 @@ try {
             }
 
             // ── Escalation ──────────────────────────────────────────────────
-            if ($daysIdle >= $escalationDays && !reminderAlreadySent($pdo, $requestId, (int)$userId, 'escalation')) {
+            if ($daysIdle >= $slaSnapshot['overdue_days'] && !reminderAlreadySent($pdo, $requestId, (int)$userId, 'escalation')) {
                 $supervisorEmail = getSupervisorEmail($pdo, (int)$userId);
                 if ($supervisorEmail) {
                     $subject = "ESCALATION: Overdue Action — {$req['request_number']}";
                     $body    = "Dear Supervisor,\n\n"
-                             . "The following procurement request has exceeded the configured response threshold ({$escalationDays} days).\n"
+                             . "The following procurement request has exceeded the configured SLA threshold ({$slaSnapshot['overdue_days']} days).\n"
                              . "The responsible officer has NOT yet completed their required action.\n\n"
                              . "Request Ref       : {$req['request_number']}\n"
                              . "Requestor         : {$req['requestor_name']}\n"
@@ -336,6 +380,59 @@ try {
                         echo "[" . date('H:i:s') . "] Escalation sent → supervisor for user {$userId}\n";
                     }
                 }
+
+                if (workflowEscalationDomain($req) === 'finance') {
+                    notifyDirectorFinanceActionRequired(
+                        $requestId,
+                        'Overdue Finance Workflow',
+                        'A finance workflow item has exceeded its configured SLA and requires supervisory follow-up.',
+                        'high'
+                    );
+                } else {
+                    notifyDirectorProcurementActionRequired(
+                        $requestId,
+                        'Overdue Procurement Workflow',
+                        'A procurement workflow item has exceeded its configured SLA and requires supervisory follow-up.',
+                        'high'
+                    );
+                }
+            }
+
+            if ($daysIdle >= $slaSnapshot['critical_days'] && !reminderAlreadySent($pdo, $requestId, (int)$userId, 'critical')) {
+                foreach (getAdminEscalationRecipients($pdo) as $adminRecipient) {
+                    $adminUserId = (int)($adminRecipient['user_id'] ?? 0);
+                    $adminEmail = (string)($adminRecipient['email'] ?? '');
+                    if ($adminUserId <= 0) {
+                        continue;
+                    }
+
+                    NotificationService::createNotification($adminUserId, NotificationService::TYPE_APPROVAL_NEEDED, [
+                        'title' => "Critical Workflow Escalation — {$req['request_number']}",
+                        'body' => "Critical SLA breach at {$req['status']} after {$daysIdle} day(s).",
+                        'request_id' => $requestId,
+                        'request_ref' => $req['request_number'],
+                        'action_url' => "/procurement/view.php?id={$requestId}",
+                        'stage' => 'CRITICAL_ESCALATION',
+                        'requestor_name' => $req['requestor_name'],
+                        'priority' => 'urgent',
+                    ]);
+
+                    if ($adminEmail !== '') {
+                        cronSendEmail(
+                            $adminEmail,
+                            "CRITICAL ESCALATION: {$req['request_number']}",
+                            "A workflow item is critically overdue.\n\nRequest Ref: {$req['request_number']}\nCurrent Stage: {$req['status']}\nDays Idle: {$daysIdle}\nSLA Days: {$slaSnapshot['sla_days']}\n\n{$appUrl}/procurement/view.php?id={$requestId}"
+                        );
+                    }
+                }
+
+                notifyExecutiveOversightActionRequired(
+                    $requestId,
+                    'Critical Workflow Escalation',
+                    'A workflow item has crossed the configured critical escalation threshold.',
+                    'urgent'
+                );
+                logReminder($pdo, $requestId, (int)$userId, 'critical');
             }
         }
     }
@@ -349,11 +446,11 @@ try {
         FROM invoices i
         JOIN purchase_orders po ON i.po_id = po.po_id
         WHERE i.status != 'Paid'
-          AND i.invoice_date < DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+          AND i.invoice_date < DATE_SUB(CURDATE(), INTERVAL {$invoiceOverdueDays} DAY)
     ")->fetchAll();
 
     if ($invoices) {
-        $message = "Overdue Invoices (unpaid > 30 days):\n\n";
+        $message = "Overdue Invoices (unpaid > {$invoiceOverdueDays} days):\n\n";
         foreach ($invoices as $inv) {
             $message .= "Invoice {$inv['invoice_number']} (PO {$inv['po_number']}) — due {$inv['invoice_date']}\n";
         }

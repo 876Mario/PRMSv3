@@ -27,17 +27,7 @@ try {
 if (!function_exists('stageOwner')) {
     require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
 }
-
-// Read SLA default from system_config (fallback: 14 days)
-$slaDefaultDays = 14;
-try {
-    $slaCfgStmt = $pdo->prepare("SELECT config_value FROM system_config WHERE config_key = 'default_sla_days'");
-    $slaCfgStmt->execute();
-    $slaCfgVal = $slaCfgStmt->fetchColumn();
-    if ($slaCfgVal !== false && (int)$slaCfgVal > 0) {
-        $slaDefaultDays = (int)$slaCfgVal;
-    }
-} catch (Throwable $_e) { /* use default */ }
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/WorkflowConfigurationService.php';
 
 // Allowed sort columns
 $dashboardSortFields = [
@@ -260,6 +250,53 @@ function ageDays(string $createdAt): int
     $now     = new DateTime();
     return max(0, (int)$now->diff($created)->days);
 }
+
+function pendingActionRiskWeight(string $riskLevel, string $priority): int
+{
+    $riskWeights = ['critical' => 400, 'overdue' => 300, 'warning' => 200, 'normal' => 100];
+    $priorityWeights = ['urgent' => 30, 'high' => 20, 'normal' => 10];
+    return ($riskWeights[$riskLevel] ?? 0) + ($priorityWeights[$priority] ?? 0);
+}
+
+function pendingActionDecorate(PDO $pdo, array $row): array
+{
+    $age = ageDays((string)$row['created_at']);
+    $snapshot = WorkflowConfigurationService::getEscalationSnapshot(
+        $pdo,
+        (string)($row['request_type'] ?? 'REGULAR'),
+        (string)($row['request_status'] ?? ''),
+        $age,
+        (float)($row['estimated_value'] ?? 0)
+    );
+
+    $row['_age_days'] = $age;
+    $row['_sla'] = $snapshot;
+    $row['_risk_weight'] = pendingActionRiskWeight($snapshot['risk_level'], $snapshot['priority']);
+    return $row;
+}
+
+function pendingActionCompare(array $left, array $right): int
+{
+    return [$right['_risk_weight'], (float)$right['estimated_value'], $right['_age_days']]
+        <=> [$left['_risk_weight'], (float)$left['estimated_value'], $left['_age_days']];
+}
+
+function pendingActionRiskBadge(array $snapshot): string
+{
+    $map = [
+        'critical' => ['danger', 'Critical'],
+        'overdue' => ['warning text-dark', 'High'],
+        'warning' => ['info text-dark', 'Approaching'],
+        'normal' => ['secondary', 'Normal'],
+    ];
+    [$class, $label] = $map[$snapshot['risk_level']] ?? $map['normal'];
+    return '<span class="badge bg-' . $class . '">' . htmlspecialchars($label) . '</span>';
+}
+
+$pendingApprovals = array_map(static fn(array $row): array => pendingActionDecorate($pdo, $row), $pendingApprovals);
+$workflowActions = array_map(static fn(array $row): array => pendingActionDecorate($pdo, $row), $workflowActions);
+usort($pendingApprovals, 'pendingActionCompare');
+usort($workflowActions, 'pendingActionCompare');
 ?>
 
 <div style="background: white; border-radius: 12px; border: 1px solid #e0e0e0; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 1.5rem;">
@@ -271,7 +308,8 @@ function ageDays(string $createdAt): int
             <?php endif; ?>
         </h6>
         <?php if ($totalPendingActions > 0): ?>
-        <small style="color:#999; font-size:0.75rem;">SLA default: <?= $slaDefaultDays ?> days</small>
+        <?php $escalationProfile = WorkflowConfigurationService::getEscalationPercentages($pdo); ?>
+        <small style="color:#999; font-size:0.75rem;">SLA alerts: <?= (int)$escalationProfile['warning'] ?>% / <?= (int)$escalationProfile['overdue'] ?>% / <?= (int)$escalationProfile['critical'] ?>%</small>
         <?php endif; ?>
     </div>
 
@@ -303,14 +341,16 @@ function ageDays(string $createdAt): int
                         <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('status', 'Stage') ?></th>
                         <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('date', 'Age') ?></th>
                         <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Due (SLA)</th>
+                        <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Risk</th>
                         <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Action</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($pendingApprovals as $approval):
-                    $age = ageDays($approval['created_at']);
-                    $slaDate = date('d M Y', strtotime($approval['created_at'] . ' +' . $slaDefaultDays . ' days'));
-                    $ageStyle = $age > $slaDefaultDays ? 'color:#e74c3c;font-weight:700;' : 'color:#555;';
+                    $age = (int)$approval['_age_days'];
+                    $sla = $approval['_sla'];
+                    $slaDate = date('d M Y', strtotime($approval['created_at'] . ' +' . $sla['sla_days'] . ' days'));
+                    $ageStyle = $sla['risk_level'] === 'normal' ? 'color:#555;' : 'color:#e74c3c;font-weight:700;';
                 ?>
                     <tr style="border-bottom: 1px solid #f0f0f0;">
                         <td style="padding: 0.75rem 1rem; font-weight: 600; color: #333;"><?= htmlspecialchars($approval['request_number']) ?></td>
@@ -322,6 +362,7 @@ function ageDays(string $createdAt): int
                         <td style="padding: 0.75rem 1rem;"><?= statusBadge($approval['request_status']) ?></td>
                         <td style="padding: 0.75rem 1rem; text-align: center; font-size:0.8rem; <?= $ageStyle ?>"><?= $age ?>d</td>
                         <td style="padding: 0.75rem 1rem; text-align: center; color: #888; font-size:0.8rem;"><?= $slaDate ?></td>
+                        <td style="padding: 0.75rem 1rem; text-align: center;"><?= pendingActionRiskBadge($sla) ?></td>
                         <td style="padding: 0.75rem 1rem; text-align: center;">
                             <a href="/procurement/approve.php?id=<?= $approval['request_id'] ?>"
                                style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 0.35rem 0.75rem; border-radius: 6px; text-decoration: none; font-size: 0.75rem; font-weight: 600;">
@@ -355,6 +396,7 @@ function ageDays(string $createdAt): int
                         <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('status', 'Stage') ?></th>
                         <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;"><?= dashboardSortLink('date', 'Age') ?></th>
                         <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Due (SLA)</th>
+                        <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Risk</th>
                         <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Next Action</th>
                         <th style="padding: 0.75rem 1rem; text-align: center; font-weight: 600; color: #333; border-bottom: 2px solid #e0e0e0;">Go</th>
                     </tr>
@@ -364,9 +406,10 @@ function ageDays(string $createdAt): int
                     $status     = strtoupper($action['request_status']);
                     $actionInfo = $statusActionMap[$status] ?? ['label' => 'View', 'color' => '#6c757d', 'icon' => 'bi-eye', 'href_tpl' => '/procurement/view.php?id={id}'];
                     $href       = actionHref($status, (int)$action['request_id'], $statusActionMap, isset($action['rfq_id']) ? (int)$action['rfq_id'] : null);
-                    $age        = ageDays($action['created_at']);
-                    $slaDate    = date('d M Y', strtotime($action['created_at'] . ' +' . $slaDefaultDays . ' days'));
-                    $ageStyle   = $age > $slaDefaultDays ? 'color:#e74c3c;font-weight:700;' : 'color:#555;';
+                    $age        = (int)$action['_age_days'];
+                    $sla        = $action['_sla'];
+                    $slaDate    = date('d M Y', strtotime($action['created_at'] . ' +' . $sla['sla_days'] . ' days'));
+                    $ageStyle   = $sla['risk_level'] === 'normal' ? 'color:#555;' : 'color:#e74c3c;font-weight:700;';
                 ?>
                     <tr style="border-bottom: 1px solid #f0f0f0;">
                         <td style="padding: 0.75rem 1rem; font-weight: 600; color: #333;"><?= htmlspecialchars($action['request_number']) ?></td>
@@ -380,6 +423,7 @@ function ageDays(string $createdAt): int
                         </td>
                         <td style="padding: 0.75rem 1rem; text-align: center; font-size:0.8rem; <?= $ageStyle ?>"><?= $age ?>d</td>
                         <td style="padding: 0.75rem 1rem; text-align: center; color: #888; font-size:0.8rem;"><?= $slaDate ?></td>
+                        <td style="padding: 0.75rem 1rem; text-align: center;"><?= pendingActionRiskBadge($sla) ?></td>
                         <td style="padding: 0.75rem 1rem; text-align: center; white-space:nowrap;">
                             <i class="bi <?= $actionInfo['icon'] ?>" style="color: <?= $actionInfo['color'] ?>; margin-right:0.25rem;"></i><?= htmlspecialchars($actionInfo['label']) ?>
                         </td>

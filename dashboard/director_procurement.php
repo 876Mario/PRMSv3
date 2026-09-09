@@ -2,15 +2,23 @@
 $REQUIRE_PERMISSION = 'view_director_dashboard';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/config/db.php';
+require_once $_SERVER['DOCUMENT_ROOT'].'/services/WorkflowConfigurationService.php';
 require_once $_SERVER['DOCUMENT_ROOT'].'/includes/header.php';
+
+$procurementThreshold = WorkflowConfigurationService::getHighValueThreshold($pdo, 'procurement');
+$poThreshold = WorkflowConfigurationService::getHighValueThreshold($pdo, 'purchase_order');
+$slaSnapshot = WorkflowConfigurationService::getEscalationSnapshot($pdo, 'REGULAR', 'PROCUREMENT_STAGE', 0);
+$overdueDays = $slaSnapshot['overdue_days'];
 
 $stats = $pdo->query("
     SELECT
       SUM(CASE WHEN status IN ('PROCUREMENT_STAGE','RFQ_LETTER_AVAILABLE','QUOTE_REVIEW_PENDING','ADDITIONAL_QUOTATIONS_REQUIRED') THEN 1 ELSE 0 END) AS outstanding_rfqs,
       SUM(CASE WHEN status IN ('QUOTE_REQUESTOR_REVIEW_PENDING','QUOTE_REQUESTOR_REVIEW_APPROVED','QUOTE_BRANCH_HEAD_APPROVAL_PENDING') THEN 1 ELSE 0 END) AS pending_reviews,
       SUM(CASE WHEN status = 'ADDITIONAL_QUOTATIONS_REQUIRED' THEN 1 ELSE 0 END) AS returned_for_quotes,
-      SUM(CASE WHEN DATEDIFF(NOW(), updated_at) >= 7 AND status NOT IN ('COMPLETED','DECLINED','CANCELLED','PAUSED') THEN 1 ELSE 0 END) AS aging_items,
-      SUM(CASE WHEN status IN ('COMMITMENTS_PENDING','COMMITMENT_APPROVED','PO_PENDING') THEN 1 ELSE 0 END) AS urgent_actions
+      SUM(CASE WHEN DATEDIFF(NOW(), updated_at) >= {$overdueDays} AND status NOT IN ('COMPLETED','DECLINED','CANCELLED','PAUSED') THEN 1 ELSE 0 END) AS aging_items,
+      SUM(CASE WHEN status IN ('COMMITMENTS_PENDING','COMMITMENT_APPROVED','PO_PENDING') THEN 1 ELSE 0 END) AS urgent_actions,
+      SUM(CASE WHEN estimated_value >= {$procurementThreshold} AND status NOT IN ('COMPLETED','DECLINED','CANCELLED','PAUSED') THEN 1 ELSE 0 END) AS high_value_requests,
+      SUM(CASE WHEN estimated_value >= {$poThreshold} AND status = 'PO_PENDING' THEN 1 ELSE 0 END) AS po_oversight_items
     FROM procurement_requests
 ")->fetch(PDO::FETCH_ASSOC) ?: [];
 
@@ -55,11 +63,13 @@ $unreadNotifications = class_exists('NotificationService')
             <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">RFQs Returned For Additional Quotes</div><div class="fs-4 fw-bold text-warning"><?= (int)($stats['returned_for_quotes'] ?? 0) ?></div></div></div>
             <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Aging Procurement Items</div><div class="fs-4 fw-bold text-danger"><?= (int)($stats['aging_items'] ?? 0) ?></div></div></div>
             <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Urgent Procurement Actions</div><div class="fs-4 fw-bold"><?= (int)($stats['urgent_actions'] ?? 0) ?></div></div></div>
+            <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">High-Value Requests</div><div class="fs-4 fw-bold text-warning"><?= (int)($stats['high_value_requests'] ?? 0) ?></div></div></div>
+            <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">PO Oversight Queue</div><div class="fs-4 fw-bold text-danger"><?= (int)($stats['po_oversight_items'] ?? 0) ?></div></div></div>
             <div class="card border-0 shadow-sm"><div class="card-body"><div class="text-muted small">Unread Notifications</div><div class="fs-4 fw-bold"><?= (int)$unreadNotifications ?></div></div></div>
         </div>
 
-        <div class="alert alert-danger"><strong>What needs attention today:</strong> overdue and escalated procurement items.</div>
-        <div class="alert alert-warning"><strong>High priority:</strong> pending reviews, approvals, and returned RFQs.</div>
+        <div class="alert alert-danger"><strong>What needs attention today:</strong> overdue and escalated procurement items older than <?= (int)$overdueDays ?> day(s).</div>
+        <div class="alert alert-warning"><strong>High priority:</strong> pending reviews, approvals, returned RFQs, and requests at or above JMD <?= number_format($procurementThreshold, 2) ?>.</div>
         <div class="alert alert-info mb-4"><strong>Normal:</strong> open assigned procurement actions.</div>
 
         <div class="card border-0 shadow-sm mb-4">

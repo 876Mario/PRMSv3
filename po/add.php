@@ -5,6 +5,7 @@ require_once $_SERVER['DOCUMENT_ROOT'] . "/config/db.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/helper.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/services/SecureFileStorage.php";
 require_once $_SERVER['DOCUMENT_ROOT'] . "/config/workflow.php";
+require_once $_SERVER['DOCUMENT_ROOT'] . "/services/WorkflowConfigurationService.php";
 
 /* ================================
    Validate commitment_id
@@ -301,6 +302,32 @@ logRequestTimeline(
 // Notify about PO creation
 require_once $_SERVER['DOCUMENT_ROOT']."/config/notifications.php";
 notifyPOAction($request_id, $po_number, 'CREATED', 'Purchase Order created and approved. Ready for invoicing.');
+
+$oversightLevel = WorkflowConfigurationService::getPurchaseOrderOversightLevel($pdo, $po_total);
+if ($oversightLevel !== 'none') {
+    notifyDirectorProcurementActionRequired(
+        $request_id,
+        'High-Value Purchase Order Created',
+        'A purchase order has crossed the configured procurement oversight threshold and should be reviewed.',
+        $oversightLevel === 'director_procurement' ? 'high' : 'urgent'
+    );
+}
+if (in_array($oversightLevel, ['director_finance', 'executive'], true)) {
+    notifyDirectorFinanceActionRequired(
+        $request_id,
+        'Finance Oversight Purchase Order Alert',
+        'A purchase order has crossed the configured finance oversight threshold and requires supervisory visibility.',
+        'urgent'
+    );
+}
+if ($oversightLevel === 'executive') {
+    notifyExecutiveOversightActionRequired(
+        $request_id,
+        'Executive Purchase Order Oversight Triggered',
+        'A purchase order has crossed the configured executive oversight threshold.',
+        'urgent'
+    );
+}
 
 
         // ✅ Redirect to Procurement Request

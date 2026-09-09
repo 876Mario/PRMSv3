@@ -19,92 +19,35 @@ $REQUIRE_PERMISSION = 'view_inventory';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/page_guard.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 require_once __DIR__ . '/../check_setup.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/config/column_modules.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/services/ColumnPreferenceService.php';
 
-/* ── Column registry (must match list.php) ──────────────────────────────────── */
-$allColumns = [
-    ['key' => 'item_code',        'label' => 'Code',                'sortable' => true,  'sort_col' => 'i.item_code'],
-    ['key' => 'item_name',        'label' => 'Item Name',           'sortable' => true,  'sort_col' => 'i.item_name'],
-    ['key' => 'item_domain',      'label' => 'Domain',              'sortable' => true,  'sort_col' => 'i.item_domain'],
-    ['key' => 'category_name',    'label' => 'Category',            'sortable' => true,  'sort_col' => 'c.category_name'],
-    ['key' => 'manufacturer',     'label' => 'Manufacturer',        'sortable' => true,  'sort_col' => 'i.manufacturer'],
-    ['key' => 'uom_code',         'label' => 'UOM',                 'sortable' => false, 'sort_col' => null],
-    ['key' => 'total_stock',      'label' => 'On Hand',             'sortable' => true,  'sort_col' => 'total_stock'],
-    ['key' => 'available_stock',  'label' => 'Available',           'sortable' => true,  'sort_col' => 'available_stock'],
-    ['key' => 'average_cost',     'label' => 'Avg Cost',            'sortable' => true,  'sort_col' => 'i.average_cost'],
-    ['key' => 'item_status',      'label' => 'Status',              'sortable' => true,  'sort_col' => 'i.item_status'],
-    ['key' => 'criticality_name', 'label' => 'Criticality',         'sortable' => true,  'sort_col' => 'cr.criticality_name'],
-    // 'actions' excluded from export
-];
-
-$allowedKeys = array_column($allColumns, 'key');
-$columnsByKey = array_column($allColumns, null, 'key');
-
-$sortMap = array_filter(
-    array_combine(
-        array_column($allColumns, 'key'),
-        array_column($allColumns, 'sort_col')
-    )
+$columnState = (new ColumnPreferenceService($pdo))->resolveState(
+    (int) $_SESSION['user_id'],
+    getColumnPreferenceModuleConfig('inventory_items', $pdo)
 );
+$allColumns = array_values(array_filter(
+    $columnState['columns'],
+    static fn(array $column): bool => $column['key'] !== 'actions'
+));
+$columnsByKey = array_column($allColumns, null, 'key');
+$sortMap = $columnState['sort_map'];
+$columnOrder = $columnState['column_order'];
+$visibleKeys = $columnState['visible_keys'];
 
-/* ── Load user column preferences ────────────────────────────────────────────── */
-$userId   = (int) $_SESSION['user_id'];
-$pageId   = 'inventory_items_list';
-$prefsRow = null;
-
-try {
-    $prefStmt = $pdo->prepare("SELECT visible_columns, column_order, default_sort_column, default_sort_direction FROM user_table_preferences WHERE user_id = ? AND page_identifier = ? LIMIT 1");
-    $prefStmt->execute([$userId, $pageId]);
-    $prefsRow = $prefStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-} catch (Throwable $e) {
-    // Table may not exist yet (migration not applied); fall through to defaults.
-    $prefsRow = null;
-}
-
-/* Resolve visible columns */
-$defaultOrder   = array_column($allColumns, 'key');
-$defaultVisible = $defaultOrder;
-
-if ($prefsRow) {
-    $savedOrder   = json_decode($prefsRow['column_order']    ?? 'null', true);
-    $savedVisible = json_decode($prefsRow['visible_columns'] ?? 'null', true);
-
-    if (is_array($savedOrder)) {
-        $validSaved    = array_filter($savedOrder, fn($k) => in_array($k, $allowedKeys, true));
-        $missing       = array_diff($defaultOrder, $validSaved);
-        $columnOrder   = array_merge(array_values($validSaved), array_values($missing));
-    } else {
-        $columnOrder = $defaultOrder;
-    }
-
-    if (is_array($savedVisible)) {
-        $visibleKeys = array_values(array_filter($savedVisible, fn($k) => in_array($k, $allowedKeys, true)));
-    } else {
-        $visibleKeys = $defaultVisible;
-    }
-} else {
-    $columnOrder = $defaultOrder;
-    $visibleKeys = $defaultVisible;
-}
-
-/* Build ordered visible columns (exclude 'actions') */
 $exportColumns = [];
 foreach ($columnOrder as $key) {
-    if (in_array($key, $visibleKeys, true) && isset($columnsByKey[$key]) && $key !== 'actions') {
+    if ($key !== 'actions' && in_array($key, $visibleKeys, true) && isset($columnsByKey[$key])) {
         $exportColumns[] = $columnsByKey[$key];
     }
 }
-if (empty($exportColumns)) {
-    $exportColumns = $allColumns; // fall back to all if none configured
+if ($exportColumns === []) {
+    $exportColumns = $allColumns;
 }
 
 /* ── Resolve sort ─────────────────────────────────────────────────────────────── */
-$sortCol = 'item_name';
-$sortDir = 'ASC';
-
-if (!empty($prefsRow['default_sort_column']) && isset($sortMap[$prefsRow['default_sort_column']])) {
-    $sortCol = $prefsRow['default_sort_column'];
-    $sortDir = strtoupper($prefsRow['default_sort_direction'] ?? 'ASC') === 'DESC' ? 'DESC' : 'ASC';
-}
+$sortCol = $columnState['sort_column'];
+$sortDir = $columnState['sort_direction'];
 if (!empty($_GET['sort_col']) && isset($sortMap[$_GET['sort_col']])) {
     $sortCol = $_GET['sort_col'];
 }
