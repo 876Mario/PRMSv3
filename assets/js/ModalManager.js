@@ -8,6 +8,8 @@
   var watchdogId = null;
   var cleanupTimerId = null;
   var initialized = false;
+  var MODAL_BASE_Z_INDEX = 1060;
+  var BACKDROP_BASE_Z_INDEX = 1055;
 
   function toArray(list) {
     return Array.prototype.slice.call(list || []);
@@ -82,13 +84,13 @@
     backdrops.slice(0, -1).forEach(removeNode);
 
     openModals.forEach(function (modalEl, index) {
-      modalEl.style.zIndex = String(1050 + (index * 10));
+      modalEl.style.zIndex = String(MODAL_BASE_Z_INDEX + (index * 10));
     });
 
     if (activeBackdrop) {
       activeBackdrop.style.zIndex = openModals.length > 1
-        ? String((1050 + ((openModals.length - 1) * 10)) - 5)
-        : '1040';
+        ? String((MODAL_BASE_Z_INDEX + ((openModals.length - 1) * 10)) - 5)
+        : String(BACKDROP_BASE_Z_INDEX);
     }
   }
 
@@ -292,8 +294,6 @@
         return;
       }
 
-      prepare(modalEl);
-
       startWatchdog(3000);
 
       if (trigger.dataset.modalTriggerLocked === '1' || modalEl.dataset.modalOpening === '1') {
@@ -307,6 +307,8 @@
         event.stopPropagation();
         return;
       }
+
+      prepare(modalEl);
 
       trigger.dataset.modalTriggerLocked = '1';
       window.setTimeout(function () {
