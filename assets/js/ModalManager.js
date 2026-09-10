@@ -70,6 +70,8 @@
   }
 
   function normalizeModalStack() {
+    var backdropBaseZIndex = 1055;
+    var modalBaseZIndex = 1060;
     var openModals = getOpenModals();
     var backdrops = getBackdrops();
     var activeBackdrop = backdrops.length ? backdrops[backdrops.length - 1] : null;
@@ -82,13 +84,13 @@
     backdrops.slice(0, -1).forEach(removeNode);
 
     openModals.forEach(function (modalEl, index) {
-      modalEl.style.zIndex = String(1050 + (index * 10));
+      modalEl.style.zIndex = String(modalBaseZIndex + (index * 10));
     });
 
     if (activeBackdrop) {
       activeBackdrop.style.zIndex = openModals.length > 1
-        ? String((1050 + ((openModals.length - 1) * 10)) - 5)
-        : '1040';
+        ? String((modalBaseZIndex + ((openModals.length - 1) * 10)) - 5)
+        : String(backdropBaseZIndex);
     }
   }
 
@@ -292,8 +294,6 @@
         return;
       }
 
-      prepare(modalEl);
-
       startWatchdog(3000);
 
       if (trigger.dataset.modalTriggerLocked === '1' || modalEl.dataset.modalOpening === '1') {
@@ -308,6 +308,7 @@
         return;
       }
 
+      prepare(modalEl);
       trigger.dataset.modalTriggerLocked = '1';
       window.setTimeout(function () {
         delete trigger.dataset.modalTriggerLocked;
