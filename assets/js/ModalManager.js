@@ -150,8 +150,12 @@
 
     return Promise.resolve()
       .then(runner)
-      .finally(function () {
+      .then(function (result) {
         cleanup(settings);
+        return result;
+      }, function (error) {
+        cleanup(settings);
+        throw error;
       });
   }
 
