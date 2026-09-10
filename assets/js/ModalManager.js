@@ -21,6 +21,10 @@
     return toArray(document.querySelectorAll('.modal-backdrop'));
   }
 
+  function getOpeningModals() {
+    return toArray(document.querySelectorAll('.modal[data-modal-opening="1"]'));
+  }
+
   function hasManagedModalMarkup() {
     return document.querySelector('.js-managed-modal') !== null;
   }
@@ -75,11 +79,16 @@
   function cleanup(options) {
     var settings = options || {};
     var openModals = getOpenModals();
+    var openingModals = getOpeningModals();
     var backdrops = getBackdrops();
 
-    if (!openModals.length || settings.force === true) {
+    if (settings.force === true || (!openModals.length && !openingModals.length)) {
       backdrops.forEach(removeNode);
       resetBodyState();
+      return;
+    }
+
+    if (!openModals.length && openingModals.length) {
       return;
     }
 
@@ -267,13 +276,20 @@
       cleanup({ force: true });
     });
 
-    window.addEventListener('pagehide', function () {
+    window.addEventListener('pagehide', function (event) {
       stopWatchdog();
-      cleanup({ force: true });
+      if (!event.persisted) {
+        cleanup({ force: true });
+      } else {
+        scheduleCleanup();
+      }
     });
 
-    window.addEventListener('pageshow', function () {
-      cleanup({ force: true });
+    window.addEventListener('pageshow', function (event) {
+      if (event.persisted && hasManagedModalMarkup()) {
+        startWatchdog(3000);
+      }
+      cleanup();
       releaseManagedForms();
     });
   }
