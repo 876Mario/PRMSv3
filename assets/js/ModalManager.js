@@ -44,6 +44,69 @@
     document.body.removeAttribute('data-bs-padding-right');
   }
 
+  function hidePageLoader() {
+    if (window.PRMSPageLoader && typeof window.PRMSPageLoader.hide === 'function') {
+      window.PRMSPageLoader.hide();
+      return;
+    }
+
+    var loader = document.getElementById('pageLoader');
+    var loaderBar = document.getElementById('pageLoaderBar');
+    if (loader) {
+      loader.classList.remove('is-active');
+    }
+    if (loaderBar) {
+      loaderBar.classList.remove('is-active');
+      loaderBar.classList.add('is-done');
+    }
+  }
+
+  function closeGlobalOverlays() {
+    hidePageLoader();
+
+    if (typeof window.prmsCloseNotifDropdown === 'function') {
+      window.prmsCloseNotifDropdown();
+    }
+  }
+
+  function normalizeModalStack() {
+    var openModals = getOpenModals();
+    var backdrops = getBackdrops();
+    var activeBackdrop = backdrops.length ? backdrops[backdrops.length - 1] : null;
+
+    if (!openModals.length) {
+      backdrops.forEach(removeNode);
+      return;
+    }
+
+    backdrops.slice(0, -1).forEach(removeNode);
+
+    openModals.forEach(function (modalEl, index) {
+      modalEl.style.zIndex = String(1050 + (index * 10));
+    });
+
+    if (activeBackdrop) {
+      activeBackdrop.style.zIndex = openModals.length > 1
+        ? String((1050 + ((openModals.length - 1) * 10)) - 5)
+        : '1040';
+    }
+  }
+
+  function prepare(target, options) {
+    var settings = options || {};
+
+    closeGlobalOverlays();
+
+    if (settings.preserveBackdrop !== true) {
+      getBackdrops().forEach(removeNode);
+      resetBodyState();
+    }
+
+    if (target && target.classList) {
+      delete target.dataset.modalSubmitting;
+    }
+  }
+
   function releaseForm(form) {
     if (!form) {
       return;
@@ -82,6 +145,8 @@
     var openingModals = getOpeningModals();
     var backdrops = getBackdrops();
 
+    closeGlobalOverlays();
+
     if (settings.force === true || (!openModals.length && !openingModals.length)) {
       backdrops.forEach(removeNode);
       resetBodyState();
@@ -92,7 +157,7 @@
       return;
     }
 
-    backdrops.slice(0, -1).forEach(removeNode);
+    normalizeModalStack();
     document.body.classList.add('modal-open');
     document.body.removeAttribute('aria-hidden');
   }
@@ -150,6 +215,7 @@
       return null;
     }
 
+    prepare(modalEl);
     startWatchdog(3000);
     modalEl.dataset.modalOpening = '1';
     instance.show();
@@ -218,9 +284,15 @@
       }
 
       var modalEl = document.querySelector(selector);
-      if (!modalEl || !modalEl.classList.contains('js-managed-modal')) {
+      if (!modalEl) {
         return;
       }
+
+      if (!modalEl.classList.contains('js-managed-modal')) {
+        return;
+      }
+
+      prepare(modalEl);
 
       startWatchdog(3000);
 
@@ -246,6 +318,7 @@
   function bindModalEvents() {
     document.addEventListener('show.bs.modal', function (event) {
       if (event.target && event.target.classList) {
+        closeGlobalOverlays();
         event.target.dataset.modalOpening = '1';
         if (event.target.classList.contains('js-managed-modal')) {
           startWatchdog(3000);
@@ -349,6 +422,7 @@
 
   window.ModalManager = {
     initialize: initialize,
+    prepare: prepare,
     show: show,
     hide: hide,
     cleanup: cleanup,

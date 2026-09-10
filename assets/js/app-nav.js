@@ -24,7 +24,17 @@
   var loaderBar = document.getElementById('pageLoaderBar');
   var loaderTimer = null;
 
+  function hasActiveModal() {
+    return document.querySelector('.modal.show') !== null
+      || document.querySelector('.modal[data-modal-opening="1"]') !== null;
+  }
+
   function showLoader() {
+    if (hasActiveModal()) {
+      hideLoader();
+      return;
+    }
+
     if (loader) loader.classList.add('is-active');
     if (loaderBar) {
       loaderBar.classList.remove('is-done');
@@ -48,9 +58,18 @@
     }
   }
 
+  window.PRMSPageLoader = {
+    show: showLoader,
+    hide: hideLoader,
+    isActive: function () {
+      return !!(loader && loader.classList.contains('is-active'));
+    }
+  };
+
   // Hide the loader once the new page has fully rendered.
   window.addEventListener('pageshow', hideLoader);
   document.addEventListener('DOMContentLoaded', hideLoader);
+  document.addEventListener('show.bs.modal', hideLoader);
 
   function isSamePageAnchorLink(url) {
     return url.pathname === window.location.pathname &&
@@ -97,7 +116,11 @@
     loaderTimer = setTimeout(hideLoader, LOADER_TIMEOUT_MS);
   });
 
-  window.addEventListener('beforeunload', showLoader);
+  window.addEventListener('beforeunload', function () {
+    if (!hasActiveModal()) {
+      showLoader();
+    }
+  });
 
   /* ── Sidebar scroll position persistence ──────────────────── */
   var sidebar = document.getElementById('sidebarMenu');

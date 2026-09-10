@@ -147,6 +147,12 @@ if ($__prmsExportEnabled && empty($_SESSION['piams_export_csrf_token'])) {
     <script>
     (function () {
       var notifOpen = false;
+      window.prmsCloseNotifDropdown = function () {
+        var dd = document.getElementById('prms-notif-dropdown');
+        if (!dd) return;
+        dd.style.display = 'none';
+        notifOpen = false;
+      };
       window.prmsToggleNotifDropdown = function () {
         var dd = document.getElementById('prms-notif-dropdown');
         notifOpen = !notifOpen;
@@ -156,8 +162,7 @@ if ($__prmsExportEnabled && empty($_SESSION['piams_export_csrf_token'])) {
       document.addEventListener('click', function (e) {
         var bell = document.getElementById('prms-notif-bell');
         if (bell && !bell.contains(e.target)) {
-          document.getElementById('prms-notif-dropdown').style.display = 'none';
-          notifOpen = false;
+          window.prmsCloseNotifDropdown();
         }
       });
 
