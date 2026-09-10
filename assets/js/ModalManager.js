@@ -287,11 +287,11 @@
         return;
       }
 
-      prepare(modalEl);
-
       if (!modalEl.classList.contains('js-managed-modal')) {
         return;
       }
+
+      prepare(modalEl);
 
       startWatchdog(3000);
 
