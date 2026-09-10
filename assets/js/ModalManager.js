@@ -8,6 +8,8 @@
   var watchdogId = null;
   var cleanupTimerId = null;
   var initialized = false;
+  var MODAL_BASE_Z_INDEX = 1060;
+  var BACKDROP_BASE_Z_INDEX = 1055;
 
   function toArray(list) {
     return Array.prototype.slice.call(list || []);
