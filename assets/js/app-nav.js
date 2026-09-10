@@ -25,7 +25,8 @@
   var loaderTimer = null;
 
   function hasActiveModal() {
-    return document.querySelector('.modal.show, .modal[data-modal-opening="1"]') !== null;
+    return document.querySelector('.modal.show') !== null
+      || document.querySelector('.modal[data-modal-opening="1"]') !== null;
   }
 
   function showLoader() {
