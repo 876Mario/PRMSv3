@@ -11,6 +11,10 @@ $root = dirname(__DIR__, 2);
 
 $files = [
     'footer' => $root . '/includes/footer.php',
+    'header' => $root . '/includes/header.php',
+    'modalManager' => $root . '/assets/js/ModalManager.js',
+    'appNav' => $root . '/assets/js/app-nav.js',
+    'appCss' => $root . '/assets/css/app.css',
     'procurementView' => $root . '/procurement/view.php',
     'procurementSendBack' => $root . '/procurement/send_back.php',
     'reimbursementView' => $root . '/reimbursement/view.php',
@@ -63,6 +67,18 @@ modalSafetyAssert(
     'footer loads shared modal manager and no longer defines duplicate decline modal',
     str_contains($content['footer'], '/assets/js/ModalManager.js')
     && !str_contains($content['footer'], 'id="declineModal"')
+);
+
+modalSafetyAssert(
+    'shared modal stack safety clears loader and notification overlays globally',
+    str_contains($content['header'], 'window.prmsCloseNotifDropdown = function ()')
+    && str_contains($content['modalManager'], 'window.PRMSPageLoader')
+    && str_contains($content['modalManager'], 'window.prmsCloseNotifDropdown()')
+    && str_contains($content['modalManager'], 'prepare: prepare')
+    && str_contains($content['appNav'], 'window.PRMSPageLoader = {')
+    && str_contains($content['appNav'], "document.addEventListener('show.bs.modal', hideLoader, true)")
+    && str_contains($content['appCss'], 'body.modal-open #pageLoader')
+    && str_contains($content['appCss'], '.modal-backdrop {')
 );
 
 modalSafetyAssert(

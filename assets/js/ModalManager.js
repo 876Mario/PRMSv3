@@ -44,6 +44,59 @@
     document.body.removeAttribute('data-bs-padding-right');
   }
 
+  function hidePageLoader() {
+    if (window.PRMSPageLoader && typeof window.PRMSPageLoader.hide === 'function') {
+      window.PRMSPageLoader.hide();
+      return;
+    }
+
+    var loader = document.getElementById('pageLoader');
+    var loaderBar = document.getElementById('pageLoaderBar');
+    if (loader) {
+      loader.classList.remove('is-active');
+    }
+    if (loaderBar) {
+      loaderBar.classList.remove('is-active');
+      loaderBar.classList.add('is-done');
+    }
+  }
+
+  function closeGlobalOverlays() {
+    hidePageLoader();
+
+    if (typeof window.prmsCloseNotifDropdown === 'function') {
+      window.prmsCloseNotifDropdown();
+    }
+  }
+
+  function normalizeModalStack() {
+    var openModals = getOpenModals();
+    var backdrops = getBackdrops();
+
+    openModals.forEach(function (modalEl, index) {
+      modalEl.style.zIndex = String(1050 + (index * 10));
+    });
+
+    backdrops.forEach(function (backdropEl, index) {
+      if (index >= openModals.length) {
+        removeNode(backdropEl);
+        return;
+      }
+
+      backdropEl.style.zIndex = String(1040 + (index * 10));
+    });
+  }
+
+  function prepare(target) {
+    closeGlobalOverlays();
+    getBackdrops().forEach(removeNode);
+    resetBodyState();
+
+    if (target && target.classList) {
+      delete target.dataset.modalSubmitting;
+    }
+  }
+
   function releaseForm(form) {
     if (!form) {
       return;
@@ -82,6 +135,8 @@
     var openingModals = getOpeningModals();
     var backdrops = getBackdrops();
 
+    closeGlobalOverlays();
+
     if (settings.force === true || (!openModals.length && !openingModals.length)) {
       backdrops.forEach(removeNode);
       resetBodyState();
@@ -92,7 +147,7 @@
       return;
     }
 
-    backdrops.slice(0, -1).forEach(removeNode);
+    normalizeModalStack();
     document.body.classList.add('modal-open');
     document.body.removeAttribute('aria-hidden');
   }
@@ -150,6 +205,7 @@
       return null;
     }
 
+    prepare(modalEl);
     startWatchdog(3000);
     modalEl.dataset.modalOpening = '1';
     instance.show();
@@ -218,7 +274,13 @@
       }
 
       var modalEl = document.querySelector(selector);
-      if (!modalEl || !modalEl.classList.contains('js-managed-modal')) {
+      if (!modalEl) {
+        return;
+      }
+
+      prepare(modalEl);
+
+      if (!modalEl.classList.contains('js-managed-modal')) {
         return;
       }
 
@@ -246,6 +308,7 @@
   function bindModalEvents() {
     document.addEventListener('show.bs.modal', function (event) {
       if (event.target && event.target.classList) {
+        prepare(event.target);
         event.target.dataset.modalOpening = '1';
         if (event.target.classList.contains('js-managed-modal')) {
           startWatchdog(3000);
@@ -349,6 +412,7 @@
 
   window.ModalManager = {
     initialize: initialize,
+    prepare: prepare,
     show: show,
     hide: hide,
     cleanup: cleanup,

@@ -830,6 +830,15 @@ a:hover { color: var(--dgc-green-dark); }
   color: #1a1a1a !important;
 }
 
+/* ── Modal stack safety ───────────────────────────────────── */
+.modal-backdrop {
+  z-index: 1040;
+}
+
+.modal {
+  z-index: 1050;
+}
+
 /* ── Page Loading Overlay ─────────────────────────────────── */
 #pageLoader {
   position: fixed;
@@ -843,10 +852,12 @@ a:hover { color: var(--dgc-green-dark); }
   -webkit-backdrop-filter: blur(2px);
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
   transition: opacity var(--t-slow) ease, visibility 0s linear var(--t-slow);
 }
 
 #pageLoader.is-active {
+  pointer-events: auto;
   opacity: 1;
   visibility: visible;
   transition: opacity var(--t-fast) ease, visibility 0s linear 0s;
@@ -903,6 +914,17 @@ a:hover { color: var(--dgc-green-dark); }
   width: 100%;
   opacity: 0;
   transition: width 0.2s ease, opacity 0.3s ease 0.15s;
+}
+
+body.modal-open #pageLoader {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+body.modal-open #pageLoaderBar {
+  opacity: 0 !important;
+  width: 0 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
