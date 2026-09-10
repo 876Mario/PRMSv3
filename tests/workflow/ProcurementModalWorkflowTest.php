@@ -7,7 +7,7 @@
  * backdrop behind.
  */
 
-$root = dirname(__DIR__);
+$root = dirname(__DIR__, 2);
 $viewPath = $root . '/procurement/view.php';
 $cancelPath = $root . '/procurement/cancel.php';
 $pauseResumePath = $root . '/procurement/pause_resume.php';

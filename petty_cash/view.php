@@ -1002,6 +1002,22 @@ $csrfToken = ensureCsrfToken();
 })();
 </script>
 
+<style>
+.timeline-item {
+  position: relative;
+  padding-left: 20px;
+}
+.timeline-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #0d6efd;
+  position: absolute;
+  left: 0;
+  top: 2px;
+}
+</style>
+
 <!-- MODALS for Finance Officer Actions -->
 
 <!-- Disbursal Modal -->
@@ -1103,7 +1119,6 @@ $csrfToken = ensureCsrfToken();
                       placeholder="E.g., Provide receipts for purchases, Resubmit corrected reconciliation, etc."></textarea>
           </div>
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
-          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="reject">
         </div>
@@ -1126,7 +1141,7 @@ $csrfToken = ensureCsrfToken();
         <h5 class="modal-title"><i class="bi bi-cloud-upload me-2"></i>Upload Supporting Document</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="/petty_cash/upload_reconciliation_document.php" enctype="multipart/form-data">
+      <form method="post" action="/petty_cash/upload_reconciliation_document.php" enctype="multipart/form-data" class="js-modal-form" data-no-loader>
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
         <div class="modal-body">
           <p class="text-muted mb-3">Attach supporting documentation such as receipts, invoices, proof of purchase, or change return documentation.</p>
@@ -1187,7 +1202,6 @@ $csrfToken = ensureCsrfToken();
                       placeholder="E.g., Corrections verified against new receipts, reconciliation now complete."></textarea>
           </div>
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
-          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="resolve">
         </div>
@@ -1219,7 +1233,6 @@ $csrfToken = ensureCsrfToken();
             <textarea class="form-control" id="resolution_notes_reopen" name="resolution_notes" rows="3" required
                       placeholder="E.g., Still missing receipts for JMD 250, Change amount still doesn't reconcile."></textarea>
           </div>
-          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="reopen">
@@ -1257,7 +1270,6 @@ $csrfToken = ensureCsrfToken();
             <i class="bi bi-info-circle me-2"></i>
             <strong>This action will mark the petty cash request as COMPLETED.</strong>
           </div>
-          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="resolve">

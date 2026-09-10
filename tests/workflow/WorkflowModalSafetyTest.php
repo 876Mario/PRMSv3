@@ -7,7 +7,7 @@
  * remain in place.
  */
 
-$root = dirname(__DIR__);
+$root = dirname(__DIR__, 2);
 
 $files = [
     'footer' => $root . '/includes/footer.php',
