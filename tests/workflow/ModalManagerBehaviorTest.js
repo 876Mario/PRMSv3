@@ -31,6 +31,9 @@ function createStyle(initial) {
 
 function createEnvironment() {
   const listeners = { document: {}, window: {} };
+  let nextTimerId = 1;
+  const timeoutQueue = new Map();
+  const intervalQueue = new Map();
   const registry = {
     modals: [],
     backdrops: [],
@@ -121,10 +124,22 @@ function createEnvironment() {
     document,
     console,
     Promise,
-    setTimeout(fn) { fn(); return 1; },
-    clearTimeout() {},
-    setInterval() { return 1; },
-    clearInterval() {},
+    setTimeout(fn) {
+      const timerId = nextTimerId++;
+      timeoutQueue.set(timerId, fn);
+      return timerId;
+    },
+    clearTimeout(timerId) {
+      timeoutQueue.delete(timerId);
+    },
+    setInterval(fn) {
+      const timerId = nextTimerId++;
+      intervalQueue.set(timerId, fn);
+      return timerId;
+    },
+    clearInterval(timerId) {
+      intervalQueue.delete(timerId);
+    },
     addEventListener(type, handler) {
       listeners.window[type] = listeners.window[type] || [];
       listeners.window[type].push(handler);
@@ -147,6 +162,16 @@ function createEnvironment() {
     window: windowObj,
     document,
     registry,
+    flushTimeouts() {
+      const pending = Array.from(timeoutQueue.entries());
+      timeoutQueue.clear();
+      pending.forEach(([, callback]) => callback());
+    },
+    runInterval(timerId) {
+      if (intervalQueue.has(timerId)) {
+        intervalQueue.get(timerId)();
+      }
+    },
     createModal(options = {}) {
       const modal = attach('modal', createElement({ classes: ['modal', 'js-managed-modal'].concat(options.show === false ? [] : ['show']), dataset: options.dataset || {} }));
       registry.modals.push(modal);
