@@ -6,6 +6,7 @@
   }
 
   var watchdogId = null;
+  var cleanupTimerId = null;
   var initialized = false;
 
   function toArray(list) {
@@ -84,9 +85,22 @@
 
   function scheduleCleanup(options) {
     var settings = options || {};
-    window.setTimeout(function () {
+    if (cleanupTimerId !== null) {
+      window.clearTimeout(cleanupTimerId);
+    }
+    cleanupTimerId = window.setTimeout(function () {
+      cleanupTimerId = null;
       cleanup(settings);
     }, settings.delay || 0);
+  }
+
+  function stopWatchdog() {
+    if (watchdogId === null) {
+      return;
+    }
+
+    window.clearInterval(watchdogId);
+    watchdogId = null;
   }
 
   function hide(target, options) {
@@ -239,10 +253,12 @@
 
   function bindLifecycleEvents() {
     window.addEventListener('beforeunload', function () {
+      stopWatchdog();
       cleanup({ force: true });
     });
 
     window.addEventListener('pagehide', function () {
+      stopWatchdog();
       cleanup({ force: true });
     });
 
@@ -272,6 +288,11 @@
       var openModals = getOpenModals();
       var hasBackdrop = getBackdrops().length > 0;
       var bodyLocked = document.body.classList.contains('modal-open');
+
+      if (!openModals.length && !hasBackdrop && !bodyLocked) {
+        stopWatchdog();
+        return;
+      }
 
       if (!openModals.length && (hasBackdrop || bodyLocked)) {
         cleanup({ force: true });
