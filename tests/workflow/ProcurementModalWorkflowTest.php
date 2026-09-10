@@ -18,13 +18,10 @@ $failed = 0;
 
 function readWorkflowSource(string $path): string
 {
-    global $failed;
-
     $content = file_get_contents($path);
     if ($content === false) {
         echo "  FAIL  failed to load required test source: {$path}\n";
-        $failed++;
-        return '';
+        exit(1);
     }
 
     return $content;
