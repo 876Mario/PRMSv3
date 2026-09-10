@@ -13,13 +13,22 @@ $cancelPath = $root . '/procurement/cancel.php';
 $pauseResumePath = $root . '/procurement/pause_resume.php';
 $revertStatusPath = $root . '/procurement/revert_status.php';
 
-$view = file_get_contents($viewPath);
-$cancel = file_get_contents($cancelPath);
-$pauseResume = file_get_contents($pauseResumePath);
-$revertStatus = file_get_contents($revertStatusPath);
-
 $passed = 0;
 $failed = 0;
+
+function readWorkflowSource(string $path): string
+{
+    global $failed;
+
+    $content = file_get_contents($path);
+    if ($content === false) {
+        echo "  FAIL  failed to load required test source: {$path}\n";
+        $failed++;
+        return '';
+    }
+
+    return $content;
+}
 
 function workflowAssert(string $name, bool $condition): void
 {
@@ -35,6 +44,11 @@ function workflowAssert(string $name, bool $condition): void
 }
 
 echo "\n=== ProcurementModalWorkflowTest ===\n";
+
+$view = readWorkflowSource($viewPath);
+$cancel = readWorkflowSource($cancelPath);
+$pauseResume = readWorkflowSource($pauseResumePath);
+$revertStatus = readWorkflowSource($revertStatusPath);
 
 workflowAssert(
     'cancel modal posts with csrf token and modal cleanup hooks',

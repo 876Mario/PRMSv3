@@ -23,11 +23,25 @@ $files = [
 
 $content = [];
 foreach ($files as $key => $path) {
-    $content[$key] = file_get_contents($path);
+    $content[$key] = readModalSafetySource($path);
 }
 
 $passed = 0;
 $failed = 0;
+
+function readModalSafetySource(string $path): string
+{
+    global $failed;
+
+    $content = file_get_contents($path);
+    if ($content === false) {
+        echo "  FAIL  failed to load required test source: {$path}\n";
+        $failed++;
+        return '';
+    }
+
+    return $content;
+}
 
 function modalSafetyAssert(string $name, bool $condition): void
 {
