@@ -84,9 +84,11 @@ modalSafetyAssert(
 );
 
 modalSafetyAssert(
-    'petty cash footer include remains after modal markup',
-    strpos($content['pettyCashView'], 'id="finalizeReconciliationModal"') !== false
-    && strpos($content['pettyCashView'], "require_once \$_SERVER['DOCUMENT_ROOT'] . \"/includes/footer.php\";") > strpos($content['pettyCashView'], 'id="finalizeReconciliationModal"')
+    'petty cash footer include remains outside the final modal markup',
+    preg_match(
+        '/id="finalizeReconciliationModal".*?<\/form>\s*<\/div>\s*<\/div>\s*<\/div>\s*<\?php require_once \$_SERVER\[\'DOCUMENT_ROOT\'\] \. "\/includes\/footer\.php"; \?>/s',
+        $content['pettyCashView']
+    ) === 1
 );
 
 modalSafetyAssert(

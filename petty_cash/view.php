@@ -1273,9 +1273,9 @@ $csrfToken = ensureCsrfToken();
             <i class="bi bi-check2-circle me-1"></i>Complete Reconciliation
           </button>
         </div>
-
-        <?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
       </form>
     </div>
   </div>
 </div>
+
+<?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
