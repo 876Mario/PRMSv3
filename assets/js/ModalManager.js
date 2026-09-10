@@ -286,7 +286,11 @@
     });
 
     window.addEventListener('pageshow', function (event) {
-      if (event.persisted && hasManagedModalMarkup()) {
+      if (!event.persisted) {
+        return;
+      }
+
+      if (hasManagedModalMarkup()) {
         startWatchdog(3000);
       }
       cleanup();
