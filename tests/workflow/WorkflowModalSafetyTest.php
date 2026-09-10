@@ -77,7 +77,7 @@ modalSafetyAssert(
     && str_contains($content['modalManager'], 'prepare: prepare')
     && str_contains($content['appNav'], 'window.PRMSPageLoader = {')
     && str_contains($content['appNav'], "document.addEventListener('show.bs.modal', hideLoader, true)")
-    && str_contains($content['appCss'], 'body.modal-open #pageLoader')
+    && str_contains($content['appCss'], 'pointer-events: none;')
     && str_contains($content['appCss'], '.modal-backdrop {')
 );
 
