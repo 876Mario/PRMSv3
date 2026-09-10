@@ -72,23 +72,22 @@
   function normalizeModalStack() {
     var openModals = getOpenModals();
     var backdrops = getBackdrops();
-    var activeBackdropCount = openModals.length;
-    var activeBackdrops = activeBackdropCount > 0 ? backdrops.slice(-activeBackdropCount) : [];
+    var activeBackdrop = backdrops.length ? backdrops[backdrops.length - 1] : null;
 
-    if (activeBackdropCount === 0) {
+    if (!openModals.length) {
       backdrops.forEach(removeNode);
       return;
     }
 
-    backdrops.slice(0, Math.max(0, backdrops.length - activeBackdropCount)).forEach(removeNode);
+    backdrops.slice(0, -1).forEach(removeNode);
 
     openModals.forEach(function (modalEl, index) {
       modalEl.style.zIndex = String(1050 + (index * 10));
     });
 
-    activeBackdrops.forEach(function (backdropEl, index) {
-      backdropEl.style.zIndex = String(1040 + (index * 10));
-    });
+    if (activeBackdrop) {
+      activeBackdrop.style.zIndex = '1040';
+    }
   }
 
   function prepare(target, options) {
