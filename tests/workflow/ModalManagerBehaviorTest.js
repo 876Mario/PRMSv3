@@ -194,7 +194,7 @@ function createEnvironment() {
 
     assert.equal(env.registry.backdrops.length, 1, 'cleanup() should keep only one active backdrop');
     assert.strictEqual(env.registry.backdrops[0], activeBackdrop, 'cleanup() should retain the newest backdrop');
-    assert.equal(activeBackdrop.style.zIndex, '1040', 'active backdrop should stay below modal content');
+    assert.equal(activeBackdrop.style.zIndex, '1055', 'active backdrop should sit below the top modal and above lower modal layers');
     assert.equal(firstModal.style.zIndex, '1050', 'first open modal should use the base modal z-index');
     assert.equal(secondModal.style.zIndex, '1060', 'topmost modal should stack above the first modal');
     assert.equal(env.document.body.classList.contains('modal-open'), true, 'cleanup() should preserve modal-open while a modal remains open');

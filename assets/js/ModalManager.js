@@ -86,7 +86,9 @@
     });
 
     if (activeBackdrop) {
-      activeBackdrop.style.zIndex = '1040';
+      activeBackdrop.style.zIndex = openModals.length > 1
+        ? String((1050 + ((openModals.length - 1) * 10)) - 5)
+        : '1040';
     }
   }
 
