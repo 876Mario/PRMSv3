@@ -735,14 +735,14 @@ $csrfToken = ensureCsrfToken();
 </div>
 
 <!-- Mark Reimbursed Modal -->
-<div class="modal fade" id="markReimbursedModal" tabindex="-1" aria-labelledby="markReimbursedModalLabel" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="markReimbursedModal" tabindex="-1" aria-labelledby="markReimbursedModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="markReimbursedModalLabel">Mark Reimbursement as Paid</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="/reimbursement/mark_reimbursed.php">
+      <form method="post" action="/reimbursement/mark_reimbursed.php" class="js-modal-form" data-no-loader>
         <div class="modal-body">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="request_id" value="<?= $request_id ?>">
@@ -770,14 +770,14 @@ $csrfToken = ensureCsrfToken();
 </div>
 
 <!-- Confirm Receipt Modal -->
-<div class="modal fade" id="confirmReceiptModal" tabindex="-1" aria-labelledby="confirmReceiptModalLabel" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="confirmReceiptModal" tabindex="-1" aria-labelledby="confirmReceiptModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="confirmReceiptModalLabel">Confirm Receipt of Reimbursement</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="/reimbursement/confirm_receipt.php">
+      <form method="post" action="/reimbursement/confirm_receipt.php" class="js-modal-form" data-no-loader>
         <div class="modal-body">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="request_id" value="<?= $request_id ?>">
@@ -803,15 +803,16 @@ $csrfToken = ensureCsrfToken();
 
 <!-- Revert Workflow Stage Modal -->
 <?php if ($canRevertStage ?? false): ?>
-<div class="modal fade" id="revertStageModal" tabindex="-1">
+<div class="modal fade js-managed-modal" id="revertStageModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" action="/reimbursement/revert_status.php" class="modal-content">
+        <form method="POST" action="/reimbursement/revert_status.php" class="modal-content js-modal-form" data-no-loader>
             <div class="modal-header bg-secondary text-white">
                 <h5 class="modal-title"><i class="bi bi-skip-backward me-2"></i>Revert Workflow Stage</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" name="id" value="<?= $request_id ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <div class="alert alert-warning small mb-3">
                     <i class="bi bi-exclamation-triangle me-1"></i>
                     Reverting a workflow stage moves the request backwards. The workflow will need to be
@@ -867,7 +868,7 @@ $csrfToken = ensureCsrfToken();
 </style>
 
 
-<div class="modal fade" id="signedRequestHandlingNoticeModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="signedRequestHandlingNoticeModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header bg-warning-subtle">
@@ -925,6 +926,10 @@ $csrfToken = ensureCsrfToken();
     }).catch(function (error) {
       console.error('[SignedUploadNotice] AJAX request failed', error);
       return null;
+    }).finally(function () {
+      if (window.ModalManager) {
+        window.ModalManager.cleanup();
+      }
     });
   }
 

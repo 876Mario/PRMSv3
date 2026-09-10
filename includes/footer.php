@@ -72,33 +72,6 @@ document.addEventListener('click', function (e) {
   </div>
 </div>
 
-<!-- Decline Modal -->
-<div class="modal fade" id="declineModal" tabindex="-1">
-  <div class="modal-dialog">
-    <form method="POST" action="/procurement/decline.php" class="modal-content">
-
-      <div class="modal-header">
-        <h5 class="modal-title">Decline Procurement Request</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body">
-        <input type="hidden" name="id" value="<?= $request['request_id'] ?>">
-        <div class="mb-3">
-          <label class="form-label">Reason for decline</label>
-          <textarea name="reason" class="form-control" rows="4" required></textarea>
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-danger">Confirm Decline</button>
-      </div>
-
-    </form>
-  </div>
-</div>
-
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 
@@ -271,6 +244,7 @@ function refreshTable() {
 
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/js/ModalManager.js?v=<?= time() ?>"></script>
 <script src="/assets/js/app-nav.js?v=<?= time() ?>"></script>
 <script src="/assets/js/pipeline.js?v=<?= time() ?>"></script>
 </body>

@@ -31,6 +31,22 @@ if (!in_array($action, ['resolve', 'reopen'])) {
     exit;
 }
 
+$requestIdLookupStmt = $pdo->prepare("
+    SELECT pr.request_id
+    FROM petty_cash_reconciliations pcr
+    INNER JOIN petty_cash_disbursements pcd ON pcr.disburse_id = pcd.disburse_id
+    INNER JOIN procurement_requests pr ON pcd.request_id = pr.request_id
+    WHERE pcr.reconcile_id = ?
+    LIMIT 1
+");
+$requestIdLookupStmt->execute([$reconcile_id]);
+$request_id = (int)($requestIdLookupStmt->fetchColumn() ?: 0);
+$csrfRedirect = $request_id > 0
+    ? '/petty_cash/view.php?request_id=' . $request_id
+    : '/petty_cash/list.php';
+
+requireCsrfToken($csrfRedirect);
+
 /* ============================================================
    VERIFY USER ROLE
    ============================================================ */

@@ -24,12 +24,13 @@ if ($id <= 0) {
     modalPop('Invalid Request', 'Invalid request ID.', '/petty_cash/list.php', 'error');
     exit;
 }
+requireCsrfToken('/petty_cash/view.php?request_id=' . $id);
 if ($targetStatus === '') {
-    modalPop('Missing Status', 'Target status is required.', '/petty_cash/view.php?id=' . $id, 'error');
+    modalPop('Missing Status', 'Target status is required.', '/petty_cash/view.php?request_id=' . $id, 'error');
     exit;
 }
 if ($reason === '') {
-    modalPop('Reason Required', 'A reason is required when reverting a workflow stage.', '/petty_cash/view.php?id=' . $id, 'warning');
+    modalPop('Reason Required', 'A reason is required when reverting a workflow stage.', '/petty_cash/view.php?request_id=' . $id, 'warning');
     exit;
 }
 
@@ -53,7 +54,7 @@ $workflowService = new WorkflowService($pdo);
 
 // Role check
 if (!$workflowService->canUserRevert($currentRole, $requestType)) {
-    modalPop('Unauthorized', 'You are not authorized to revert petty cash workflow stages.', '/petty_cash/view.php?id=' . $id, 'error');
+    modalPop('Unauthorized', 'You are not authorized to revert petty cash workflow stages.', '/petty_cash/view.php?request_id=' . $id, 'error');
     exit;
 }
 
@@ -62,7 +63,7 @@ if (in_array($currentStatus, ['COMPLETED', 'DECLINED'], true)) {
     modalPop(
         'Cannot Revert',
         'Requests in terminal states (Completed, Declined) cannot be reverted.',
-        '/petty_cash/view.php?id=' . $id,
+        '/petty_cash/view.php?request_id=' . $id,
         'error'
     );
     exit;
@@ -73,7 +74,7 @@ if (!$workflowService->isBackwardTransition($requestType, $currentStatus, $targe
     modalPop(
         'Invalid Revert',
         "Cannot revert from {$currentStatus} to {$targetStatus}. Only backward transitions are permitted for petty cash requests.",
-        '/petty_cash/view.php?id=' . $id,
+        '/petty_cash/view.php?request_id=' . $id,
         'error'
     );
     exit;
@@ -85,7 +86,7 @@ if (!in_array($targetStatus, $transitions[$currentStatus] ?? [])) {
     modalPop(
         'Transition Not Allowed',
         "The transition from {$currentStatus} to {$targetStatus} is not permitted by petty cash workflow rules.",
-        '/petty_cash/view.php?id=' . $id,
+        '/petty_cash/view.php?request_id=' . $id,
         'error'
     );
     exit;
@@ -118,7 +119,7 @@ try {
                 'body'        => "Returned to " . str_replace('_', ' ', $targetStatus) . " by {$currentRole}. Reason: " . mb_substr($reason, 0, 200),
                 'request_id'  => $id,
                 'request_ref' => $request['request_number'],
-                'action_url'  => "/petty_cash/view.php?id={$id}",
+                'action_url'  => "/petty_cash/view.php?request_id={$id}",
                 'stage'       => $targetStatus,
             ]
         );
@@ -126,7 +127,7 @@ try {
 
     pop(
         "Petty cash request reverted to " . str_replace('_', ' ', $targetStatus) . ".",
-        "/petty_cash/view.php?id={$id}",
+        "/petty_cash/view.php?request_id={$id}",
         1500,
         'success'
     );
@@ -134,6 +135,6 @@ try {
 
 } catch (Throwable $e) {
     error_log('petty_cash/revert_status.php failed: ' . $e->getMessage());
-    modalPop('Error', 'Unable to revert workflow stage right now.', '/petty_cash/view.php?id=' . $id, 'error');
+    modalPop('Error', 'Unable to revert workflow stage right now.', '/petty_cash/view.php?request_id=' . $id, 'error');
     exit;
 }

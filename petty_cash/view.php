@@ -743,15 +743,16 @@ $csrfToken = ensureCsrfToken();
 
 <!-- Revert Workflow Stage Modal -->
 <?php if ($canRevertStage ?? false): ?>
-<div class="modal fade" id="revertStageModal" tabindex="-1">
+<div class="modal fade js-managed-modal" id="revertStageModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" action="/petty_cash/revert_status.php" class="modal-content">
+        <form method="POST" action="/petty_cash/revert_status.php" class="modal-content js-modal-form" data-no-loader>
             <div class="modal-header bg-secondary text-white">
                 <h5 class="modal-title"><i class="bi bi-skip-backward me-2"></i>Revert Workflow Stage</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" name="id" value="<?= $request_id ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <div class="alert alert-warning small mb-3">
                     <i class="bi bi-exclamation-triangle me-1"></i>
                     Reverting a workflow stage moves the request backwards. The workflow will need to be
@@ -791,7 +792,7 @@ $csrfToken = ensureCsrfToken();
 <?php endif; ?>
 
 
-<div class="modal fade" id="signedRequestHandlingNoticeModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="signedRequestHandlingNoticeModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header bg-warning-subtle">
@@ -849,6 +850,10 @@ $csrfToken = ensureCsrfToken();
     }).catch(function (error) {
       console.error('[SignedUploadNotice] AJAX request failed', error);
       return null;
+    }).finally(function () {
+      if (window.ModalManager) {
+        window.ModalManager.cleanup();
+      }
     });
   }
 
@@ -997,35 +1002,17 @@ $csrfToken = ensureCsrfToken();
 })();
 </script>
 
-<?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
-
-<style>
-.timeline-item {
-  position: relative;
-  padding-left: 20px;
-}
-.timeline-marker {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background-color: #0d6efd;
-  position: absolute;
-  left: 0;
-  top: 2px;
-}
-</style>
-
 <!-- MODALS for Finance Officer Actions -->
 
 <!-- Disbursal Modal -->
-<div class="modal fade" id="disbursalModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="disbursalModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>Record Cash Disbursement</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="/petty_cash/disburse.php">
+      <form method="post" action="/petty_cash/disburse.php" class="js-modal-form" data-no-loader>
         <div class="modal-body">
           <p class="text-muted">Record that the authorized petty cash amount has been physically disbursed to the requestor.</p>
           <div class="mb-3">
@@ -1034,6 +1021,7 @@ $csrfToken = ensureCsrfToken();
                       placeholder="E.g., Paid in cash by check #123, Handed to John Smith, etc."></textarea>
           </div>
           <input type="hidden" name="request_id" value="<?= $request_id ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1047,14 +1035,14 @@ $csrfToken = ensureCsrfToken();
 </div>
 
 <!-- Verify Reconciliation Modal (Approve) -->
-<div class="modal fade" id="verifyReconciliationModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="verifyReconciliationModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title"><i class="bi bi-check-lg me-2"></i>Verify Reconciliation - Approve</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="/petty_cash/verify_reconciliation.php">
+      <form method="post" action="/petty_cash/verify_reconciliation.php" class="js-modal-form" data-no-loader>
         <div class="modal-body">
           <div class="alert alert-info mb-3">
             <strong>Reconciliation Summary:</strong>
@@ -1071,6 +1059,7 @@ $csrfToken = ensureCsrfToken();
                       placeholder="E.g., Reconciliation verified against receipts, all amounts match."></textarea>
           </div>
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="approve">
         </div>
         <div class="modal-footer">
@@ -1085,14 +1074,14 @@ $csrfToken = ensureCsrfToken();
 </div>
 
 <!-- Reject Reconciliation Modal (Report Discrepancy) -->
-<div class="modal fade" id="rejectReconciliationModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="rejectReconciliationModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header bg-danger bg-opacity-10">
         <h5 class="modal-title text-danger"><i class="bi bi-exclamation-circle me-2"></i>Report Reconciliation Discrepancy</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="/petty_cash/verify_reconciliation.php">
+      <form method="post" action="/petty_cash/verify_reconciliation.php" class="js-modal-form" data-no-loader>
         <div class="modal-body">
           <p class="text-muted mb-3">Report a discrepancy found in this reconciliation. The requestor will be notified and given an opportunity to correct the issue.</p>
           
@@ -1113,8 +1102,9 @@ $csrfToken = ensureCsrfToken();
             <textarea class="form-control" id="required_action" name="required_action" rows="2" 
                       placeholder="E.g., Provide receipts for purchases, Resubmit corrected reconciliation, etc."></textarea>
           </div>
-          
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="reject">
         </div>
         <div class="modal-footer">
@@ -1129,7 +1119,7 @@ $csrfToken = ensureCsrfToken();
 </div>
 
 <!-- Upload Document Modal -->
-<div class="modal fade" id="uploadDocumentModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="uploadDocumentModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
@@ -1180,14 +1170,14 @@ $csrfToken = ensureCsrfToken();
 </div>
 
 <!-- Resolve Discrepancy Modal -->
-<div class="modal fade" id="resolveDiscrepancyModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="resolveDiscrepancyModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header bg-success bg-opacity-10">
         <h5 class="modal-title text-success"><i class="bi bi-check-lg me-2"></i>Approve Corrections</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="/petty_cash/review_discrepancy.php">
+      <form method="post" action="/petty_cash/review_discrepancy.php" class="js-modal-form" data-no-loader>
         <div class="modal-body">
           <p class="text-muted mb-3">The requestor has provided corrections to address the discrepancy. Review and approve to proceed to final reconciliation.</p>
           
@@ -1196,8 +1186,9 @@ $csrfToken = ensureCsrfToken();
             <textarea class="form-control" id="resolution_notes_resolve" name="resolution_notes" rows="3" 
                       placeholder="E.g., Corrections verified against new receipts, reconciliation now complete."></textarea>
           </div>
-          
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="resolve">
         </div>
         <div class="modal-footer">
@@ -1212,14 +1203,14 @@ $csrfToken = ensureCsrfToken();
 </div>
 
 <!-- Reopen Discrepancy Modal -->
-<div class="modal fade" id="reopenDiscrepancyModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="reopenDiscrepancyModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header bg-warning bg-opacity-10">
         <h5 class="modal-title text-warning"><i class="bi bi-arrow-counterclockwise me-2"></i>Reopen for More Corrections</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="/petty_cash/review_discrepancy.php">
+      <form method="post" action="/petty_cash/review_discrepancy.php" class="js-modal-form" data-no-loader>
         <div class="modal-body">
           <p class="text-muted mb-3">The corrections provided do not fully address the discrepancy. Reopen the review to request additional corrections from the requestor.</p>
           
@@ -1228,8 +1219,9 @@ $csrfToken = ensureCsrfToken();
             <textarea class="form-control" id="resolution_notes_reopen" name="resolution_notes" rows="3" required
                       placeholder="E.g., Still missing receipts for JMD 250, Change amount still doesn't reconcile."></textarea>
           </div>
-          
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="reopen">
         </div>
         <div class="modal-footer">
@@ -1244,14 +1236,14 @@ $csrfToken = ensureCsrfToken();
 </div>
 
 <!-- Finalize Reconciliation Modal -->
-<div class="modal fade" id="finalizeReconciliationModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade js-managed-modal" id="finalizeReconciliationModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header bg-success">
         <h5 class="modal-title text-white"><i class="bi bi-check2-circle me-2"></i>Finalize & Complete Reconciliation</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="/petty_cash/review_discrepancy.php">
+      <form method="post" action="/petty_cash/review_discrepancy.php" class="js-modal-form" data-no-loader>
         <div class="modal-body">
           <p class="text-muted mb-3">Mark this reconciliation as completed after all corrections have been reviewed and approved.</p>
           
@@ -1265,8 +1257,9 @@ $csrfToken = ensureCsrfToken();
             <i class="bi bi-info-circle me-2"></i>
             <strong>This action will mark the petty cash request as COMPLETED.</strong>
           </div>
-          
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="resolve">
         </div>
         <div class="modal-footer">
@@ -1279,3 +1272,5 @@ $csrfToken = ensureCsrfToken();
     </div>
   </div>
 </div>
+
+<?php require_once $_SERVER['DOCUMENT_ROOT'] . "/includes/footer.php"; ?>
