@@ -72,25 +72,34 @@
   function normalizeModalStack() {
     var openModals = getOpenModals();
     var backdrops = getBackdrops();
+    var activeBackdropCount = openModals.length;
+    var activeBackdrops = activeBackdropCount > 0 ? backdrops.slice(-activeBackdropCount) : [];
+
+    if (activeBackdropCount === 0) {
+      backdrops.forEach(removeNode);
+      return;
+    }
+
+    backdrops.slice(0, Math.max(0, backdrops.length - activeBackdropCount)).forEach(removeNode);
 
     openModals.forEach(function (modalEl, index) {
       modalEl.style.zIndex = String(1050 + (index * 10));
     });
 
-    backdrops.forEach(function (backdropEl, index) {
-      if (index >= openModals.length) {
-        removeNode(backdropEl);
-        return;
-      }
-
+    activeBackdrops.forEach(function (backdropEl, index) {
       backdropEl.style.zIndex = String(1040 + (index * 10));
     });
   }
 
-  function prepare(target) {
+  function prepare(target, options) {
+    var settings = options || {};
+
     closeGlobalOverlays();
-    getBackdrops().forEach(removeNode);
-    resetBodyState();
+
+    if (settings.preserveBackdrop !== true) {
+      getBackdrops().forEach(removeNode);
+      resetBodyState();
+    }
 
     if (target && target.classList) {
       delete target.dataset.modalSubmitting;
@@ -308,7 +317,7 @@
   function bindModalEvents() {
     document.addEventListener('show.bs.modal', function (event) {
       if (event.target && event.target.classList) {
-        prepare(event.target);
+        closeGlobalOverlays();
         event.target.dataset.modalOpening = '1';
         if (event.target.classList.contains('js-managed-modal')) {
           startWatchdog(3000);
