@@ -69,7 +69,7 @@
   // Hide the loader once the new page has fully rendered.
   window.addEventListener('pageshow', hideLoader);
   document.addEventListener('DOMContentLoaded', hideLoader);
-  document.addEventListener('show.bs.modal', hideLoader, true);
+  document.addEventListener('show.bs.modal', hideLoader);
 
   function isSamePageAnchorLink(url) {
     return url.pathname === window.location.pathname &&
