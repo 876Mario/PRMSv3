@@ -45,10 +45,15 @@
       return;
     }
 
+    var hadLegacySubmitLock = form.dataset.submitting === '1';
+    var hadNoticeLock = form.dataset.noticeInProgress === '1';
+
     delete form.dataset.modalSubmitting;
+    delete form.dataset.submitting;
+    delete form.dataset.noticeInProgress;
 
     toArray(form.querySelectorAll('button[type="submit"], input[type="submit"]')).forEach(function (button) {
-      if (button.dataset.modalManagerDisabled === '1') {
+      if (button.dataset.modalManagerDisabled === '1' || (button.disabled && (hadLegacySubmitLock || hadNoticeLock))) {
         button.disabled = false;
         delete button.dataset.modalManagerDisabled;
       }
@@ -125,7 +130,7 @@
       modalEl.removeAttribute('role');
     }
 
-    cleanup(settings);
+    scheduleCleanup(settings);
   }
 
   function show(target) {
