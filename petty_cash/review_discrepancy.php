@@ -18,6 +18,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/workflow.php';
    VALIDATE INPUTS
    ============================================================ */
 $reconcile_id = isset($_POST['reconcile_id']) ? (int)$_POST['reconcile_id'] : 0;
+$request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 $action = isset($_POST['action']) ? trim($_POST['action']) : '';
 $resolution_notes = isset($_POST['resolution_notes']) ? trim($_POST['resolution_notes']) : '';
 
@@ -30,6 +31,8 @@ if (!in_array($action, ['resolve', 'reopen'])) {
     pop("Invalid action specified.", "/petty_cash/list.php", 2000, "error");
     exit;
 }
+
+requireCsrfToken('/petty_cash/view.php?request_id=' . $request_id);
 
 /* ============================================================
    VERIFY USER ROLE

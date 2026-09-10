@@ -3,7 +3,8 @@
  * ProcurementModalWorkflowTest
  * ============================
  * Guards the procurement view modal workflow contract for cancel/send-back
- * actions so the UI can safely submit without leaving the backdrop behind.
+ * actions so the shared modal manager can safely submit without leaving the
+ * backdrop behind.
  */
 
 $root = dirname(__DIR__);
@@ -38,7 +39,7 @@ echo "\n=== ProcurementModalWorkflowTest ===\n";
 workflowAssert(
     'cancel modal posts with csrf token and modal cleanup hooks',
     preg_match(
-        '/<form\b(?=[^>]*\bmethod="POST")(?=[^>]*\baction="\/procurement\/cancel\.php")(?=[^>]*\bclass="[^"]*\bjs-workflow-action-form\b[^"]*")(?=[^>]*\bdata-no-loader(?:=(?:""|\'\'))?)[^>]*>.*?\bname="csrf_token".*?<\/form>/s',
+        '/<form\b(?=[^>]*\bmethod="POST")(?=[^>]*\baction="\/procurement\/cancel\.php")(?=[^>]*\bclass="[^"]*\bjs-workflow-action-form\b[^"]*\bjs-modal-form\b[^"]*")(?=[^>]*\bdata-no-loader(?:=(?:""|\'\'))?)[^>]*>.*?\bname="csrf_token".*?<\/form>/s',
         $view
     ) === 1
 );
@@ -46,16 +47,16 @@ workflowAssert(
 workflowAssert(
     'send back modal posts with csrf token and modal cleanup hooks',
     preg_match(
-        '/<form\b(?=[^>]*\bmethod="POST")(?=[^>]*\baction="\/procurement\/send_back\.php")(?=[^>]*\bclass="[^"]*\bjs-workflow-action-form\b[^"]*")(?=[^>]*\bdata-no-loader(?:=(?:""|\'\'))?)[^>]*>.*?\bname="csrf_token".*?<\/form>/s',
+        '/<form\b(?=[^>]*\bmethod="POST")(?=[^>]*\baction="\/procurement\/send_back\.php")(?=[^>]*\bclass="[^"]*\bjs-workflow-action-form\b[^"]*\bjs-modal-form\b[^"]*")(?=[^>]*\bdata-no-loader(?:=(?:""|\'\'))?)[^>]*>.*?\bname="csrf_token".*?<\/form>/s',
         $view
     ) === 1
 );
 
 workflowAssert(
-    'view registers workflow modal submit cleanup',
-    str_contains($view, "document.querySelectorAll('.js-workflow-action-form')")
-    && str_contains($view, "document.querySelectorAll('.modal-backdrop').forEach")
-    && str_contains($view, "document.body.classList.remove('modal-open')")
+    'view delegates cleanup to shared modal manager contract',
+    str_contains($view, 'class="modal fade js-managed-modal" id="declineModal"')
+    && str_contains($view, 'class="modal fade js-managed-modal" id="cancelRequestModal"')
+    && !str_contains($view, "document.querySelectorAll('.modal-backdrop').forEach")
 );
 
 workflowAssert(

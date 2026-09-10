@@ -19,6 +19,7 @@ require_once $_SERVER['DOCUMENT_ROOT'].'/config/notifications.php';
    VALIDATE INPUTS
    ============================================================ */
 $reconcile_id = isset($_POST['reconcile_id']) ? (int)$_POST['reconcile_id'] : 0;
+$request_id = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
 $action = isset($_POST['action']) ? trim($_POST['action']) : '';
 $verification_notes = isset($_POST['verification_notes']) ? trim($_POST['verification_notes']) : '';
 $discrepancy_amount = isset($_POST['discrepancy_amount']) ? (float)$_POST['discrepancy_amount'] : 0.0;
@@ -33,6 +34,8 @@ if (!in_array($action, ['approve', 'reject'])) {
     pop("Invalid action specified.", "/petty_cash/list.php", 2000, "error");
     exit;
 }
+
+requireCsrfToken('/petty_cash/view.php?request_id=' . $request_id);
 
 /* ============================================================
    VERIFY USER ROLE
@@ -109,7 +112,7 @@ try {
            ================================================== */
         
         // Update request status to PROCUREMENT_VERIFIED
-        $previousStatus = $request['status'];
+        $previousStatus = $currentStatus;
         $newStatus = 'PROCUREMENT_VERIFIED';
         $updateRequest = $pdo->prepare("
             UPDATE procurement_requests
