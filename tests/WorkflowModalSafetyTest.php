@@ -94,8 +94,10 @@ modalSafetyAssert(
 modalSafetyAssert(
     'petty cash handlers enforce csrf before workflow processing',
     str_contains($content['pettyCashRevert'], "requireCsrfToken('/petty_cash/view.php?request_id=' . \$id);")
-    && str_contains($content['pettyCashVerify'], "requireCsrfToken('/petty_cash/view.php?request_id=' . \$request_id);")
-    && str_contains($content['pettyCashReview'], "requireCsrfToken('/petty_cash/view.php?request_id=' . \$request_id);")
+    && str_contains($content['pettyCashVerify'], 'requireCsrfToken($csrfRedirect);')
+    && str_contains($content['pettyCashVerify'], 'SELECT pr.request_id')
+    && str_contains($content['pettyCashReview'], 'requireCsrfToken($csrfRedirect);')
+    && str_contains($content['pettyCashReview'], 'SELECT pr.request_id')
 );
 
 echo "\n" . ($failed === 0 ? "All {$passed} tests passed.\n" : "{$failed} FAILED / {$passed} passed.\n");

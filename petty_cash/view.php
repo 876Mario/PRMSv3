@@ -1059,7 +1059,6 @@ $csrfToken = ensureCsrfToken();
                       placeholder="E.g., Reconciliation verified against receipts, all amounts match."></textarea>
           </div>
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
-          <input type="hidden" name="request_id" value="<?= $request_id ?>">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="approve">
         </div>
@@ -1103,9 +1102,8 @@ $csrfToken = ensureCsrfToken();
             <textarea class="form-control" id="required_action" name="required_action" rows="2" 
                       placeholder="E.g., Provide receipts for purchases, Resubmit corrected reconciliation, etc."></textarea>
           </div>
-           
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
-          <input type="hidden" name="request_id" value="<?= $request_id ?>">
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="reject">
         </div>
@@ -1188,9 +1186,8 @@ $csrfToken = ensureCsrfToken();
             <textarea class="form-control" id="resolution_notes_resolve" name="resolution_notes" rows="3" 
                       placeholder="E.g., Corrections verified against new receipts, reconciliation now complete."></textarea>
           </div>
-           
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
-          <input type="hidden" name="request_id" value="<?= $request_id ?>">
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="resolve">
         </div>
@@ -1222,9 +1219,8 @@ $csrfToken = ensureCsrfToken();
             <textarea class="form-control" id="resolution_notes_reopen" name="resolution_notes" rows="3" required
                       placeholder="E.g., Still missing receipts for JMD 250, Change amount still doesn't reconcile."></textarea>
           </div>
-           
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
-          <input type="hidden" name="request_id" value="<?= $request_id ?>">
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="reopen">
         </div>
@@ -1261,9 +1257,8 @@ $csrfToken = ensureCsrfToken();
             <i class="bi bi-info-circle me-2"></i>
             <strong>This action will mark the petty cash request as COMPLETED.</strong>
           </div>
-           
           <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
-          <input type="hidden" name="request_id" value="<?= $request_id ?>">
+          <input type="hidden" name="reconcile_id" value="<?= (int)$reconciliation['reconcile_id'] ?>">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
           <input type="hidden" name="action" value="resolve">
         </div>

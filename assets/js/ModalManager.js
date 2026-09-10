@@ -136,6 +136,7 @@
       return null;
     }
 
+    startWatchdog(3000);
     modalEl.dataset.modalOpening = '1';
     instance.show();
     scheduleCleanup();
