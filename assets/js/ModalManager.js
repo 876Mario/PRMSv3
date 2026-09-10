@@ -20,6 +20,10 @@
     return toArray(document.querySelectorAll('.modal-backdrop'));
   }
 
+  function hasManagedModalMarkup() {
+    return document.querySelector('.js-managed-modal') !== null;
+  }
+
   function removeNode(node) {
     if (node && node.parentNode) {
       node.parentNode.removeChild(node);
@@ -185,6 +189,8 @@
         return;
       }
 
+      startWatchdog(3000);
+
       if (trigger.dataset.modalTriggerLocked === '1' || modalEl.dataset.modalOpening === '1') {
         event.preventDefault();
         event.stopPropagation();
@@ -208,6 +214,9 @@
     document.addEventListener('show.bs.modal', function (event) {
       if (event.target && event.target.classList) {
         event.target.dataset.modalOpening = '1';
+        if (event.target.classList.contains('js-managed-modal')) {
+          startWatchdog(3000);
+        }
       }
       scheduleCleanup();
     }, true);
@@ -283,7 +292,9 @@
     bindModalEvents();
     bindLifecycleEvents();
     bindJQueryAjaxHooks();
-    startWatchdog(3000);
+    if (hasManagedModalMarkup()) {
+      startWatchdog(3000);
+    }
     cleanup();
 
     return window.ModalManager;
