@@ -162,6 +162,9 @@ function createEnvironment() {
     window: windowObj,
     document,
     registry,
+    dispatchDocumentEvent(type, event) {
+      (listeners.document[type] || []).forEach((handler) => handler(event));
+    },
     flushTimeouts() {
       const pending = Array.from(timeoutQueue.entries());
       timeoutQueue.clear();
@@ -173,7 +176,7 @@ function createEnvironment() {
       }
     },
     createModal(options = {}) {
-      const modal = attach('modal', createElement({ classes: ['modal', 'js-managed-modal'].concat(options.show === false ? [] : ['show']), dataset: options.dataset || {} }));
+      const modal = attach('modal', createElement({ id: options.id || '', classes: ['modal', 'js-managed-modal'].concat(options.show === false ? [] : ['show']), dataset: options.dataset || {} }));
       registry.modals.push(modal);
       return modal;
     },
@@ -184,6 +187,20 @@ function createEnvironment() {
     },
     createNamedElement(id, classes = [], style = {}) {
       return createElement({ id, classes, style });
+    },
+    createModalTrigger(targetSelector, dataset = {}) {
+      return {
+        dataset: Object.assign({}, dataset),
+        getAttribute(name) {
+          if (name === 'data-bs-target') {
+            return targetSelector;
+          }
+          return null;
+        },
+        closest(selector) {
+          return selector === '[data-bs-toggle="modal"], [data-toggle="modal"]' ? this : null;
+        }
+      };
     }
   };
 }
@@ -219,9 +236,9 @@ function createEnvironment() {
 
     assert.equal(env.registry.backdrops.length, 1, 'cleanup() should keep only one active backdrop');
     assert.strictEqual(env.registry.backdrops[0], activeBackdrop, 'cleanup() should retain the newest backdrop');
-    assert.equal(activeBackdrop.style.zIndex, '1055', 'active backdrop should sit below the top modal and above lower modal layers');
-    assert.equal(firstModal.style.zIndex, '1050', 'first open modal should use the base modal z-index');
-    assert.equal(secondModal.style.zIndex, '1060', 'topmost modal should stack above the first modal');
+    assert.equal(activeBackdrop.style.zIndex, '1065', 'active backdrop should sit below the top modal and above lower modal layers');
+    assert.equal(firstModal.style.zIndex, '1060', 'first open modal should use the base modal z-index');
+    assert.equal(secondModal.style.zIndex, '1070', 'topmost modal should stack above the first modal');
     assert.equal(env.document.body.classList.contains('modal-open'), true, 'cleanup() should preserve modal-open while a modal remains open');
     assert.ok(!env.registry.backdrops.includes(staleBackdrop), 'stale backdrop should be removed');
   }
@@ -239,6 +256,29 @@ function createEnvironment() {
     assert.equal(env.document.body.classList.contains('modal-open'), false, 'force cleanup should release body modal state');
     assert.equal(env.document.body.style.overflow, undefined, 'force cleanup should remove body overflow lock');
     assert.equal(env.document.body.style['padding-right'], undefined, 'force cleanup should remove body padding compensation');
+  }
+
+  {
+    const env = createEnvironment();
+    const modal = env.createModal({ id: 'managed-modal' });
+    const backdrop = env.createBackdrop();
+    const trigger = env.createModalTrigger('#managed-modal');
+    let prevented = false;
+    let stopped = false;
+    env.document.body.classList.add('modal-open');
+
+    env.dispatchDocumentEvent('click', {
+      target: trigger,
+      preventDefault() { prevented = true; },
+      stopPropagation() { stopped = true; }
+    });
+
+    assert.equal(prevented, true, 'duplicate managed trigger click should be prevented while the modal is already open');
+    assert.equal(stopped, true, 'duplicate managed trigger click should stop propagation');
+    assert.equal(env.registry.backdrops.length, 1, 'duplicate managed trigger click should preserve the existing backdrop');
+    assert.strictEqual(env.registry.backdrops[0], backdrop, 'duplicate managed trigger click should not replace the backdrop');
+    assert.equal(env.document.body.classList.contains('modal-open'), true, 'duplicate managed trigger click should keep body modal state intact');
+    assert.strictEqual(modal.dataset.modalSubmitting, undefined, 'duplicate managed trigger click should not mutate modal submission state');
   }
 
   console.log('ModalManagerBehaviorTest passed');

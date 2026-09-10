@@ -832,11 +832,11 @@ a:hover { color: var(--dgc-green-dark); }
 
 /* ── Modal stack safety ───────────────────────────────────── */
 .modal-backdrop {
-  z-index: 1040;
+  z-index: 1055;
 }
 
 .modal {
-  z-index: 1050;
+  z-index: 1060;
 }
 
 /* ── Page Loading Overlay ─────────────────────────────────── */
@@ -919,4 +919,3 @@ a:hover { color: var(--dgc-green-dark); }
 @media (prefers-reduced-motion: reduce) {
   #pageLoader .page-loader-ring { animation-duration: 1.6s; }
 }
-
